@@ -1,0 +1,73 @@
+// F103RB / 20KB SRAM 专用 micro-ROS 静态库裁剪配置(说明版,勿直接构建)
+// 对应契约 v1.2:F103 micro-ROS client 侧 History Depth = 1
+// ⚠️ JSON 不支持注释,构建请用同目录的纯 JSON 版 colcon.meta,本文件仅供阅读。
+{
+  "names": {
+
+    "tracetools": {
+      "cmake-args": [
+        "-DTRACETOOLS_DISABLED=ON",            // 关闭 LTTng tracing 桩,MCU 上完全用不到 -> 省代码+RAM
+        "-DTRACETOOLS_STATUS_CHECKING_TOOL=OFF"
+      ]
+    },
+
+    "rcl": {
+      "cmake-args": [
+        "-DBUILD_TESTING=OFF",
+        "-DRCL_COMMAND_LINE_ENABLED=OFF",      // 无命令行参数解析(MCU 无 argv)-> 省 Flash/RAM
+        "-DRCL_LOGGING_ENABLED=OFF"            // 关 rcl 内部 logging 子系统 -> 省 RAM,固件自己用裸日志
+      ]
+    },
+
+    "rcutils": {
+      "cmake-args": [
+        "-DENABLE_TESTING=OFF",
+        "-DRCUTILS_NO_FILESYSTEM=ON",          // 无文件系统:裸机无 FS,去掉相关代码与缓冲 -> 省 RAM/Flash
+        "-DRCUTILS_NO_THREAD_SUPPORT=ON",      // 去掉 pthread/TLS 依赖(FreeRTOS 单任务跑 micro-ROS)-> 省 RAM
+        "-DRCUTILS_NO_64_ATOMIC=ON",           // Cortex-M3 无原生 64 位原子,去掉相关路径 -> 省 Flash,避免 libatomic
+        "-DRCUTILS_AVOID_DYNAMIC_ALLOCATION=ON" // 强制用静态/栈分配替代 malloc -> 关键:压缩 heap 占用
+      ]
+    },
+
+    "rosidl_typesupport": {
+      "cmake-args": [
+        "-DROSIDL_TYPESUPPORT_SINGLE_TYPESUPPORT=ON"  // 只编译单一 typesupport(microxrcedds),不带 introspection -> 省大量 Flash/RAM
+      ]
+    },
+
+    "microxrcedds_client": {
+      "cmake-args": [
+        "-DUCLIENT_PIC=OFF",                          // 关位置无关代码,静态库直接链进固件 -> 省 Flash,M3 无需 PIC
+        "-DUCLIENT_PROFILE_CUSTOM_TRANSPORT=ON",      // 用我们自己的 USART2+DMA custom transport
+        "-DUCLIENT_PROFILE_UDP=OFF",                  // 无网络栈
+        "-DUCLIENT_PROFILE_TCP=OFF",                  // 无网络栈
+        "-DUCLIENT_PROFILE_SERIAL=OFF",               // 不用内置 serial(POSIX termios),改 custom -> 去掉 POSIX 依赖
+        "-DUCLIENT_PROFILE_DISCOVERY=OFF",            // 不做 agent 发现(serial 点对点固定)-> 省 RAM/Flash
+        "-DUCLIENT_PROFILE_MULTITHREAD=OFF",          // 单任务,关多线程锁 -> 省 RAM
+        "-DUCLIENT_PROFILE_SHARED_MEMORY=OFF",        // MCU 无共享内存
+        "-DUCLIENT_PROFILE_STREAM_FRAMING=ON",        // serial/custom transport 需要 framing 协议(必须保留,否则 agent 对不上帧)
+        "-DUCLIENT_PROFILE_MATCHING=OFF",
+        "-DUCLIENT_MAX_OUTPUT_BEST_EFFORT_STREAMS=0", // 契约要求 RELIABLE,不用 best-effort -> 省一组流缓冲
+        "-DUCLIENT_MAX_OUTPUT_RELIABLE_STREAMS=1",    // 1 路可靠输出(pub mcu_status)
+        "-DUCLIENT_MAX_INPUT_BEST_EFFORT_STREAMS=0",  // 同上,省 best-effort 输入缓冲
+        "-DUCLIENT_MAX_INPUT_RELIABLE_STREAMS=1",     // 1 路可靠输入(sub cmd_heartbeat)
+        "-DUCLIENT_CUSTOM_TRANSPORT_MTU=128"          // 自定义 transport MTU=128B(默认 512)-> 直接缩小流缓冲,见 README 串口内存预算
+      ]
+    },
+
+    "rmw_microxrcedds": {
+      "cmake-args": [
+        "-DRMW_UXRCE_MAX_NODES=1",            // 只有 1 个节点 exo_mcu -> 节点池 1 槽
+        "-DRMW_UXRCE_MAX_PUBLISHERS=1",       // 只有 /exo/mcu_status -> publisher 池 1 槽
+        "-DRMW_UXRCE_MAX_SUBSCRIPTIONS=1",    // 只有 /exo/cmd_heartbeat -> subscription 池 1 槽
+        "-DRMW_UXRCE_MAX_SERVICES=0",         // 无 service -> 0 槽,省服务池整块 RAM
+        "-DRMW_UXRCE_MAX_CLIENTS=0",          // 无 client -> 0 槽
+        "-DRMW_UXRCE_MAX_HISTORY=1",          // ★契约 v1.2 拍板:F103 侧历史深度=1(默认 8)-> 大幅省订阅消息队列 RAM
+        "-DRMW_UXRCE_STREAM_HISTORY=1",       // ★可靠流缓冲只缓 1 个 MTU(默认 4,必须 2 的幂)-> 省 ~3×MTU 的重传缓冲
+        "-DRMW_UXRCE_MAX_SESSIONS=1",         // 单会话(单 agent)
+        "-DRMW_UXRCE_TRANSPORT=custom",       // 自定义 USART2+DMA transport
+        "-DRMW_UXRCE_CREATION_MODE=refs"      // refs 模式比 bin(XML)省 XML 缓冲;若 refs 在 serial 点对点跑不通则回退 bin,届时才需要 XML_BUFFER(键名待 T8 确认)
+      ]
+    }
+  }
+}

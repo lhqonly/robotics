@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>exo_bringup</name>
+  <version>1.0.0</version>
+  <description>
+    Launch files for the exoskeleton minimal serial loopback. Brings up the
+    WSL exo_cmd node, and optionally a local loopback (MCU simulator) node for
+    hardware-free self-test.
+  </description>
+  <maintainer email="lhqonly@users.noreply.github.com">Tom</maintainer>
+  <license>MIT</license>
+
+  <exec_depend>exo_cmd</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

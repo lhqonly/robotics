@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>exo_cmd</name>
+  <version>1.1.0</version>
+  <description>
+    WSL-side ROS2 nodes for the exoskeleton minimal serial loopback.
+    Publishes /exo/cmd_heartbeat (Int32, 10 Hz, wrap-mod-2^31 counter) and
+    subscribes /exo/mcu_status to verify the round-trip and monitor link
+    health (RTT / loss / duplicate / reconciliation, contract §7). Also ships
+    a local loopback node with fault injection that mimics the MCU for
+    hardware-free self-test.
+    Interface contract: docs/01-ros2-microros-serial/01-接口契约.md (v1.1).
+  </description>
+  <maintainer email="lhqonly@users.noreply.github.com">Tom</maintainer>
+  <license>MIT</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>rcl_interfaces</exec_depend>
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

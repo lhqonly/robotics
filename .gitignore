@@ -1,0 +1,21 @@
+# --- ROS2 / colcon 构建产物（绝不进库） ---
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+
+# --- 主 agent 实跑 / 验证日志（本地产物） ---
+/log/
+
+# --- Python 缓存 ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# --- Claude Code 本地设置（含本机权限，不进库；agents/ 定义要进库） ---
+.claude/settings.local.json
+
+# --- 编辑器 / 系统杂项 ---
+.vscode/
+*.swp
+.DS_Store
