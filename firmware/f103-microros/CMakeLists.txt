@@ -34,6 +34,19 @@ set(LDSCRIPT  ${CMAKE_SOURCE_DIR}/STM32F103RB_FLASH.ld)
 # USE_HAL_DRIVER 不定义(我们不用 HAL)。
 add_compile_definitions(STM32F103xB)
 
+# ---- micro-ROS 静态库(T5)----
+# [MICROROS-INCLUDE] / [MICROROS-LIB]:libmicroros.a + 其 include/ 由主 agent 用
+#   micro_ros_setup 的 generate_lib 生成(产物在 firmware/build/{libmicroros.a,include/}),
+#   再拷进本工程 ThirdParty/microros/ 下:
+#       ThirdParty/microros/libmicroros.a
+#       ThirdParty/microros/include/        (rclc/ rcl/ rmw_microros/ std_msgs/ uxr/ 等头)
+# 在该目录就位前,src/microros_transport.c 与 src/microros_app.c 用 __has_include 守卫
+#   编译成「占位实现」,故本工程在 lib 未就位时仍能 configure+build 出固件(只是 micro-ROS
+#   功能未链接)。lib 就位后,下面 if(EXISTS ...) 自动接上真实 include + 链接,守卫命中真实头。
+set(MICROROS_DIR     ${CMAKE_SOURCE_DIR}/ThirdParty/microros)
+set(MICROROS_INC     ${MICROROS_DIR}/include)
+set(MICROROS_LIB     ${MICROROS_DIR}/libmicroros.a)
+
 # ---- 头文件 ----
 include_directories(
     ${CMAKE_SOURCE_DIR}                          # FreeRTOSConfig.h 在工程根
@@ -44,10 +57,20 @@ include_directories(
     ${FREERTOS}/portable/GCC/ARM_CM3
 )
 
+# micro-ROS include 路径(存在才加;不存在时 __has_include 守卫走占位分支)。
+if(EXISTS ${MICROROS_INC})
+    include_directories(${MICROROS_INC})
+    message(STATUS "[MICROROS] include found: ${MICROROS_INC}")
+else()
+    message(WARNING "[MICROROS] include NOT found at ${MICROROS_INC} -- building placeholder (micro-ROS disabled). 主 agent: 放好 libmicroros include 后重新 configure.")
+endif()
+
 # ---- 源文件 ----
 set(SOURCES
     ${CMAKE_SOURCE_DIR}/src/main.c
     ${CMAKE_SOURCE_DIR}/src/stm32f1xx_it.c
+    ${CMAKE_SOURCE_DIR}/src/microros_transport.c   # T5:自定义串口 transport 4 回调
+    ${CMAKE_SOURCE_DIR}/src/microros_app.c         # T5:rclc 双向应用(exo_mcu)
     ${CMSIS_DEV}/Source/Templates/system_stm32f1xx.c
     ${CMSIS_DEV}/Source/Templates/gcc/startup_stm32f103xb.s
     # FreeRTOS core
@@ -61,6 +84,20 @@ set(SOURCES
 )
 
 add_executable(${PROJECT_NAME}.elf ${SOURCES})
+
+# ---- [MICROROS-LIB] 链接 libmicroros.a(存在才链;否则占位构建) ----
+# 注:libmicroros.a 与 newlib/specs 可能有交叉引用,用 --start-group/--end-group 容错。
+#     micro-ROS 的 rcl/rmw/xrce 内部互相引用,顺序敏感,分组链接最稳。
+if(EXISTS ${MICROROS_LIB})
+    target_link_libraries(${PROJECT_NAME}.elf
+        -Wl,--start-group
+        ${MICROROS_LIB}
+        -Wl,--end-group
+    )
+    message(STATUS "[MICROROS] linking ${MICROROS_LIB}")
+else()
+    message(WARNING "[MICROROS] libmicroros.a NOT found at ${MICROROS_LIB} -- placeholder build (no micro-ROS linked).")
+endif()
 
 # ---- 编译选项(优化 + 警告;ABI flags 来自 toolchain) ----
 target_compile_options(${PROJECT_NAME}.elf PRIVATE

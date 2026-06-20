@@ -1,9 +1,16 @@
-/* main.c — STM32F103RB 裸机骨架 (T4 / 里程碑 M0-B)
+/* main.c — STM32F103RB 固件主文件 (T5 / 里程碑 M2/M3)
  *
- * 目标:时钟树 72MHz + LED(PA5) 闪 + USART1(PA9/PA10) @921600 8N1 +
- *       DMA1 Ch5 RX circular + USART1 IDLE 中断收变长帧 + DMA1 Ch4 TX 发送,
- *       1 个 FreeRTOS task:上电发自检横幅、LED 闪、把 RX 收到的字节回显。
- *       不碰 micro-ROS(那是 T5)。
+ * 目标:时钟树 72MHz + LED(PA5) 心跳 + USART1(PA9/PA10) @921600 8N1 +
+ *       DMA1 Ch5 RX circular + USART1 IDLE 中断收变长帧 + DMA1 Ch4 TX 发送。
+ *       底层收发(DMA/IDLE/app_ring,RX bug 已修见 git 573a226)沿用 T4,不改动。
+ *
+ * 【T5 变更 2026-06-20】在 T4 物理层之上接入 micro-ROS:
+ *   - 新增 uart_ll_write_blocking / uart_ll_read(本文件,见 uart_ll.h):
+ *     transport 层(src/microros_transport.c)的 write/read 回调底座。
+ *   - 任务模型:T4 的「echo + 临时 DBG 探针」AppTask 已删除,改为
+ *       microros_app_task(src/microros_app.c):rclc 双向闭环 exo_mcu 节点;
+ *       + 一个极小 LedTask 做 liveness 心跳。
+ *   - 串口归 micro-ROS(XRCE-DDS over serial);仅上电横幅/建链失败用明文自检串。
  *
  * 【架构变更 2026-06-19】通信口从 USART2(PA2/PA3,经 ST-Link VCP)改到独立的
  *   USART1(PA9=TX/PA10=RX),外接独立 USB-TTL 适配器。原因:ST-Link VCP 与 SWD
@@ -36,6 +43,29 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
+#include "microros_app.h"   /* T5:micro-ROS 应用任务(替代 T4 的 echo AppTask) */
+#include "uart_ll.h"        /* T5:本文件实现 uart_ll_write_blocking / uart_ll_read 供 transport 用 */
+
+#include <time.h>           /* T5:clock_gettime 实现(libmicroros 的 rcutils/xrce 取时依赖) */
+
+/* ===== T5:clock_gettime —— libmicroros 取时后端 =====
+ * libmicroros 的 rcutils(time_unix.c)与 microxrcedds_client(time.c)在裸机下仍走 POSIX
+ * clock_gettime(库构建期用 -DCLOCK_MONOTONIC 让其编过,运行实现由固件提供)。
+ * 这里基于 FreeRTOS tick 提供单调时钟:精度 = 1/configTICK_RATE_HZ(ms 级),足够 XRCE
+ * 会话保活/超时与 rcl 时间戳。CLOCK_MONOTONIC/REALTIME 都返回同一单调 tick(裸机无 RTC,
+ * 不区分;micro-ROS 只需单调递增 + 合理速率)。
+ * 注:64 位运算为软件实现(不涉硬浮点);tick(32 位)×1e6 用 64 位中转不溢出。 */
+int clock_gettime(clockid_t clk_id, struct timespec *tp)
+{
+    (void)clk_id;
+    if (tp == 0) return -1;
+    TickType_t ticks = xTaskGetTickCount();
+    uint64_t ms = (uint64_t)ticks * 1000u / (uint64_t)configTICK_RATE_HZ;
+    tp->tv_sec  = (time_t)(ms / 1000u);
+    tp->tv_nsec = (long)((ms % 1000u) * 1000000u);
+    return 0;
+}
+
 /* ===== 串口缓冲(静态 .bss,128B 对齐) ===== */
 #define UART_MTU            128u
 #define RX_DMA_BUF_SIZE     (2u * UART_MTU)   /* circular 双半区 = 256B */
@@ -55,13 +85,10 @@ static volatile uint16_t app_ring_tail;   /* task 写 */
 /* DMA RX 上一次处理到的位置(在 rx_dma_buf 中),用于计算本次新到了多少字节。 */
 static volatile uint16_t rx_last_pos;
 
-/* 诊断计数:每次 IDLE 中断本次搬进 app_ring 的字节数。task 侧可选打印,
- * 方便真机复测分辨「收到 0 字节」vs「收到了但读错」。默认关闭(见 AppTask)。 */
-static volatile uint16_t rx_last_idle_count;
-
-/* 【临时调试 echo-off】记录收到的原始字节,用于判断 RX 是否正确解码(不 echo,断开 PA9 反馈)。 */
-static volatile uint8_t  rx_last_byte;
-static volatile uint32_t rx_total;
+/* 诊断计数:每次 IDLE 中断本次搬进 app_ring 的字节数。
+ * volatile + used:保留为可观测探针(调试器/将来诊断 topic 可读),不让编译器优化掉。
+ * (T4 的临时 DBG 串口打印探针 rx_last_byte/rx_total 已随 T5 删除。) */
+static volatile uint16_t rx_last_idle_count __attribute__((used));
 
 /* ===== 供 stm32f1xx_it.c 调用的 RX 处理入口 ===== */
 /* DMA RX 是 circular,当前写入位置 = RX_DMA_BUF_SIZE - CNDTR。
@@ -253,23 +280,14 @@ static void uart_tx_dma(const uint8_t *data, uint16_t len)
     DMA1_Channel4->CCR  |= DMA_CCR_EN;
 }
 
-/* 阻塞发字符串(自检横幅用)。 */
-static void uart_puts(const char *s)
+/* 阻塞发字符串(自检横幅/micro-ROS 进度自检用)。
+ * 非 static:microros_app.c 经 `extern void uart_puts(const char*)` 调用,打建链
+ * 失败等自检信息(仅在未建链阶段;建链后串口交给 XRCE,见 microros_app.c 说明)。 */
+void uart_puts(const char *s)
 {
     uint16_t n = 0;
     while (s[n]) n++;
     uart_tx_dma((const uint8_t *)s, n);
-}
-
-/* 【临时调试】打印无符号十进制(避免 printf 浮点/体积)。 */
-static void uart_put_u32(uint32_t v)
-{
-    char b[12];
-    int i = 11;
-    b[i--] = '\0';
-    if (v == 0u) { b[i--] = '0'; }
-    while (v && i >= 0) { b[i--] = (char)('0' + (v % 10u)); v /= 10u; }
-    uart_puts(&b[i + 1]);
 }
 
 /* ===== app_ring 取一个字节(task 侧消费),无数据返回 -1 ===== */
@@ -281,64 +299,86 @@ static int app_ring_get(uint8_t *out)
     return 0;
 }
 
-/* ===== 自检 + LED + 回显 task ===== */
-static void AppTask(void *arg)
+/* ===================== T5:transport 层用的 UART 收发原语 =====================
+ * 声明在 uart_ll.h;microros_transport.c 的 write/read 回调调用它们。
+ * 仍走 T4 已调通的 USART1+DMA(uart_tx_dma)与 app_ring,不重写底层。 */
+
+/* write:把 len 字节全部发出(经 TX DMA)。len 可能 > MTU(XRCE 一帧最大 128,
+ * 但稳妥起见分块),分多次 uart_tx_dma 直到发完。返回实际写出字节数。 */
+size_t uart_ll_write_blocking(const uint8_t *data, size_t len)
+{
+    size_t sent = 0;
+    while (sent < len) {
+        size_t chunk = len - sent;
+        if (chunk > TX_DMA_BUF_SIZE) chunk = TX_DMA_BUF_SIZE;
+        uart_tx_dma(data + sent, (uint16_t)chunk);   /* 内部等上一次 TX 完成,阻塞 */
+        sent += chunk;
+    }
+    /* 等最后一块 DMA 真正发完,保证返回时字节已上线(write 的阻塞语义)。 */
+    while (DMA1_Channel4->CCR & DMA_CCR_EN) { }
+    return sent;
+}
+
+/* read:从 app_ring 取最多 max 字节,带毫秒级软超时。
+ *   - 先把当前可用字节尽量取走;不足 max 且未超时,则 vTaskDelay 让出后再取。
+ *   - 取到 >=1 字节立即返回(不强求填满 max);全程无数据则等到超时返回 0。
+ * 用 FreeRTOS tick 计超时;timeout_ms<=0 表示只取当前可用、不等待。 */
+size_t uart_ll_read(uint8_t *out, size_t max, int timeout_ms)
+{
+    size_t got = 0;
+    uint8_t c;
+
+    /* 先一把取走当前可用字节。 */
+    while (got < max && app_ring_get(&c) == 0) {
+        out[got++] = c;
+    }
+    if (got > 0 || timeout_ms <= 0) {
+        return got;   /* 已有数据 / 不等待 → 立即返回(XRCE 轮询常态) */
+    }
+
+    /* 当前为空且要求等待:在 timeout_ms 内轮询(2ms 粒度,平衡延迟与 CPU)。
+     * 注:micro-ROS read 超时多在 ~1–10ms 量级,这里 2ms 粒度足够,且不占满 CPU。 */
+    TickType_t start    = xTaskGetTickCount();
+    TickType_t deadline = pdMS_TO_TICKS((uint32_t)timeout_ms);
+    while ((xTaskGetTickCount() - start) < deadline) {
+        if (app_ring_get(&c) == 0) {
+            out[got++] = c;
+            /* 抓到第一个字节后,把当前已到的也顺手取走再返回,减少回调往返。 */
+            while (got < max && app_ring_get(&c) == 0) {
+                out[got++] = c;
+            }
+            return got;
+        }
+        vTaskDelay(pdMS_TO_TICKS(2));
+    }
+    return got;   /* 超时,got==0 */
+}
+
+/* ===== LED 心跳 task(liveness 信号,独立于 micro-ROS) =====
+ * T4 的 echo + 临时 DBG 探针已删除(T5 不再回显/不再打 DBG 串,串口归 micro-ROS)。
+ * 保留一个极小的 LED 翻转任务:即使 micro-ROS 卡在建链/重连,LED 仍闪 = 调度器活着,
+ * 是裸眼可见的活性信号(与 agent 侧 -v6 日志互补)。栈极小(64 words=256B)。 */
+static void LedTask(void *arg)
 {
     (void)arg;
-
-    /* 上电自检横幅(经 USART1 DMA 发出,主 agent 用 `cat /dev/ttyUSB0` 验收)。 */
-    uart_puts("\r\n[F103-T4] boot OK: SYSCLK=72MHz USART1@921600(PA9/PA10) 8N1 DMA(RXch5/TXch4) ready\r\n");
-    uart_puts("[F103-T4] echo mode: type chars, they bounce back.\r\n");
-
-    TickType_t last_blink = xTaskGetTickCount();
-    const TickType_t blink_period = pdMS_TO_TICKS(500);
-    TickType_t last_dbg = xTaskGetTickCount();          /* 【临时调试】 */
-    const TickType_t dbg_period = pdMS_TO_TICKS(1000);  /* 【临时调试】1Hz */
-
     for (;;) {
-        /* 回显 + 记录原始字节(接好后发 0x55 应见 lastrx=85 且回显 'U')。 */
-        {
-            uint8_t batch[UART_MTU];
-            uint16_t n = 0;
-            uint8_t c;
-            while (n < UART_MTU && app_ring_get(&c) == 0) {
-                batch[n++] = c;
-                rx_last_byte = c;
-                rx_total++;
-            }
-            if (n > 0) {
-                uart_tx_dma(batch, n);
-            }
-        }
-
-        /* LED 闪(PA5 翻转),500ms。 */
-        if ((xTaskGetTickCount() - last_blink) >= blink_period) {
-            GPIOA->ODR ^= (1u << 5);
-            last_blink = xTaskGetTickCount();
-        }
-
-        /* 【临时调试】1Hz 打印 RX 内部状态:看发字节时这些计数器动不动,
-         * 区分「MCU 没收到」(cndtr 不变/h 不动) vs「收到但回显坏」(h 动了)。 */
-        if ((xTaskGetTickCount() - last_dbg) >= dbg_period) {
-            uart_puts("DBG cndtr="); uart_put_u32(DMA1_Channel5->CNDTR);
-            uart_puts(" idle=");     uart_put_u32(rx_last_idle_count);
-            uart_puts(" h=");        uart_put_u32(app_ring_head);
-            uart_puts(" t=");        uart_put_u32(app_ring_tail);
-            uart_puts(" pa10=");     uart_put_u32((GPIOA->IDR >> 10) & 1u); /* 【临时】RX 线电平,空闲应=1 */
-            uart_puts(" total=");    uart_put_u32(rx_total);                /* 【临时】累计收到字节数 */
-            uart_puts(" lastrx=");   uart_put_u32(rx_last_byte);            /* 【临时】最后收到的字节值(85=0x55 则解码对) */
-            uart_puts("\r\n");
-            last_dbg = xTaskGetTickCount();
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(5));   /* 让出 CPU,~200Hz 轮询足够 echo */
+        GPIOA->ODR ^= (1u << 5);          /* PA5 翻转 */
+        vTaskDelay(pdMS_TO_TICKS(500));   /* 1Hz 闪烁(亮灭各 500ms) */
     }
 }
 
-/* ===== 静态 task 资源(configSUPPORT_STATIC_ALLOCATION=1) ===== */
-#define APP_TASK_STACK_WORDS  256u   /* 256 words = 1KB,T4 够用 */
-static StaticTask_t app_task_tcb;
-static StackType_t  app_task_stack[APP_TASK_STACK_WORDS];
+/* ===== 静态 task 资源(configSUPPORT_STATIC_ALLOCATION=1) =====
+ * micro-ROS 任务栈:rcl→rmw→xrce 调用链较深,05 文档 T8 建议起测 ~2500 words,
+ *   烧板后用 uxTaskGetStackHighWaterMark 收敛到「HWM_min + ≥128 words 余量」。
+ *   先取 2560 words(=10KB)起测——这是 20KB RAM 里最大的单块,T8 会量化并回收余量。
+ * LED 任务栈:64 words(=256B),只翻 GPIO + delay,够用。 */
+#define MICROROS_TASK_STACK_WORDS  2560u   /* 起测值,T8 收敛;= 10KB */
+#define LED_TASK_STACK_WORDS       64u     /* = 256B */
+
+static StaticTask_t microros_task_tcb;
+static StackType_t  microros_task_stack[MICROROS_TASK_STACK_WORDS];
+static StaticTask_t led_task_tcb;
+static StackType_t  led_task_stack[LED_TASK_STACK_WORDS];
 
 int main(void)
 {
@@ -351,8 +391,15 @@ int main(void)
     app_ring_head = 0;
     app_ring_tail = 0;
 
-    xTaskCreateStatic(AppTask, "app", APP_TASK_STACK_WORDS, NULL,
-                      2 /*prio*/, app_task_stack, &app_task_tcb);
+    /* 【T5 注意】USART1 = micro-ROS XRCE 串口,**禁止任何明文输出**(banner/DBG 都会
+     * 污染 XRCE 帧流,agent 无法建链)。固件存活靠 LED 心跳(LedTask)观察,不靠串口文本。
+     * 原 boot banner 已移除(2026-06-20:实测 banner 文本混进 XRCE 流导致 agent 收不到 session)。 */
+
+    /* micro-ROS 应用任务(优先级 2);LED 心跳任务(优先级 1,更低,绝不抢 micro-ROS)。 */
+    xTaskCreateStatic(microros_app_task, "uros", MICROROS_TASK_STACK_WORDS, NULL,
+                      2 /*prio*/, microros_task_stack, &microros_task_tcb);
+    xTaskCreateStatic(LedTask, "led", LED_TASK_STACK_WORDS, NULL,
+                      1 /*prio*/, led_task_stack, &led_task_tcb);
 
     vTaskStartScheduler();
 
