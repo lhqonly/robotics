@@ -3,6 +3,9 @@ ros2_ws/build/
 ros2_ws/install/
 ros2_ws/log/
 
+# --- 固件构建产物（CMake/ninja 输出，绝不进库；ThirdParty vendor 源码进库） ---
+firmware/f103-microros/build/
+
 # --- 主 agent 实跑 / 验证日志（本地产物） ---
 /log/
 
