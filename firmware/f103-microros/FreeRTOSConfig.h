@@ -47,7 +47,7 @@ extern uint32_t SystemCoreClock;
 /* 内存分配:静态优先;dynamic 兜底,heap 给小且明确上界。 */
 #define configSUPPORT_STATIC_ALLOCATION         1
 #define configSUPPORT_DYNAMIC_ALLOCATION        1
-#define configTOTAL_HEAP_SIZE                   ( ( size_t ) ( 2 * 1024 ) )   /* 2KB 上界,从小往上调 */
+#define configTOTAL_HEAP_SIZE                   ( ( size_t ) ( 512 ) )   /* 【RAM 优化 2026-06-20】FreeRTOS heap 几乎没人用(全静态 task、micro-ROS 走 newlib malloc),2KB→512B 回收 .bss 给 newlib heap;留 512B 兜底(若 UXR_LOCK 用 FreeRTOS 信号量) */
 #define configAPPLICATION_ALLOCATED_HEAP        0
 
 /* 钩子 */

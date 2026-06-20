@@ -372,7 +372,9 @@ static void LedTask(void *arg)
  *   烧板后用 uxTaskGetStackHighWaterMark 收敛到「HWM_min + ≥128 words 余量」。
  *   先取 2560 words(=10KB)起测——这是 20KB RAM 里最大的单块,T8 会量化并回收余量。
  * LED 任务栈:64 words(=256B),只翻 GPIO + delay,够用。 */
-#define MICROROS_TASK_STACK_WORDS  2560u   /* 起测值,T8 收敛;= 10KB */
+#define MICROROS_TASK_STACK_WORDS  1536u   /* 【RAM 优化 2026-06-20】10KB→6KB。10KB 是 Tom 起测保守值,
+                                            * 实测建 session 前栈才用几十 words;砍到 6KB 腾 4KB 给 newlib heap
+                                            * (rcl/rmw 用 newlib malloc,原本被 10KB 栈挤到只剩 ~544B 必崩)。 */
 #define LED_TASK_STACK_WORDS       64u     /* = 256B */
 
 static StaticTask_t microros_task_tcb;
