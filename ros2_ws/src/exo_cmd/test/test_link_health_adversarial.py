@@ -25,6 +25,8 @@ Focus, per the G2-收尾 / Phase A adversarial brief:
 Every test asserts reconciles() so a silent-drop regression cannot slip by.
 """
 
+import threading
+
 from exo_cmd.link_health import (forward_distance, LinkHealthTracker,
                                  SEQ_MODULUS)
 import pytest
@@ -624,3 +626,93 @@ def test_reconciliation_holds_under_long_mixed_sequence():
     c = t.counters()
     assert c['sent'] == c['matched'] + c['lost'] + c['inflight']
     assert isinstance(c['sent'], int)
+
+
+# ==========================================================================
+# Group 6 -- thread safety (Gill: tracker must be safe under a multi-threaded
+# executor; the RLock serializes the public entry points).
+# ==========================================================================
+
+def test_concurrent_on_send_loses_no_increments():
+    """
+    Concurrent on_send from many threads must not lose any send.
+
+    Each thread calls on_send N times. Without the lock, the read-modify-write
+    of sent_count/_next_seq/_inflight races and drops increments (sent_count <
+    threads*N, or two threads grab the same seq and overwrite the dict). With
+    the lock, sent_count == threads*N exactly, every seq is distinct (inflight
+    == threads*N), and the identity holds.
+    """
+    t = LinkHealthTracker()
+    threads_n, per = 8, 500
+    barrier = threading.Barrier(threads_n)
+
+    def worker():
+        barrier.wait()                     # maximise contention
+        for _ in range(per):
+            t.on_send(now=0.0)
+
+    ths = [threading.Thread(target=worker) for _ in range(threads_n)]
+    for th in ths:
+        th.start()
+    for th in ths:
+        th.join()
+    assert t.sent_count == threads_n * per
+    assert t.inflight == threads_n * per   # every seq distinct, none overwritten
+    assert t.lost_count == 0
+    assert t.reconciles()
+
+
+def test_concurrent_mixed_send_echo_sweep_keeps_identity():
+    """
+    Concurrent send / echo / sweep must never break the reconcile identity.
+
+    Producers send and immediately echo their own seq; a sweeper runs in
+    parallel. The identity sent == matched + lost + inflight must hold at the
+    end, no exception may escape (no dict-mutated-during-iteration etc.), and
+    sent_count must equal the total number of sends issued.
+    """
+    t = LinkHealthTracker(rtt_warn_ms=20.0, rtt_deadline_ms=50.0)
+    threads_n, per = 6, 400
+    # parties = producers + sweeper + main (main releases everyone together).
+    barrier = threading.Barrier(threads_n + 2)
+    sent_box = [0] * threads_n
+    errors = []
+    stop = threading.Event()
+
+    def producer(idx):
+        try:
+            barrier.wait()
+            local = 0
+            for k in range(per):
+                seq, _ = t.on_send(now=k * 1e-3)
+                local += 1
+                t.on_echo(seq, now=k * 1e-3)   # echo our own send
+            sent_box[idx] = local
+        except Exception as exc:               # noqa: BLE001 - record for assert
+            errors.append(exc)
+
+    def sweeper():
+        try:
+            barrier.wait()
+            while not stop.is_set():
+                t.sweep_deadlines(now=1e9)     # force-expire anything in flight
+        except Exception as exc:               # noqa: BLE001
+            errors.append(exc)
+
+    ths = [threading.Thread(target=producer, args=(i,))
+           for i in range(threads_n)]
+    sw = threading.Thread(target=sweeper)
+    for th in ths:
+        th.start()
+    sw.start()
+    barrier.wait()                             # release everyone together
+    for th in ths:
+        th.join(timeout=20)
+    stop.set()
+    sw.join(timeout=20)
+    assert not any(th.is_alive() for th in ths) and not sw.is_alive(), \
+        'a thread did not finish (deadlock?)'
+    assert errors == [], 'thread raised: %r' % errors
+    assert t.sent_count == sum(sent_box) == threads_n * per
+    assert t.reconciles()

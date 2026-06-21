@@ -38,6 +38,7 @@ edge.
 
 from collections import deque
 from dataclasses import dataclass, field
+import threading
 from typing import Deque, Dict, List, Optional
 
 # §7.6: heartbeat counter is a non-negative Int32 that wraps mod 2^31.
@@ -137,6 +138,16 @@ class LinkHealthTracker:
     # O(1) membership index. Both are kept in lockstep.
     _settled: set = field(default_factory=set)
     _settled_order: Deque[int] = field(default_factory=deque)
+    # Serializes the public mutating/reading entry points so a multi-threaded
+    # rclpy executor (sub callback on one thread, sweep/summary timers on others)
+    # cannot interleave a counter update with a snapshot or corrupt _inflight /
+    # _settled. REENTRANT so a locked reader (counters()) can call another locked
+    # reader (inflight) without deadlock. Single-threaded callers pay a tiny
+    # uncontended-lock cost. (Gill: tracker was not thread-safe; safe only under
+    # a single-threaded executor until now.) compare/repr excluded: a lock is not
+    # part of the value identity.
+    _lock: threading.RLock = field(
+        default_factory=threading.RLock, compare=False, repr=False)
 
     def __post_init__(self):
         if not (self.rtt_warn_ms < self.rtt_deadline_ms):
@@ -171,18 +182,20 @@ class LinkHealthTracker:
     @property
     def inflight(self) -> int:
         """Return the current number of in-flight (sent, not-yet-settled) entries."""
-        return len(self._inflight)
+        with self._lock:
+            return len(self._inflight)
 
     def counters(self) -> dict:
         """Snapshot of the counters; for diagnostics / A8 observability."""
-        return {
-            'sent': self.sent_count,
-            'matched': self.matched_count,
-            'lost': self.lost_count,
-            'duplicate': self.duplicate_count,
-            'stale_duplicate': self.stale_duplicate_count,
-            'inflight': self.inflight,
-        }
+        with self._lock:
+            return {
+                'sent': self.sent_count,
+                'matched': self.matched_count,
+                'lost': self.lost_count,
+                'duplicate': self.duplicate_count,
+                'stale_duplicate': self.stale_duplicate_count,
+                'inflight': len(self._inflight),
+            }
 
     def reconciles(self) -> bool:
         """
@@ -192,8 +205,9 @@ class LinkHealthTracker:
         value through the sent->{matched,lost} lifecycle (the value was already
         settled), it only increments duplicate_count.
         """
-        return self.sent_count == (
-            self.matched_count + self.lost_count + self.inflight)
+        with self._lock:
+            return self.sent_count == (
+                self.matched_count + self.lost_count + len(self._inflight))
 
     # ----- send path ---------------------------------------------------------
     def on_send(self, now: float):
@@ -207,34 +221,38 @@ class LinkHealthTracker:
             non-empty only when a memory cap forced an in-flight entry to be
             SETTLED AS LOST (§7.4 / M4) -- never a silent drop.
         """
-        events: List[Event] = []
-        seq = self._next_seq
-        self._next_seq = (self._next_seq + 1) % SEQ_MODULUS
+        with self._lock:
+            events: List[Event] = []
+            seq = self._next_seq
+            self._next_seq = (self._next_seq + 1) % SEQ_MODULUS
 
-        deadline = now + self.rtt_deadline_ms / 1000.0
-        # Pathological wrap: this seq value is reused while a 2^31-old entry is
-        # somehow still in flight. Settle the stale one as LOST so the dict key
-        # is never silently overwritten and the identity stays intact.
-        if seq in self._inflight:
-            stale_events: List[Event] = []
-            self._settle_lost(self._inflight[seq], now, kind='evict_lost',
-                              level='WARN', reason='seq wrap collision',
-                              out=stale_events)
-            events.extend(stale_events)
-        self._inflight[seq] = _InflightEntry(seq=seq, t_send=now,
-                                             deadline=deadline)
-        self._unmark_settled(seq)  # in case this seq value was reused (wrap)
-        self.sent_count += 1
+            deadline = now + self.rtt_deadline_ms / 1000.0
+            # Pathological wrap: this seq value is reused while a 2^31-old entry
+            # is somehow still in flight. Settle the stale one as LOST so the
+            # dict key is never silently overwritten and the identity stays
+            # intact.
+            if seq in self._inflight:
+                stale_events: List[Event] = []
+                self._settle_lost(self._inflight[seq], now, kind='evict_lost',
+                                  level='WARN', reason='seq wrap collision',
+                                  out=stale_events)
+                events.extend(stale_events)
+            self._inflight[seq] = _InflightEntry(seq=seq, t_send=now,
+                                                 deadline=deadline)
+            self._unmark_settled(seq)  # in case this seq value was reused (wrap)
+            self.sent_count += 1
 
-        # §7.4: enforce a memory cap WITHOUT a silent drop -- the evicted entry
-        # is settled as LOST and a warning is emitted.
-        if self.max_inflight is not None:
-            while len(self._inflight) > self.max_inflight:
-                oldest = min(self._inflight.values(), key=lambda e: e.deadline)
-                self._settle_lost(oldest, now, kind='evict_lost', level='WARN',
-                                  reason='in-flight cap %d exceeded'
-                                  % self.max_inflight, out=events)
-        return seq, events
+            # §7.4: enforce a memory cap WITHOUT a silent drop -- the evicted
+            # entry is settled as LOST and a warning is emitted.
+            if self.max_inflight is not None:
+                while len(self._inflight) > self.max_inflight:
+                    oldest = min(self._inflight.values(),
+                                 key=lambda e: e.deadline)
+                    self._settle_lost(oldest, now, kind='evict_lost',
+                                      level='WARN',
+                                      reason='in-flight cap %d exceeded'
+                                      % self.max_inflight, out=events)
+            return seq, events
 
     # ----- receive path ------------------------------------------------------
     def on_echo(self, seq: int, now: float) -> List[Event]:
@@ -250,6 +268,11 @@ class LinkHealthTracker:
           - unmatched (a value we have NEVER sent, INCLUDING any echo outside the
             [0,2^31) send domain -- a real error, §7.5/A6)
         """
+        with self._lock:
+            return self._on_echo_locked(seq, now)
+
+    def _on_echo_locked(self, seq: int, now: float) -> List[Event]:
+        """Lock-held body of on_echo (caller must hold self._lock)."""
         events: List[Event] = []
         # Domain guard (Gill review, High): the sender only ever emits seq in
         # [0, 2^31). A negative or >= 2^31 echo cannot have come from us -> it
@@ -349,14 +372,16 @@ class LinkHealthTracker:
         the ONLY capacity-management path besides matched echo -- there is no
         silent eviction (§7.4/M4 / P1-1).
         """
-        events: List[Event] = []
-        # Collect first to avoid mutating during iteration.
-        expired = [e for e in self._inflight.values() if now >= e.deadline]
-        for entry in expired:
-            self._settle_lost(entry, now, kind='lost', level='ERROR',
-                              reason='deadline %.1f ms exceeded'
-                              % self.rtt_deadline_ms, out=events)
-        return events
+        with self._lock:
+            events: List[Event] = []
+            # Collect first to avoid mutating during iteration.
+            expired = [e for e in self._inflight.values()
+                       if now >= e.deadline]
+            for entry in expired:
+                self._settle_lost(entry, now, kind='lost', level='ERROR',
+                                  reason='deadline %.1f ms exceeded'
+                                  % self.rtt_deadline_ms, out=events)
+            return events
 
     # ----- internal ----------------------------------------------------------
     def _settle_lost(self, entry: _InflightEntry, now: float, kind: str,
