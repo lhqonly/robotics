@@ -52,18 +52,25 @@ class ExoCmdNode(Node):
         self.declare_parameter('sweep_period_s', 0.05)
         # Period of the periodic counter/reconciliation summary log (A8). 0 off.
         self.declare_parameter('summary_period_s', 1.0)
+        # How many most-recently-settled seqs to remember before a re-echo is
+        # labelled stale_duplicate instead of plain duplicate (§7.5; tunable per
+        # Gill's note that it should track deadline*rate*margin). Default matches
+        # the tracker's own default; lower it to exercise the stale path.
+        self.declare_parameter('settled_window', 4096)
 
         rtt_warn_ms = self.get_parameter('rtt_warn_ms').value
         rtt_deadline_ms = self.get_parameter('rtt_deadline_ms').value
         max_inflight = self.get_parameter('max_inflight').value or None
         sweep_period_s = self.get_parameter('sweep_period_s').value
         summary_period_s = self.get_parameter('summary_period_s').value
+        settled_window = self.get_parameter('settled_window').value
 
         try:
             self._tracker = LinkHealthTracker(
                 rtt_warn_ms=rtt_warn_ms,
                 rtt_deadline_ms=rtt_deadline_ms,
                 max_inflight=max_inflight,
+                settled_window=settled_window,
             )
         except ValueError as exc:
             # §7.2 constraint rtt_warn_ms < rtt_deadline_ms violated: fail loud.
@@ -85,8 +92,9 @@ class ExoCmdNode(Node):
             % (TOPIC_HEARTBEAT, 1.0 / HEARTBEAT_PERIOD_S, TOPIC_STATUS))
         self.get_logger().info(
             'link-health: rtt_warn_ms=%.1f rtt_deadline_ms=%.1f '
-            'max_inflight=%s sweep_period_s=%.3f'
-            % (rtt_warn_ms, rtt_deadline_ms, max_inflight, sweep_period_s))
+            'max_inflight=%s sweep_period_s=%.3f settled_window=%d'
+            % (rtt_warn_ms, rtt_deadline_ms, max_inflight, sweep_period_s,
+               settled_window))
         # Print the LOCAL applied QoS as ground-truth evidence (the CLI shows
         # History/Depth as UNKNOWN for remote endpoints by DDS design).
         self.get_logger().info(
