@@ -18,9 +18,9 @@ Focus, per the G2-收尾 / Phase A adversarial brief:
   * §7.5/P1-2 duplicate/retransmit: an already-settled value re-echoed must be
     duplicate, never UNMATCHED/wrong-value;
   * param validation rtt_warn_ms < rtt_deadline_ms (equal / reversed rejected);
-  * settled_window boundary: a retransmit older than the remembered window is
-    (per contract) treated UNMATCHED -- pinned here so the behaviour is a
-    DOCUMENTED, intentional choice rather than a silent surprise.
+  * settled_window boundary + Gill finding #1: a retransmit of an EVER-SENT
+    value older than the remembered window is a STALE_DUPLICATE (benign), never
+    a false UNMATCHED; only a NEVER-SENT value is UNMATCHED.
 
 Every test asserts reconciles() so a silent-drop regression cannot slip by.
 """
@@ -347,7 +347,7 @@ def test_negative_or_zero_max_inflight_disables_cap():
 
 
 # ==========================================================================
-# Group 5 -- settled_window boundary (DOCUMENTED behaviour pin).
+# Group 5 -- settled_window boundary + Gill finding #1 (stale-retransmit).
 # ==========================================================================
 
 def test_retransmit_within_window_is_duplicate():
@@ -363,34 +363,215 @@ def test_retransmit_within_window_is_duplicate():
     assert t.reconciles()
 
 
-def test_retransmit_older_than_window_becomes_unmatched_DOCUMENTED():
+def test_retransmit_older_than_window_is_stale_duplicate_not_unmatched():
     """
-    ADVERSARIAL FINDING (documented, not a hard failure).
+    An ever-sent value evicted from settled_window is stale_duplicate not error.
 
-    settled_window bounds how far back a retransmit is still recognised as a
-    duplicate. A RELIABLE retransmit for a value that was settled but has since
-    been evicted from the settled window is reported UNMATCHED (a WARN that the
-    node surfaces as a real error), NOT duplicate.
-
-    The contract §7.5 explicitly allows: 'a value ... already outside a
-    reasonable window ... is UNMATCHED'. So this is permitted. BUT the default
-    window is 4096; under a sustained backlog + heavy RELIABLE retransmission,
-    a genuinely-late retransmit could trip a false UNMATCHED WARN. This test
-    PINS the behaviour so any future change is deliberate; see Gill's report
-    for the recommendation (raise/justify the default, or distinguish
-    'stale-retransmit' from 'never-sent').
+    Gill finding #1 fix: an EVER-SENT value evicted from settled_window, when
+    re-echoed (RELIABLE retransmit), is a STALE_DUPLICATE -- NOT a false
+    UNMATCHED.
+    settled_window only bounds how far back a retransmit is labelled the plain
+    'duplicate'. Beyond it, a value we DID send is still benign (contract §7.5:
+    "曾经发出过的值不算错误") and must be tagged stale_duplicate, never the
+    error-level UNMATCHED. This prevents the false UNMATCHED WARN that a
+    sustained backlog + heavy RELIABLE retransmission (esp. F103 Depth=1) would
+    otherwise trip. (Was previously PINNED as UNMATCHED; that behaviour is now
+    fixed.)
     """
     t = LinkHealthTracker(settled_window=2)
     s = [t.on_send(now=0.0)[0] for _ in range(3)]   # 0,1,2
     for x in s:
         t.on_echo(x, now=0.010)            # match all; window=2 evicts seq 0
     assert 0 not in t._settled             # evicted from the settled window
-    e = t.on_echo(s[0], now=0.020)         # retransmit of evicted seq 0
-    # Current shipping behaviour: reported UNMATCHED, NOT duplicate.
+    e = t.on_echo(s[0], now=0.020)         # retransmit of evicted-but-sent seq 0
+    # Fixed behaviour: stale_duplicate, NOT unmatched.
+    assert 'stale_duplicate' in kinds(e)
+    assert 'unmatched' not in kinds(e)
+    assert t.stale_duplicate_count == 1    # its OWN counter, not duplicate_count
+    assert t.duplicate_count == 0          # plain-duplicate counter untouched
+    assert t.matched_count == 3            # the original 3 matches stand
+    # Identity still holds (a stale duplicate touches no lifecycle counter).
+    assert t.reconciles()
+
+
+def test_never_sent_value_is_still_unmatched_after_fix():
+    """
+    The stale-retransmit fix must NOT swallow a genuinely never-sent value.
+
+    A value AHEAD of the next-to-send counter (or otherwise never emitted) is
+    still a real UNMATCHED error -- proves _ever_sent() discriminates rather
+    than blanket-suppressing UNMATCHED. (Contract §7.5/A6.)
+    """
+    t = LinkHealthTracker(settled_window=2)
+    s = [t.on_send(now=0.0)[0] for _ in range(3)]   # sent 0,1,2; _next_seq == 3
+    for x in s:
+        t.on_echo(x, now=0.010)
+    # A value the board could never have echoed from us: far ahead of _next_seq.
+    e = t.on_echo(1_000_000, now=0.020)
     assert 'unmatched' in kinds(e)
+    assert 'stale_duplicate' not in kinds(e)
     assert 'duplicate' not in kinds(e)
     assert t.duplicate_count == 0
-    # Identity still holds (an unmatched echo touches no lifecycle counter).
+    assert t.reconciles()
+
+
+def test_stale_duplicate_holds_across_full_wrap():
+    """
+    After a full 2^31 wrap every value is ever-sent, so a re-echo is stale.
+
+    After a full 2^31 wrap, every value has been sent -> a re-echo of any old
+    value beyond the window is stale_duplicate, never unmatched. Forces
+    _next_seq just past a wrap so sent_count >= the wrap space, then re-echoes a
+    value that is provably ever-sent but long gone from the window.
+    """
+    t = LinkHealthTracker(settled_window=2)
+    # Cheaply drive _next_seq and sent_count across the wrap boundary without
+    # 2^31 real sends: the tracker exposes _next_seq/sent_count as plain ints.
+    t._next_seq = 5
+    t.sent_count = SEQ_MODULUS + 10        # well past a full wrap (synthetic)
+    # seq 0 is 5 steps behind _next_seq=5 -> within reach -> ever-sent.
+    e = t.on_echo(0, now=0.0)
+    assert 'stale_duplicate' in kinds(e)
+    assert 'unmatched' not in kinds(e)
+    # NB: reconciles() is intentionally not asserted -- sent_count was poked
+    # synthetically without matching lifecycle transitions, so the identity is
+    # meaningless here; this test isolates the _ever_sent() wrap reach only.
+
+
+@pytest.mark.parametrize('bad', [-2147483648, -1, SEQ_MODULUS, 2 ** 31,
+                                 2 ** 31 + 50])
+def test_out_of_domain_echo_is_unmatched_not_swallowed(bad):
+    """
+    Gill review (High): a negative / >=2^31 echo is UNMATCHED, never swallowed.
+
+    The sender only emits seq in [0, 2^31). A board fault / corrupt frame /
+    injection echoing an out-of-domain Int32 must NOT be modulo-aliased into the
+    ever-sent band and silently dropped as stale_duplicate -- it was never sent,
+    so it is a genuine UNMATCHED error (§7.5/A6). Under-reporting a real error is
+    worse than over-warning.
+    """
+    t = LinkHealthTracker(settled_window=4)
+    t.on_send(now=0.0)                      # only seq 0 ever sent
+    t.on_echo(0, now=0.005)                 # settle it
+    e = t.on_echo(bad, now=0.010)
+    assert 'unmatched' in kinds(e)
+    assert 'stale_duplicate' not in kinds(e)
+    assert t.stale_duplicate_count == 0
+    assert t.reconciles()
+
+
+def test_stale_duplicate_then_continued_lifecycle_is_clean():
+    """
+    A stale_duplicate must not poison in-flight tracking of later sends.
+
+    After an evicted seq comes back as stale_duplicate, a fresh send/sweep/match
+    cycle must proceed normally and the reconciliation identity must hold at
+    every step (the stale echo touched no lifecycle counter).
+    """
+    t = LinkHealthTracker(settled_window=2, rtt_deadline_ms=100.0)
+    s = [t.on_send(now=0.0)[0] for _ in range(3)]   # 0,1,2 ; evicts 0 on match
+    for x in s:
+        t.on_echo(x, now=0.010)
+    t.on_echo(s[0], now=0.020)             # stale_duplicate of evicted 0
+    assert t.reconciles()
+    s3, _ = t.on_send(now=0.030)           # fresh send continues normally
+    assert t.inflight == 1
+    e = t.on_echo(s3, now=0.040)
+    assert 'matched' in kinds(e)
+    assert t.matched_count == 4
+    assert t.stale_duplicate_count == 1
+    assert t.reconciles()
+
+
+def test_stale_and_unmatched_interleaved_do_not_crosstalk():
+    """
+    Stale_duplicate and real UNMATCHED interleaved keep separate accounting.
+
+    A stale (ever-sent, evicted) echo must never launder a never-sent value, and
+    a never-sent value must never be miscounted as a stale duplicate.
+    """
+    t = LinkHealthTracker(settled_window=2)
+    s = [t.on_send(now=0.0)[0] for _ in range(3)]   # 0,1,2 ; _next_seq == 3
+    for x in s:
+        t.on_echo(x, now=0.010)            # evicts 0 from window=2
+    unmatched = 0
+    stale = 0
+    for k in range(3):
+        e1 = t.on_echo(s[0], now=0.020 + k)         # ever-sent evicted -> stale
+        e2 = t.on_echo(50_000 + k, now=0.021 + k)   # never sent (ahead) -> unmatched
+        stale += kinds(e1).count('stale_duplicate')
+        unmatched += kinds(e2).count('unmatched')
+        assert 'unmatched' not in kinds(e1)
+        assert 'stale_duplicate' not in kinds(e2)
+    assert stale == 3
+    assert unmatched == 3
+    assert t.stale_duplicate_count == 3
+    assert t.reconciles()
+
+
+def test_lost_then_stale_retransmit_beyond_window():
+    """
+    A retransmit of a LOST value, after it aged out of the window, is stale.
+
+    Compound case: a value settles LOST, is pushed out of settled_window by
+    later sends, then arrives as a very-late RELIABLE retransmit. It must be
+    stale_duplicate -- never a false UNMATCHED, never a second LOST -- and
+    lost_count must not move.
+    """
+    t = LinkHealthTracker(settled_window=2, rtt_deadline_ms=100.0)
+    s0, _ = t.on_send(now=0.0)
+    t.sweep_deadlines(now=0.100)           # s0 settles LOST
+    assert t.lost_count == 1
+    # push s0 out of the 2-deep settled window with two more settled sends
+    for _ in range(2):
+        sx, _ = t.on_send(now=0.110)
+        t.on_echo(sx, now=0.115)
+    assert s0 not in t._settled
+    e = t.on_echo(s0, now=0.200)           # very-late retransmit of the LOST one
+    assert 'stale_duplicate' in kinds(e)
+    assert 'unmatched' not in kinds(e)
+    assert t.lost_count == 1               # NOT re-lost
+    assert t.stale_duplicate_count == 1
+    assert t.reconciles()
+
+
+@pytest.mark.xfail(reason='d==0 post-full-wrap: seq==_next_seq reads as '
+                          'never-sent -> false UNMATCHED. ~6.8yr @10Hz, and a '
+                          'false-positive (not a miss), so deferred. Pinned so '
+                          'a future fix is deliberate.', strict=True)
+def test_post_wrap_seq_equals_next_should_be_stale_not_unmatched():
+    """
+    KNOWN EDGE (xfail): seq==_next_seq after a full wrap is wrongly UNMATCHED.
+
+    After 2^31 sends the value equal to _next_seq WAS sent one wrap ago, so a
+    re-echo should be stale_duplicate; today _ever_sent() returns False for
+    distance 0 and it is reported UNMATCHED. Documents the boundary; flips to
+    pass if/when the d==0 wrap case is handled.
+    """
+    t = LinkHealthTracker(settled_window=2)
+    t._next_seq = 5
+    t.sent_count = SEQ_MODULUS + 10        # past a full wrap (synthetic)
+    e = t.on_echo(5, now=0.0)              # == _next_seq
+    assert 'stale_duplicate' in kinds(e)
+
+
+def test_board_replays_old_in_band_value_is_stale_duplicate_DECISION():
+    """
+    DESIGN DECISION pin: an ever-sent in-band old value replayed is stale, benign.
+
+    Per the post-fix semantics (contract §7.5, pending owner adjudication of the
+    line 146/148 ambiguity), a value the board echoes that we DID send long ago
+    -- even far outside settled_window -- is treated stale_duplicate, not
+    UNMATCHED. This pins that deliberate choice so any reversal is conscious.
+    """
+    t = LinkHealthTracker(settled_window=8)
+    seqs = [t.on_send(now=0.0)[0] for _ in range(1000)]
+    for x in seqs:
+        t.on_echo(x, now=0.001)            # match all; window keeps only last 8
+    assert 50 not in t._settled
+    e = t.on_echo(50, now=0.002)           # ever-sent, long evicted
+    assert 'stale_duplicate' in kinds(e)
+    assert 'unmatched' not in kinds(e)
     assert t.reconciles()
 
 

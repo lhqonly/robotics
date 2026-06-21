@@ -19,8 +19,13 @@ Design contract (see docs/01-ros2-microros-serial/01-接口契约.md §7):
              => the reconciliation identity always holds:
                 sent == matched + lost + inflight
   * §7.5/M5  first echo of N -> matched; a later echo of an already-settled N ->
-             duplicate_count += 1, DUPLICATE event (NOT unmatched). Only a value
-             that was NEVER sent is UNMATCHED.
+             duplicate_count += 1, DUPLICATE event (NOT unmatched). A retransmit
+             of an EVER-SENT value whose settled record already aged out of
+             settled_window -> stale_duplicate_count += 1, STALE_DUPLICATE event
+             (still NOT unmatched, per "曾经发出过的值不算错误"; Gill finding #1) --
+             a SEPARATE counter so its rate stays a visible link-quality signal.
+             Only a value that was NEVER sent -- including any echo outside the
+             [0,2^31) send domain -- is UNMATCHED.
   * §7.6/P1-3 send counter wraps mod 2^31; ordering uses wrap-safe distance
              (forward_distance), never a bare `>`; in-flight pairing is exact
              equality. Health counters are Python ints (unbounded, >= 64-bit).
@@ -57,9 +62,10 @@ class Event:
     """
     A structured, level-tagged thing the caller should surface.
 
-    kind is one of: 'matched', 'warn_rtt', 'lost', 'duplicate', 'unmatched',
-    'evict_lost'. level is a hint ('DEBUG'/'INFO'/'WARN'/'ERROR') matching the
-    severity the contract asks for; the caller maps it to its logger.
+    kind is one of: 'matched', 'warn_rtt', 'lost', 'duplicate',
+    'stale_duplicate', 'unmatched', 'evict_lost'. level is a hint
+    ('DEBUG'/'INFO'/'WARN'/'ERROR') matching the severity the contract asks
+    for; the caller maps it to its logger.
     """
 
     kind: str
@@ -103,16 +109,24 @@ class LinkHealthTracker:
     max_inflight: Optional[int] = None
     # How many most-recently-settled seq values to remember, so a duplicate
     # echo (RELIABLE retransmit, §7.5) is recognised as a DUPLICATE rather than
-    # an UNMATCHED error. Bounds memory and gives the contract's "outside a
-    # reasonable window" semantics: an echo older than this window is treated
-    # as UNMATCHED. Defaults to a generous multiple of the deadline*rate.
+    # an UNMATCHED error. Bounds memory. An echo for an EVER-SENT value older
+    # than this window is NOT unmatched -- it is a STALE_DUPLICATE (Gill finding
+    # #1): only a NEVER-SENT value is UNMATCHED. The window therefore only
+    # decides duplicate vs stale_duplicate labelling, never duplicate-vs-error.
+    # Defaults to a generous multiple of the deadline*rate.
     settled_window: int = 4096
 
-    # ----- the five reconciliation counters (Python int, unbounded) ----------
+    # ----- the reconciliation counters (Python int, unbounded) ---------------
     sent_count: int = 0
     matched_count: int = 0
     lost_count: int = 0
     duplicate_count: int = 0
+    # In-window duplicate (above) vs. ever-sent retransmit that already aged out
+    # of settled_window are counted SEPARATELY (Gill review): a rising
+    # stale_duplicate rate is a distinct link-quality signal -- it means
+    # settled_window is undersized / the link is backlogged, NOT ordinary DDS
+    # retransmit. Folding them together would mute that signal.
+    stale_duplicate_count: int = 0
 
     # ----- internal state ----------------------------------------------------
     _next_seq: int = 0
@@ -160,12 +174,13 @@ class LinkHealthTracker:
         return len(self._inflight)
 
     def counters(self) -> dict:
-        """Snapshot of the 5 counters; for diagnostics / A8 observability."""
+        """Snapshot of the counters; for diagnostics / A8 observability."""
         return {
             'sent': self.sent_count,
             'matched': self.matched_count,
             'lost': self.lost_count,
             'duplicate': self.duplicate_count,
+            'stale_duplicate': self.stale_duplicate_count,
             'inflight': self.inflight,
         }
 
@@ -229,9 +244,25 @@ class LinkHealthTracker:
         Returns the structured events to surface. Exactly one of:
           - matched  (+ optional warn_rtt if RTT over the soft threshold)
           - duplicate (already-settled value seen again -- RELIABLE retransmit)
-          - unmatched (a value we have never sent -- a real error, §7.5/A6)
+          - stale_duplicate (ever-sent value re-echoed but aged out of the
+            settled window -- still a benign retransmit, NOT an error; §7.5,
+            Gill finding #1; counted in stale_duplicate_count)
+          - unmatched (a value we have NEVER sent, INCLUDING any echo outside the
+            [0,2^31) send domain -- a real error, §7.5/A6)
         """
         events: List[Event] = []
+        # Domain guard (Gill review, High): the sender only ever emits seq in
+        # [0, 2^31). A negative or >= 2^31 echo cannot have come from us -> it
+        # was NEVER sent (board fault / corrupt frame / injection). Classify it
+        # UNMATCHED here, BEFORE _ever_sent() could modulo-alias an out-of-domain
+        # value into the ever-sent band and silently swallow it as a stale
+        # duplicate. Under-reporting a real UNMATCHED is worse than over-warning.
+        if not (0 <= seq < SEQ_MODULUS):
+            events.append(Event(
+                kind='unmatched', level='WARN', seq=seq,
+                msg='UNMATCHED echo seq=%d: outside [0,2^31) -- never sent '
+                    '(board fault / corrupt frame)' % seq))
+            return events
         entry = self._inflight.get(seq)
         if entry is not None:
             # First echo of an in-flight value -> matched (§7.1/M1).
@@ -262,12 +293,51 @@ class LinkHealthTracker:
                     'duplicate_count=%d)' % (seq, self.duplicate_count)))
             return events
 
-        # §7.5/A6: a value we have never sent -> genuine UNMATCHED error.
+        # Not in the remembered settled window. Distinguish a value we DID send
+        # but whose settled record already aged out of settled_window (a stale
+        # RELIABLE retransmit -- benign, contract §7.5 "曾经发出过的值不算错误")
+        # from a value we have genuinely NEVER sent (a real UNMATCHED error).
+        # This is Gill finding #1: without this split, a late retransmit under a
+        # sustained backlog (esp. F103 Depth=1) trips a FALSE UNMATCHED WARN.
+        if self._ever_sent(seq):
+            # Ever-sent but beyond settled_window. NOT part of the reconcile
+            # identity (the value already settled), and counted in its OWN
+            # counter (Gill review) so an elevated rate stays a visible
+            # link-quality signal -- a high stale_duplicate rate means
+            # settled_window is undersized / the link is backlogged, NOT a board
+            # fault. INFO (not DEBUG) so a single occurrence is not muted.
+            self.stale_duplicate_count += 1
+            events.append(Event(
+                kind='stale_duplicate', level='INFO', seq=seq,
+                msg='stale duplicate echo seq=%d: ever-sent but beyond '
+                    'settled_window=%d (RELIABLE retransmit, not an error; '
+                    'stale_duplicate_count=%d)'
+                    % (seq, self.settled_window, self.stale_duplicate_count)))
+            return events
+
+        # §7.5/A6: a value we have NEVER sent -> genuine UNMATCHED error.
         events.append(Event(
             kind='unmatched', level='WARN', seq=seq,
             msg='UNMATCHED echo seq=%d: never sent (loss/reorder/wrong value)'
                 % seq))
         return events
+
+    def _ever_sent(self, seq: int) -> bool:
+        """
+        Return whether `seq` was ever put on the wire (wrap-safe).
+
+        Sent values occupy the band [1 .. reach] steps BEHIND the next-to-send
+        value ``_next_seq`` -- ``forward_distance(seq, _next_seq)`` counts steps
+        from ``seq`` forward to ``_next_seq``. Distance 0 means ``seq`` IS the
+        next, not-yet-sent value; distance > reach means ``seq`` is a value we
+        have not reached yet (ahead of us) -> never sent. ``reach`` is how many
+        distinct values we have ever emitted, capped at the wrap-space size
+        (after a full 2^31 wrap every value has been sent at least once).
+        """
+        d = forward_distance(seq, self._next_seq)
+        if d == 0:
+            return False
+        return d <= min(self.sent_count, SEQ_MODULUS - 1)
 
     # ----- deadline sweep ----------------------------------------------------
     def sweep_deadlines(self, now: float) -> List[Event]:

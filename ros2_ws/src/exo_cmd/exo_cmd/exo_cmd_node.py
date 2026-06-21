@@ -138,9 +138,9 @@ class ExoCmdNode(Node):
         # (would indicate a silent-drop bug -- must never happen).
         c = self._tracker.counters()
         line = ('link-health summary: sent=%d matched=%d lost=%d '
-                'duplicate=%d inflight=%d' % (c['sent'], c['matched'],
-                                              c['lost'], c['duplicate'],
-                                              c['inflight']))
+                'duplicate=%d inflight=%d stale_duplicate=%d'
+                % (c['sent'], c['matched'], c['lost'], c['duplicate'],
+                   c['inflight'], c['stale_duplicate']))
         if self._tracker.reconciles():
             self.get_logger().info(line)
         else:
