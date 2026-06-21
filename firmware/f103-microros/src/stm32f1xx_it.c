@@ -17,6 +17,26 @@
 /* 在 main.c 中定义:把 DMA RX 缓冲里的新字节搬进应用环形缓冲。 */
 extern void rx_dma_collect(void);
 
+/* ===== HardFault 处理 —— 永久保留(取代 CMSIS 弱默认死循环) =====
+ * CMSIS startup 的 HardFault_Handler 是弱默认 = 死循环,会把任何总线/用法故障伪装成
+ * "静默 hang",无从分辨(本次建链 hang 的真相就是被它掩盖的 HardFault)。这里覆盖它:
+ * 直接轮询 USART1 DR 打一条 fault 标记(fault 上下文也能跑,不依赖 DMA/中断),再停住。
+ * 看到 "!!HARDFAULT!!" = 真故障(野指针/越界),而非普通死循环。 */
+static void dbg_fault_puts(const char *m)
+{
+    while (*m) {
+        while (!(USART1->SR & USART_SR_TXE)) { }
+        USART1->DR = (uint8_t)(*m++);
+    }
+    while (!(USART1->SR & USART_SR_TC)) { }   /* 等最后一字节真正发完 */
+}
+
+void HardFault_Handler(void)
+{
+    dbg_fault_puts("\r\n!!HARDFAULT!!\r\n");
+    for (;;) { }
+}
+
 void USART1_IRQHandler(void)
 {
     uint32_t sr = USART1->SR;   /* 先快照 SR(读 SR 是 F1 清 IDLE/ORE 序列的第一步) */

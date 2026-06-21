@@ -43,6 +43,35 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
+#include <errno.h>
+#include <stddef.h>
+
+/* ===== 有界 _sbrk(覆盖 nosys 的无界版本)—— 永久保留的健壮性改进 =====
+ * nosys.specs 的 _sbrk 不做任何边界检查:newlib heap 从 `end` 一路上涨,耗尽时越过 RAM 顶
+ * (_estack)写非法地址 → HardFault。这里改成有界:超过 [end, _estack-RESERVE] 即返回 -1,
+ * 让 newlib malloc 得到 NULL → rcl 干净失败而不是踩飞。
+ * RESERVE 给 MSP/ISR 栈留余量(调度器启动后 MSP 仅 ISR 用)。 */
+extern char end;        /* 链接脚本:.bss 之后 = newlib heap 起点 */
+extern char _estack;    /* 链接脚本:RAM 顶(MSP 初值) */
+#define NEWLIB_HEAP_MSP_RESERVE  512u
+
+void *_sbrk(ptrdiff_t incr)
+{
+    static char *heap_end = 0;
+    char *prev;
+    char *limit = (char *)&_estack - NEWLIB_HEAP_MSP_RESERVE;
+    if (heap_end == 0) {
+        heap_end = &end;
+    }
+    if (heap_end + incr > limit) {
+        errno = ENOMEM;
+        return (void *)-1;   /* 超界:malloc 得 NULL,rcl 据此干净失败 */
+    }
+    prev = heap_end;
+    heap_end += incr;
+    return (void *)prev;
+}
+
 #include "microros_app.h"   /* T5:micro-ROS 应用任务(替代 T4 的 echo AppTask) */
 #include "uart_ll.h"        /* T5:本文件实现 uart_ll_write_blocking / uart_ll_read 供 transport 用 */
 
@@ -372,9 +401,10 @@ static void LedTask(void *arg)
  *   烧板后用 uxTaskGetStackHighWaterMark 收敛到「HWM_min + ≥128 words 余量」。
  *   先取 2560 words(=10KB)起测——这是 20KB RAM 里最大的单块,T8 会量化并回收余量。
  * LED 任务栈:64 words(=256B),只翻 GPIO + delay,够用。 */
-#define MICROROS_TASK_STACK_WORDS  1536u   /* 【RAM 优化 2026-06-20】10KB→6KB。10KB 是 Tom 起测保守值,
-                                            * 实测建 session 前栈才用几十 words;砍到 6KB 腾 4KB 给 newlib heap
-                                            * (rcl/rmw 用 newlib malloc,原本被 10KB 栈挤到只剩 ~544B 必崩)。 */
+#define MICROROS_TASK_STACK_WORDS  1536u   /* 6KB。gdb 实测 rcl_init+create_session 全程栈最深仅用 ~235 words
+                                            * (HWM 余 1813/2048),6KB 余量充足;留更多 RAM 给 newlib heap。
+                                            * (注:建链 hang 与栈无关,真因是 best_effort 流配置见 colcon.meta;
+                                            *  此前 10KB→6KB 的栈调整是误判方向,栈从来不是瓶颈。) */
 #define LED_TASK_STACK_WORDS       64u     /* = 256B */
 
 static StaticTask_t microros_task_tcb;
