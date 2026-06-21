@@ -36,6 +36,8 @@ M4 收尾  .map 量 RAM/Flash + uxTaskGetStackHighWaterMark 栈水位 → 最终
 | **M3 ★** T5b | 双向回环 | WSL `exo_cmd` 配对成功、值回环一致(§2)；监控无异常驱逐 | sub 路径单独验，先确认 cmd 到 MCU |
 | M4 | RAM/Flash/栈水位实测 | `.map` RAM<20KB 有裕度；HWM_min ≥ 安全余量；N 分钟无 hardfault | 见 C 降级预案 |
 
+> **✅ M1/M2/M3/M4 全部达成 = GO（2026-06-21，commit fdfbfba + 主 agent 真机量化+对账）**：session established×1、6 实体各建一次稳定不重连；权威 LinkHealthTracker 对账 **40s sent=388/matched=387 + 10min endurance sent=6009/matched=6008、lost=0/duplicate=0/零 UNMATCHED、对账恒等全程成立、真实 create_client=1（10min 零重连零 fault）**。**RAM 14840B/20KB=72.5%、Flash 59.1%、动态分配实测=0（heap_end/sbrk_start/ucHeap 全零，纯静态池）、uros 栈峰值 285w/1536w**。R1（20KB 装不下）风险**已彻底出清**，T7 真机 bidi/endurance 亦已等价通过。详见 `00-项目状态与交接.md` 对应章节。
+
 ### A.3 「今天」时间盒（诚实版）
 - T3 + T4 并行，各约 1–3h（T4 裸机骨架是今天最大纯手工活）。
 - **M1 起 session 是今天首要目标**——M1 绿，"20KB 能跑 micro-ROS"基本证实，今天就赢了大半。
