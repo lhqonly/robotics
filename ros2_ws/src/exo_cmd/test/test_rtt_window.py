@@ -127,3 +127,53 @@ def test_rtt_window_not_fed_by_lost_or_duplicate():
     assert r['rtt_max_ms'] == pytest.approx(10.0)
     assert t.lost_count == 1
     assert t.duplicate_count == 1
+
+
+# --------------------------------------------------------------------------
+# Gill High-1: snapshot() is a single-lock, coherent view whose fields are
+# byte-identical to the separate counters() / rtt_stats() / reconciles() reads
+# (so the diagnostic topic cannot publish a torn snapshot under concurrency).
+# --------------------------------------------------------------------------
+def test_snapshot_matches_separate_reads():
+    """snapshot() flattens counters + rtt_stats + reconciles with identical values."""
+    t = LinkHealthTracker(rtt_deadline_ms=100.0, rtt_warn_ms=50.0)
+    # Drive a mixed state: 2 matched (10/20 ms), 1 duplicate, 1 lost, 1 inflight.
+    s0, _ = t.on_send(now=0.0)
+    s1, _ = t.on_send(now=0.0)
+    s_lost, _ = t.on_send(now=0.0)
+    t.on_send(now=0.5)               # stays in-flight (deadline not reached)
+    t.on_echo(s0, now=0.010)         # matched 10 ms
+    t.on_echo(s1, now=0.020)         # matched 20 ms
+    t.on_echo(s0, now=0.030)         # duplicate
+    t.sweep_deadlines(now=0.100)     # s_lost settles LOST (s @0.5 not yet due)
+
+    c = t.counters()
+    r = t.rtt_stats()
+    rec = t.reconciles()
+    s = t.snapshot()
+
+    # Every counter field matches counters().
+    for k in ('sent', 'matched', 'lost', 'duplicate', 'stale_duplicate',
+              'inflight'):
+        assert s[k] == c[k], k
+    # Every RTT field matches rtt_stats().
+    for k in ('rtt_last_ms', 'rtt_p95_ms', 'rtt_max_ms'):
+        assert s[k] == r[k], k
+    # Reconcile flag matches reconciles().
+    assert s['reconciles'] == rec
+    # Sanity on the driven state: identity must hold (1 inflight remains).
+    assert s['sent'] == 4 and s['matched'] == 2 and s['lost'] == 1
+    assert s['duplicate'] == 1 and s['inflight'] == 1
+    assert s['reconciles'] is True
+
+
+def test_snapshot_empty_window_placeholder():
+    """A fresh tracker's snapshot gives zero counters + RTT placeholders."""
+    t = LinkHealthTracker()
+    s = t.snapshot()
+    assert s['sent'] == 0 and s['matched'] == 0 and s['lost'] == 0
+    assert s['inflight'] == 0
+    assert s['rtt_last_ms'] == RTT_EMPTY_PLACEHOLDER
+    assert s['rtt_p95_ms'] == RTT_EMPTY_PLACEHOLDER
+    assert s['rtt_max_ms'] == RTT_EMPTY_PLACEHOLDER
+    assert s['reconciles'] is True   # 0 == 0+0+0

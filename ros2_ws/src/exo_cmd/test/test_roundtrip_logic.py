@@ -1,3 +1,7 @@
+# Copyright 2026 Tom
+#
+# Licensed under the MIT License.
+
 """
 Logic-layer tests for the v1.1 link-health monitor (contract §7, A1-A7).
 

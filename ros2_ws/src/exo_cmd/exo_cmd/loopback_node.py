@@ -143,11 +143,21 @@ class LoopbackNode(Node):
             self._publish_echo(seq, payload)
 
     def _schedule_delayed_echo(self, seq: int, payload: int) -> None:
-        # One-shot timer fires once after delay_ms, echoes, then self-cancels.
+        # One-shot timer fires once after delay_ms, echoes, then tears itself
+        # down. Medium-1 (Gill review): cancel() alone only stops the timer
+        # from re-firing -- the Timer object STAYS registered in the Node's
+        # timer set, so under inject_delay_ms>0 the executor scans an
+        # ever-growing list (~10 leaked timers/s at 10 Hz) and each spin wave
+        # degrades. destroy_timer() actually removes it from the Node so the
+        # set stays bounded. We also discard it from _pending (the GC anchor).
         delay_s = self._delay_ms / 1000.0
 
         def _fire():
+            # cancel() first so it cannot re-enter, then destroy_timer() to
+            # unregister it from the Node (avoids the leak). discard() drops our
+            # GC anchor. Each is idempotent / guarded so a double call is safe.
             timer.cancel()
+            self.destroy_timer(timer)
             self._pending.discard(timer)
             self._publish_echo(seq, payload)
 

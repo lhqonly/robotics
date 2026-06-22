@@ -236,14 +236,18 @@ class LinkHealthTracker:
     def counters(self) -> dict:
         """Snapshot of the counters; for diagnostics / A8 observability."""
         with self._lock:
-            return {
-                'sent': self.sent_count,
-                'matched': self.matched_count,
-                'lost': self.lost_count,
-                'duplicate': self.duplicate_count,
-                'stale_duplicate': self.stale_duplicate_count,
-                'inflight': len(self._inflight),
-            }
+            return self._counters_locked()
+
+    def _counters_locked(self) -> dict:
+        """Lock-held body of counters() (caller must hold self._lock)."""
+        return {
+            'sent': self.sent_count,
+            'matched': self.matched_count,
+            'lost': self.lost_count,
+            'duplicate': self.duplicate_count,
+            'stale_duplicate': self.stale_duplicate_count,
+            'inflight': len(self._inflight),
+        }
 
     def rtt_stats(self) -> dict:
         """
@@ -265,23 +269,27 @@ class LinkHealthTracker:
         interpolation, no numpy dependency.
         """
         with self._lock:
-            if not self._rtt_window:
-                return {
-                    'rtt_last_ms': RTT_EMPTY_PLACEHOLDER,
-                    'rtt_p95_ms': RTT_EMPTY_PLACEHOLDER,
-                    'rtt_max_ms': RTT_EMPTY_PLACEHOLDER,
-                }
-            ordered = sorted(self._rtt_window)
-            n = len(ordered)
-            # Nearest-rank p95: 1-indexed ceil(0.95*n), clamped into range.
-            rank = max(1, min(n, math.ceil(0.95 * n)))
-            last = self._rtt_last
+            return self._rtt_stats_locked()
+
+    def _rtt_stats_locked(self) -> dict:
+        """Lock-held body of rtt_stats() (caller must hold self._lock)."""
+        if not self._rtt_window:
             return {
-                'rtt_last_ms': (RTT_EMPTY_PLACEHOLDER if last is None
-                                else last),
-                'rtt_p95_ms': ordered[rank - 1],
-                'rtt_max_ms': ordered[-1],
+                'rtt_last_ms': RTT_EMPTY_PLACEHOLDER,
+                'rtt_p95_ms': RTT_EMPTY_PLACEHOLDER,
+                'rtt_max_ms': RTT_EMPTY_PLACEHOLDER,
             }
+        ordered = sorted(self._rtt_window)
+        n = len(ordered)
+        # Nearest-rank p95: 1-indexed ceil(0.95*n), clamped into range.
+        rank = max(1, min(n, math.ceil(0.95 * n)))
+        last = self._rtt_last
+        return {
+            'rtt_last_ms': (RTT_EMPTY_PLACEHOLDER if last is None
+                            else last),
+            'rtt_p95_ms': ordered[rank - 1],
+            'rtt_max_ms': ordered[-1],
+        }
 
     def reconciles(self) -> bool:
         """
@@ -292,8 +300,51 @@ class LinkHealthTracker:
         settled), it only increments duplicate_count.
         """
         with self._lock:
-            return self.sent_count == (
-                self.matched_count + self.lost_count + len(self._inflight))
+            return self._reconciles_locked()
+
+    def _reconciles_locked(self) -> bool:
+        """Lock-held body of reconciles() (caller must hold self._lock)."""
+        return self.sent_count == (
+            self.matched_count + self.lost_count + len(self._inflight))
+
+    def snapshot(self) -> dict:
+        """
+        Return a coherent atomic snapshot read under ONE lock (High-1 / Gill).
+
+        Counters + RTT stats + reconcile flag are read under a single lock
+        acquisition.
+
+        Why: /exo/link_health is the only outward-observable window onto the
+        safety-critical link. If the node read counters(), rtt_stats() and
+        reconciles() in three separate lock acquisitions, an rx echo callback
+        (running concurrently under the MultiThreadedExecutor) could mutate the
+        tracker BETWEEN those reads, so a single published LinkHealth message
+        could carry fields from different instants -- a self-contradictory
+        snapshot that would mask loss (e.g. matched bumped after sent was read).
+        Taking everything inside one `with self._lock` makes the message a
+        torn-free, single-instant view.
+
+        The returned dict flattens the three sub-dicts so the node packs the
+        LinkHealth message from one object. Field names/semantics are IDENTICAL
+        to counters() / rtt_stats() / reconciles() (contract §7.7), so callers
+        and tests need no remapping. Internal *_locked helpers are reused so
+        there is exactly one definition of each computation.
+        """
+        with self._lock:
+            c = self._counters_locked()
+            r = self._rtt_stats_locked()
+            return {
+                'sent': c['sent'],
+                'matched': c['matched'],
+                'lost': c['lost'],
+                'duplicate': c['duplicate'],
+                'stale_duplicate': c['stale_duplicate'],
+                'inflight': c['inflight'],
+                'rtt_last_ms': r['rtt_last_ms'],
+                'rtt_p95_ms': r['rtt_p95_ms'],
+                'rtt_max_ms': r['rtt_max_ms'],
+                'reconciles': self._reconciles_locked(),
+            }
 
     # ----- send path ---------------------------------------------------------
     def on_send(self, now: float):

@@ -261,13 +261,16 @@ class ExoCmdNode(Node):
 
     def _on_summary(self):
         # A8: periodic reconciliation snapshot. Loud if the identity breaks
-        # (would indicate a silent-drop bug -- must never happen).
-        c = self._tracker.counters()
+        # (would indicate a silent-drop bug -- must never happen). One atomic
+        # snapshot() (High-1): counters + reconcile flag must come from the SAME
+        # instant, or a concurrent rx echo could make the logged line self-
+        # contradictory (e.g. reconciles=True printed against stale counters).
+        s = self._tracker.snapshot()
         line = ('link-health summary: sent=%d matched=%d lost=%d '
                 'duplicate=%d inflight=%d stale_duplicate=%d'
-                % (c['sent'], c['matched'], c['lost'], c['duplicate'],
-                   c['inflight'], c['stale_duplicate']))
-        if self._tracker.reconciles():
+                % (s['sent'], s['matched'], s['lost'], s['duplicate'],
+                   s['inflight'], s['stale_duplicate']))
+        if s['reconciles']:
             self.get_logger().info(line)
         else:
             self.get_logger().error(
@@ -277,20 +280,27 @@ class ExoCmdNode(Node):
         # §7.7: publish the structured counters + rolling RTT stats + reconcile
         # flag. The std_msgs/Header.stamp is wall-clock (diagnostic / bag time
         # axis only -- NEVER the RTT path, which is monotonic per §7.1).
-        c = self._tracker.counters()
-        r = self._tracker.rtt_stats()
+        #
+        # ONE atomic snapshot() (High-1 / Gill review): this topic is the only
+        # outward window onto the safety-critical link. Reading counters /
+        # rtt_stats / reconciles in three separate lock acquisitions let a
+        # concurrent rx echo (MultiThreadedExecutor) mutate the tracker between
+        # them, so a single LinkHealth msg could carry fields from different
+        # instants -- a torn snapshot that masks loss. snapshot() reads them all
+        # under one lock.
+        s = self._tracker.snapshot()
         msg = LinkHealth()
         msg.header.stamp = self.get_clock().now().to_msg()
-        msg.sent = c['sent']
-        msg.matched = c['matched']
-        msg.lost = c['lost']
-        msg.duplicate = c['duplicate']
-        msg.stale_duplicate = c['stale_duplicate']
-        msg.inflight = c['inflight']
-        msg.rtt_last_ms = r['rtt_last_ms']
-        msg.rtt_p95_ms = r['rtt_p95_ms']
-        msg.rtt_max_ms = r['rtt_max_ms']
-        msg.reconciles = self._tracker.reconciles()
+        msg.sent = s['sent']
+        msg.matched = s['matched']
+        msg.lost = s['lost']
+        msg.duplicate = s['duplicate']
+        msg.stale_duplicate = s['stale_duplicate']
+        msg.inflight = s['inflight']
+        msg.rtt_last_ms = s['rtt_last_ms']
+        msg.rtt_p95_ms = s['rtt_p95_ms']
+        msg.rtt_max_ms = s['rtt_max_ms']
+        msg.reconciles = s['reconciles']
         self._health_pub.publish(msg)
 
 
