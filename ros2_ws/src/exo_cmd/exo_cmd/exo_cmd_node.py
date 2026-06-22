@@ -22,11 +22,14 @@ This node makes no assumption about WHO sends mcu_status: in Phase A it is the
 local loopback_node, in Phase B it is the STM32 micro-ROS firmware.
 """
 
+import random
 import time
 
 from exo_cmd.link_health import LinkHealthTracker
 from exo_cmd.qos import EXO_QOS, qos_summary
 import rclpy
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
+from rclpy.executors import ExternalShutdownException, MultiThreadedExecutor
 from rclpy.node import Node
 from std_msgs.msg import Int32
 
@@ -57,6 +60,14 @@ class ExoCmdNode(Node):
         # Gill's note that it should track deadline*rate*margin). Default matches
         # the tracker's own default; lower it to exercise the stale path.
         self.declare_parameter('settled_window', 4096)
+        # Number of executor threads (task ⑤). 0 = let MultiThreadedExecutor
+        # pick (os.cpu_count()). main() reads self.executor_threads.
+        self.declare_parameter('executor_threads', 0)
+        # First heartbeat value (task ③ / §7.6 run nonce). >=0 -> use it as the
+        # first value; -1 -> draw a random 31-bit nonce so the echoed values
+        # prove THIS run's causality (a board replaying an old 0.. sequence
+        # cannot impersonate this run). Default 0 keeps Phase-A determinism.
+        self.declare_parameter('start_value', 0)
 
         rtt_warn_ms = self.get_parameter('rtt_warn_ms').value
         rtt_deadline_ms = self.get_parameter('rtt_deadline_ms').value
@@ -64,6 +75,22 @@ class ExoCmdNode(Node):
         sweep_period_s = self.get_parameter('sweep_period_s').value
         summary_period_s = self.get_parameter('summary_period_s').value
         settled_window = self.get_parameter('settled_window').value
+        self.executor_threads = self.get_parameter('executor_threads').value
+        start_value = self.get_parameter('start_value').value
+
+        # §7.6 run nonce: -1 -> random 31-bit nonce; >=0 -> literal start; any
+        # other negative is illegal (turning -1 into a real nonce is the node's
+        # job, the tracker only accepts a legal [0, 2^31) start).
+        if start_value == -1:
+            start_seq = random.randrange(2 ** 31)
+        elif start_value >= 0:
+            start_seq = start_value
+        else:
+            self.get_logger().fatal(
+                'invalid start_value %d: must be >=0 (literal) or -1 (nonce)'
+                % start_value)
+            raise ValueError('start_value must be >=0 or -1, got %d'
+                             % start_value)
 
         try:
             self._tracker = LinkHealthTracker(
@@ -71,21 +98,35 @@ class ExoCmdNode(Node):
                 rtt_deadline_ms=rtt_deadline_ms,
                 max_inflight=max_inflight,
                 settled_window=settled_window,
+                start_seq=start_seq,
             )
         except ValueError as exc:
             # §7.2 constraint rtt_warn_ms < rtt_deadline_ms violated: fail loud.
             self.get_logger().fatal('invalid link-health params: %s' % exc)
             raise
 
+        # Callback groups (task ⑤): rx (echo subscription) gets its OWN group so
+        # on_status -- which timestamps the safety-critical RTT -- can run
+        # CONCURRENTLY with the timers and is NEVER queued behind them under the
+        # MultiThreadedExecutor. The three timers share one mutually-exclusive
+        # group so they stay serialized w.r.t. each other, preserving the
+        # single-threaded-timer semantics the tracker was validated under.
+        self._rx_group = MutuallyExclusiveCallbackGroup()    # echo subscription
+        self._timer_group = MutuallyExclusiveCallbackGroup()  # the three timers
+
         self._pub = self.create_publisher(Int32, TOPIC_HEARTBEAT, EXO_QOS)
         self._sub = self.create_subscription(
-            Int32, TOPIC_STATUS, self._on_status, EXO_QOS)
-        self._timer = self.create_timer(HEARTBEAT_PERIOD_S, self._on_timer)
+            Int32, TOPIC_STATUS, self._on_status, EXO_QOS,
+            callback_group=self._rx_group)
+        self._timer = self.create_timer(
+            HEARTBEAT_PERIOD_S, self._on_timer,
+            callback_group=self._timer_group)
         self._sweep_timer = self.create_timer(
-            sweep_period_s, self._on_sweep)
+            sweep_period_s, self._on_sweep, callback_group=self._timer_group)
         if summary_period_s and summary_period_s > 0:
             self._summary_timer = self.create_timer(
-                summary_period_s, self._on_summary)
+                summary_period_s, self._on_summary,
+                callback_group=self._timer_group)
 
         self.get_logger().info(
             'exo_cmd up: pub %s @ %.0f Hz, sub %s'
@@ -95,6 +136,14 @@ class ExoCmdNode(Node):
             'max_inflight=%s sweep_period_s=%.3f settled_window=%d'
             % (rtt_warn_ms, rtt_deadline_ms, max_inflight, sweep_period_s,
                settled_window))
+        self.get_logger().info(
+            'executor_threads=%d (0 = auto / os.cpu_count())'
+            % self.executor_threads)
+        # Surface the resolved nonce prominently (§7.6): the echoed values that
+        # come back equal to this prove THIS run's causality.
+        self.get_logger().info(
+            'heartbeat start_seq=%d (run nonce; echoed values prove THIS '
+            "run's causality)" % start_seq)
         # Print the LOCAL applied QoS as ground-truth evidence (the CLI shows
         # History/Depth as UNKNOWN for remote endpoints by DDS design).
         self.get_logger().info(
@@ -159,9 +208,16 @@ class ExoCmdNode(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = ExoCmdNode()
+    # task ⑤: run under a MultiThreadedExecutor so the rx group (echo / RTT
+    # timestamping) can execute concurrently with the timer group. 0 -> None
+    # lets the executor pick os.cpu_count(). Catching ExternalShutdownException
+    # also gives a clean exit on SIGTERM (systemd stop) -- no traceback.
+    threads = node.executor_threads or None
+    executor = MultiThreadedExecutor(num_threads=threads)
+    executor.add_node(node)
     try:
-        rclpy.spin(node)
-    except KeyboardInterrupt:
+        executor.spin()
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         node.destroy_node()

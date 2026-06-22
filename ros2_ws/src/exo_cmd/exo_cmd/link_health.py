@@ -116,6 +116,12 @@ class LinkHealthTracker:
     # decides duplicate vs stale_duplicate labelling, never duplicate-vs-error.
     # Defaults to a generous multiple of the deadline*rate.
     settled_window: int = 4096
+    # Initial value of the send counter (§7.6, wraps mod 2^31). Lets each run
+    # start at a random 31-bit nonce so the echoed values prove THIS run's
+    # causality; default 0 keeps Phase-A determinism. Turning the -1 sentinel
+    # into a real nonce is the NODE's job; the tracker only accepts a legal
+    # [0, 2^31) start.
+    start_seq: int = 0
 
     # ----- the reconciliation counters (Python int, unbounded) ---------------
     sent_count: int = 0
@@ -158,6 +164,13 @@ class LinkHealthTracker:
             self.max_inflight = None
         if self.settled_window < 1:
             self.settled_window = 1
+        if self.start_seq < 0:
+            raise ValueError(
+                'start_seq (%s) must be in [0, 2^31)' % self.start_seq)
+        self._next_seq = self.start_seq % SEQ_MODULUS
+        # A non-zero origin stays correct: _ever_sent / forward_distance work off
+        # forward_distance(seq, _next_seq) and sent_count, both relative to the
+        # moving _next_seq -- they never depend on the absolute origin being 0.
 
     def _mark_settled(self, seq: int) -> None:
         """Record seq as settled, evicting the oldest beyond settled_window."""

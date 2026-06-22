@@ -281,7 +281,10 @@ phase_bidi() {
   local run="${SECS:-30}"
   local deadline_s=0.2   # rtt_deadline_ms default = 200ms
   # Drive the link with the real exo_cmd_node (10 Hz heartbeat + link health).
-  setsid ros2 run exo_cmd exo_cmd_node > "$CMD_LOG" 2>&1 &
+  # start_value:=-1 -> a random 31-bit run nonce, so the board's echoed first
+  # heartbeat proves THIS run's causality (replaying an old 0.. sequence fails).
+  setsid ros2 run exo_cmd exo_cmd_node --ros-args -p start_value:=-1 \
+      > "$CMD_LOG" 2>&1 &
   CMD_PGID=$!
   echo "exo_cmd_node started pgid=$CMD_PGID -> $CMD_LOG"
   # WARMUP: exo_cmd_node publishes at 10 Hz the instant it starts, but its
@@ -428,10 +431,23 @@ phase_bidi() {
   fi
   # 7) causality cross-check from the independent echo capture
   echo "  echo-capture lines: $(grep -c 'data:' "$ECHO_LOG" 2>/dev/null || echo 0) (independent ground-truth of mcu_status values)"
-  echo "  --- WSL nonce limitation: exo_cmd_node always starts the counter at 0."
-  echo "      A board that REPLAYS an old 0.. sequence (or autonomously counts from 0)"
-  echo "      could alias a fresh run. RECOMMEND Tom add a 'start_value' param so each"
-  echo "      run uses a random 31-bit nonce -> echoed values prove THIS run's causality."
+  # 8) run-nonce causality (implemented: start_value:=-1 nonce). Parse the nonce
+  #    exo_cmd_node logged, then require the independent echo capture to contain
+  #    it -- the board's first echoed heartbeat. A board replaying an old 0..
+  #    sequence (or autonomously counting from 0) will NOT echo our random nonce.
+  #    No nonce parsed (older firmware log / no start_seq line) -> WARN, not FAIL.
+  local nonce
+  nonce=$(sed -nE 's/.*start_seq=([0-9]+).*/\1/p' "$CMD_LOG" | head -1)
+  if [ -z "$nonce" ]; then
+    red "  WARN nonce: no 'start_seq=' line in $CMD_LOG -- cannot run the causality"
+    red "       cross-check (old build?). Skipping (not a FAIL)."
+  elif grep -qE "data: *${nonce}\b" "$ECHO_LOG" 2>/dev/null; then
+    grn "  OK nonce: echo capture contains run nonce $nonce -> board echoed THIS run"
+  else
+    red "  FAIL nonce: run nonce $nonce NOT in echo capture -> board did NOT echo our"
+    red "        nonce (replaying an old 0.. sequence? autonomous counter? not echoing?)."
+    ok=1
+  fi
   return $ok
 }
 
