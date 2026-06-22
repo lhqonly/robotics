@@ -193,7 +193,9 @@ class LinkHealthTracker:
             self.max_inflight = None
         if self.settled_window < 1:
             self.settled_window = 1
-        if self.start_seq < 0:
+        if not (0 <= self.start_seq < SEQ_MODULUS):
+            # Upper bound guarded too (Gill L1): a >=2^32 start would silently
+            # alias through the % below, undermining the run-nonce auditability.
             raise ValueError(
                 'start_seq (%s) must be in [0, 2^32)' % self.start_seq)
         if self.rtt_window < 1:
@@ -449,7 +451,11 @@ class LinkHealthTracker:
         """
         d = forward_distance(seq, self._next_seq)
         if d == 0:
-            return False
+            # d==0 means seq IS _next_seq (the not-yet-sent value) -- UNLESS we
+            # have already cycled a full 2^32, in which case this exact value
+            # was put on the wire exactly one wrap ago and IS ever-sent (a stale
+            # duplicate, not a never-sent UNMATCHED). Gill M1.
+            return self.sent_count >= SEQ_MODULUS
         return d <= min(self.sent_count, SEQ_MODULUS - 1)
 
     # ----- deadline sweep ----------------------------------------------------

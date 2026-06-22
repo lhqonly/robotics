@@ -537,18 +537,14 @@ def test_lost_then_stale_retransmit_beyond_window():
     assert t.reconciles()
 
 
-@pytest.mark.xfail(reason='d==0 post-full-wrap: seq==_next_seq reads as '
-                          'never-sent -> false UNMATCHED. ~6.8yr @10Hz, and a '
-                          'false-positive (not a miss), so deferred. Pinned so '
-                          'a future fix is deliberate.', strict=True)
 def test_post_wrap_seq_equals_next_should_be_stale_not_unmatched():
     """
-    KNOWN EDGE (xfail): seq==_next_seq after a full wrap is wrongly UNMATCHED.
+    Post-full-wrap d==0: seq==_next_seq is stale_duplicate, not UNMATCHED.
 
-    After 2^32 sends the value equal to _next_seq WAS sent one wrap ago, so a
-    re-echo should be stale_duplicate; today _ever_sent() returns False for
-    distance 0 and it is reported UNMATCHED. Documents the boundary; flips to
-    pass if/when the d==0 wrap case is handled.
+    After 2^32 sends (~13.6yr @10Hz) the value equal to _next_seq WAS put on the
+    wire exactly one wrap ago, so a re-echo is a benign stale_duplicate.
+    _ever_sent() handles distance 0 by checking sent_count >= 2^32 (Gill M1 fix);
+    before the fix this was a deferred xfail that wrongly reported UNMATCHED.
     """
     t = LinkHealthTracker(settled_window=2)
     t._next_seq = 5
