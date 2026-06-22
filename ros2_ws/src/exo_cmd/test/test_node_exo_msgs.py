@@ -1,0 +1,172 @@
+# Copyright 2026 Tom
+#
+# Licensed under the MIT License.
+
+"""
+Node-level integration tests for the exo_msgs M-A migration (contract v1.7).
+
+These construct the real ExoCmdNode (rclpy) and feed it real exo_msgs/ExoStatus
+messages, exercising the adapter paths the rclpy-free tracker tests cannot:
+
+  * payload / seq DECOUPLING -- the tracker pairs on header.seq only; payload may
+    be any value (including != seq, negative, extremes) without affecting
+    matched / duplicate / unmatched (contract §7.5, core exo_msgs improvement);
+  * CRC dual-path (§7.9) -- crc_enabled=True: a bad header.crc bumps
+    crc_mismatch_count + WARNs but does NOT block (seq still fed); crc_enabled=
+    False: a bad crc is not even checked (counter untouched);
+  * LinkHealth publish (§7.7) -- _on_link_health builds a LinkHealth whose fields
+    match the tracker snapshot (counters + RTT stats + reconciles).
+
+rclpy is initialised once per module; each test builds and destroys its own node
+so parameter overrides are isolated. No agent / DDS round trip is needed -- we
+call the node's callbacks directly with constructed messages.
+"""
+
+import contextlib
+
+from exo_cmd.crc import compute_crc
+from exo_cmd.exo_cmd_node import ExoCmdNode
+from exo_msgs.msg import ExoStatus
+import pytest
+import rclpy
+from rclpy.parameter import Parameter
+
+
+@pytest.fixture(scope='module', autouse=True)
+def _rclpy_session():
+    rclpy.init()
+    yield
+    rclpy.shutdown()
+
+
+@contextlib.contextmanager
+def make_node(**param_overrides):
+    """Build an ExoCmdNode with params injected, destroy it on exit."""
+    overrides = [Parameter(k, value=v) for k, v in param_overrides.items()]
+    node = ExoCmdNode(parameter_overrides=overrides)
+    try:
+        yield node
+    finally:
+        node.destroy_node()
+
+
+def make_status(seq, payload, stamp_mono_ns=0, crc=0):
+    """Construct an ExoStatus echo with the given envelope + payload."""
+    m = ExoStatus()
+    m.header.seq = seq
+    m.header.stamp_mono_ns = stamp_mono_ns
+    m.header.crc = crc
+    m.payload = payload
+    return m
+
+
+# --------------------------------------------------------------------------
+# payload / seq decoupling: the tracker pairs on header.seq, never payload.
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize('payload', [0, 12345, -1, -2 ** 31, 2 ** 31 - 1, 777])
+def test_payload_does_not_affect_matching(payload):
+    """An echo matches by header.seq regardless of payload value."""
+    with make_node(link_health_period_s=0.0, summary_period_s=0.0) as node:
+        seq, _ = node._tracker.on_send(node._now())
+        # payload deliberately != seq (and sometimes negative / extreme).
+        node._on_status(make_status(seq=seq, payload=payload))
+        c = node._tracker.counters()
+        assert c['matched'] == 1
+        assert c['duplicate'] == 0
+        assert node._tracker.reconciles()
+
+
+def test_payload_extremes_do_not_create_false_unmatched():
+    """A never-sent seq is unmatched even if its payload mimics a sent seq."""
+    with make_node(link_health_period_s=0.0, summary_period_s=0.0) as node:
+        seq, _ = node._tracker.on_send(node._now())   # only this seq is sent
+        # Echo a DIFFERENT seq but a payload equal to the sent seq: must be
+        # unmatched (payload must not launder a never-sent seq into a match).
+        node._on_status(make_status(seq=seq + 999, payload=seq))
+        c = node._tracker.counters()
+        assert c['matched'] == 0
+        assert node._tracker.reconciles()
+
+
+# --------------------------------------------------------------------------
+# CRC dual-path (§7.9): enabled = bad crc counted + warned, NOT blocked;
+# disabled = bad crc not even checked.
+# --------------------------------------------------------------------------
+
+def test_crc_enabled_bad_crc_counts_but_does_not_block():
+    """crc_enabled: a mismatched crc bumps the counter but still feeds seq."""
+    with make_node(crc_enabled=True, link_health_period_s=0.0,
+                   summary_period_s=0.0) as node:
+        seq, _ = node._tracker.on_send(node._now())
+        # Deliberately wrong crc (0 will not match a non-trivial envelope).
+        bad = make_status(seq=seq, payload=42, stamp_mono_ns=123,
+                          crc=0xDEADBEEF)
+        node._on_status(bad)
+        assert node._crc_mismatch_count == 1
+        # NOT blocked: the seq was still fed -> matched.
+        assert node._tracker.counters()['matched'] == 1
+        assert node._tracker.reconciles()
+
+
+def test_crc_enabled_good_crc_no_mismatch():
+    """crc_enabled: a correct crc does not bump the mismatch counter."""
+    with make_node(crc_enabled=True, link_health_period_s=0.0,
+                   summary_period_s=0.0) as node:
+        seq, _ = node._tracker.on_send(node._now())
+        stamp, payload = 123, 42
+        good = make_status(seq=seq, payload=payload, stamp_mono_ns=stamp,
+                           crc=compute_crc(seq, stamp, payload))
+        node._on_status(good)
+        assert node._crc_mismatch_count == 0
+        assert node._tracker.counters()['matched'] == 1
+
+
+def test_crc_disabled_bad_crc_not_checked():
+    """crc_enabled=False (default): a bad crc is ignored, counter untouched."""
+    with make_node(crc_enabled=False, link_health_period_s=0.0,
+                   summary_period_s=0.0) as node:
+        seq, _ = node._tracker.on_send(node._now())
+        node._on_status(make_status(seq=seq, payload=42, stamp_mono_ns=123,
+                                    crc=0xBADBADBA))
+        assert node._crc_mismatch_count == 0     # never checked
+        assert node._tracker.counters()['matched'] == 1
+
+
+# --------------------------------------------------------------------------
+# LinkHealth publish (§7.7): _on_link_health snapshot matches the tracker.
+# --------------------------------------------------------------------------
+
+def test_link_health_message_matches_tracker_snapshot():
+    """The published LinkHealth fields equal the tracker counters + RTT stats."""
+    captured = []
+    with make_node(link_health_period_s=0.0, summary_period_s=0.0) as node:
+        # Drive a known mix: 2 matched (with RTT), 1 duplicate, 1 unmatched.
+        s0, _ = node._tracker.on_send(0.0)
+        s1, _ = node._tracker.on_send(0.0)
+        node._tracker.on_echo(s0, 0.010)         # matched, 10 ms
+        node._tracker.on_echo(s1, 0.020)         # matched, 20 ms
+        node._tracker.on_echo(s0, 0.030)         # duplicate
+        node._tracker.on_echo(10 ** 9, 0.040)    # unmatched (never sent)
+
+        # Intercept the publish so no DDS round trip is required.
+        node._health_pub.publish = captured.append
+        node._on_link_health()
+
+    assert len(captured) == 1
+    msg = captured[0]
+    # The LinkHealth fields must equal the tracker snapshot the node packed.
+    assert msg.sent == 2
+    assert msg.matched == 2
+    assert msg.lost == 0
+    assert msg.duplicate == 1
+    assert msg.stale_duplicate == 0
+    assert msg.inflight == 0
+    assert msg.reconciles is True
+    # RTT stats: last matched was 20 ms; max 20; p95 over [10,20] nearest-rank
+    # ceil(0.95*2)=2 -> 20.0.
+    assert msg.rtt_last_ms == 20.0
+    assert msg.rtt_max_ms == 20.0
+    assert msg.rtt_p95_ms == 20.0
+    # Header stamp is wall-clock (diagnostic only); just assert it is set.
+    assert msg.header.stamp.sec != 0 or msg.header.stamp.nanosec != 0

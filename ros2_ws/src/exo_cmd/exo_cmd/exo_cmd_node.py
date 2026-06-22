@@ -1,20 +1,28 @@
 """
 exo_cmd node: WSL-side heartbeat publisher + link-health monitor.
 
-Per the interface contract (v1.1):
-  - publishes /exo/cmd_heartbeat  (std_msgs/Int32, 10 Hz, data = counter that
-    wraps mod 2^31, starting at 0, +1 each tick -- §7.6);
-  - subscribes /exo/mcu_status    (std_msgs/Int32) and feeds every echo to a
-    LinkHealthTracker that measures RTT, detects loss / duplicates / wrap and
-    maintains the five reconciliation counters (§7 link health, safety-crit).
+Per the interface contract (v1.7, exo_msgs M-A):
+  - publishes /exo/cmd_heartbeat  (exo_msgs/ExoCmd, 10 Hz). header.seq is the
+    counter that wraps mod 2^32 (§7.6); header.stamp_mono_ns is the sender's
+    monotonic nanoseconds (§7.1); header.crc is the optional application CRC;
+    payload is the loopback value, DECOUPLED from header.seq;
+  - subscribes /exo/mcu_status    (exo_msgs/ExoStatus) and feeds every echo's
+    header.seq (NOT payload) to a LinkHealthTracker that measures RTT, detects
+    loss / duplicates / wrap and maintains the reconciliation counters (§7 link
+    health, safety-crit);
+  - publishes /exo/link_health    (exo_msgs/LinkHealth, ~1 Hz) the structured
+    counters + rolling RTT stats + reconcile flag (§7.7).
 
 The actual monitoring logic lives in exo_cmd.link_health.LinkHealthTracker
 (rclpy-free, unit-tested). This node is a thin ROS adapter: it owns the
 clock, the timers and the publisher/subscriber, and maps the tracker's
 structured Events onto the ROS logger.
 
-Clock: we use time.monotonic() (§7.1 forbids wall clock -- NTP jumps would
-poison RTT). The tracker never reads a clock itself; we pass it in.
+Clock: we use time.monotonic_ns() for the RTT path (§7.1 forbids wall clock --
+NTP jumps would poison RTT). The same monotonic instant feeds the tracker (as
+seconds) and header.stamp_mono_ns (as nanoseconds). The LinkHealth message's
+std_msgs/Header.stamp uses wall-clock get_clock().now() for the diagnostic /
+bag time axis only -- it never enters the RTT path.
 
 Node name: exo_cmd. Topic prefix: /exo/. QoS: see exo_cmd.qos.EXO_QOS.
 
@@ -25,23 +33,28 @@ local loopback_node, in Phase B it is the STM32 micro-ROS firmware.
 import random
 import time
 
+from exo_cmd.crc import compute_crc
 from exo_cmd.link_health import LinkHealthTracker
 from exo_cmd.qos import EXO_QOS, qos_summary
+from exo_msgs.msg import ExoCmd, ExoStatus, LinkHealth
 import rclpy
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.executors import ExternalShutdownException, MultiThreadedExecutor
 from rclpy.node import Node
-from std_msgs.msg import Int32
 
 # Contract-defined names (do not change without updating 01-接口契约.md).
 TOPIC_HEARTBEAT = '/exo/cmd_heartbeat'
 TOPIC_STATUS = '/exo/mcu_status'
+TOPIC_LINK_HEALTH = '/exo/link_health'
 HEARTBEAT_PERIOD_S = 0.1  # 10 Hz
 
 
 class ExoCmdNode(Node):
-    def __init__(self):
-        super().__init__('exo_cmd')
+    def __init__(self, **node_kwargs):
+        # Forward Node kwargs (e.g. parameter_overrides, context) so tests can
+        # inject parameter values at construction time. Production main() passes
+        # nothing -> identical behaviour to before.
+        super().__init__('exo_cmd', **node_kwargs)
 
         # ----- params (§7.2: thresholds are runtime-configurable, NOT hard-
         # coded; defaults are the Phase A placeholder values 50/200 ms). -----
@@ -55,6 +68,15 @@ class ExoCmdNode(Node):
         self.declare_parameter('sweep_period_s', 0.05)
         # Period of the periodic counter/reconciliation summary log (A8). 0 off.
         self.declare_parameter('summary_period_s', 1.0)
+        # Period of the /exo/link_health publisher (§7.7, ~1 Hz). Decoupled from
+        # summary_period_s. 0 disables the diagnostic topic.
+        self.declare_parameter('link_health_period_s', 1.0)
+        # Application-level CRC self-check (Q4 / §7.9). Default OFF: cmd.crc is
+        # published as 0 and incoming status.crc is NOT checked. When True, the
+        # publisher fills header.crc and the subscriber verifies it -- a mismatch
+        # increments crc_mismatch_count + WARNs but does NOT block (seq still fed
+        # to the tracker). This is a packing-bug self-check, not a link guard.
+        self.declare_parameter('crc_enabled', False)
         # How many most-recently-settled seqs to remember before a re-echo is
         # labelled stale_duplicate instead of plain duplicate (§7.5; tunable per
         # Gill's note that it should track deadline*rate*margin). Default matches
@@ -64,7 +86,7 @@ class ExoCmdNode(Node):
         # pick (os.cpu_count()). main() reads self.executor_threads.
         self.declare_parameter('executor_threads', 0)
         # First heartbeat value (task ③ / §7.6 run nonce). >=0 -> use it as the
-        # first value; -1 -> draw a random 31-bit nonce so the echoed values
+        # first value; -1 -> draw a random 32-bit nonce so the echoed values
         # prove THIS run's causality (a board replaying an old 0.. sequence
         # cannot impersonate this run). Default 0 keeps Phase-A determinism.
         self.declare_parameter('start_value', 0)
@@ -74,15 +96,19 @@ class ExoCmdNode(Node):
         max_inflight = self.get_parameter('max_inflight').value or None
         sweep_period_s = self.get_parameter('sweep_period_s').value
         summary_period_s = self.get_parameter('summary_period_s').value
+        link_health_period_s = self.get_parameter('link_health_period_s').value
         settled_window = self.get_parameter('settled_window').value
+        self._crc_enabled = bool(self.get_parameter('crc_enabled').value)
+        # Node-level CRC-mismatch counter (§7.9). Observable, non-blocking.
+        self._crc_mismatch_count = 0
         self.executor_threads = self.get_parameter('executor_threads').value
         start_value = self.get_parameter('start_value').value
 
-        # §7.6 run nonce: -1 -> random 31-bit nonce; >=0 -> literal start; any
+        # §7.6 run nonce: -1 -> random 32-bit nonce; >=0 -> literal start; any
         # other negative is illegal (turning -1 into a real nonce is the node's
-        # job, the tracker only accepts a legal [0, 2^31) start).
+        # job, the tracker only accepts a legal [0, 2^32) start).
         if start_value == -1:
-            start_seq = random.randrange(2 ** 31)
+            start_seq = random.randrange(2 ** 32)
         elif start_value >= 0:
             start_seq = start_value
         else:
@@ -114,10 +140,14 @@ class ExoCmdNode(Node):
         self._rx_group = MutuallyExclusiveCallbackGroup()    # echo subscription
         self._timer_group = MutuallyExclusiveCallbackGroup()  # the three timers
 
-        self._pub = self.create_publisher(Int32, TOPIC_HEARTBEAT, EXO_QOS)
+        self._pub = self.create_publisher(ExoCmd, TOPIC_HEARTBEAT, EXO_QOS)
         self._sub = self.create_subscription(
-            Int32, TOPIC_STATUS, self._on_status, EXO_QOS,
+            ExoStatus, TOPIC_STATUS, self._on_status, EXO_QOS,
             callback_group=self._rx_group)
+        # /exo/link_health diagnostic publisher (§7.7). Its own timer (decoupled
+        # from summary_period_s) packs counters + RTT stats + reconcile flag.
+        self._health_pub = self.create_publisher(
+            LinkHealth, TOPIC_LINK_HEALTH, EXO_QOS)
         self._timer = self.create_timer(
             HEARTBEAT_PERIOD_S, self._on_timer,
             callback_group=self._timer_group)
@@ -126,6 +156,10 @@ class ExoCmdNode(Node):
         if summary_period_s and summary_period_s > 0:
             self._summary_timer = self.create_timer(
                 summary_period_s, self._on_summary,
+                callback_group=self._timer_group)
+        if link_health_period_s and link_health_period_s > 0:
+            self._health_timer = self.create_timer(
+                link_health_period_s, self._on_link_health,
                 callback_group=self._timer_group)
 
         self.get_logger().info(
@@ -139,6 +173,11 @@ class ExoCmdNode(Node):
         self.get_logger().info(
             'executor_threads=%d (0 = auto / os.cpu_count())'
             % self.executor_threads)
+        self.get_logger().info(
+            'crc_enabled=%s (application self-check, non-blocking; §7.9), '
+            'link_health %s @ %.2f Hz'
+            % (self._crc_enabled, TOPIC_LINK_HEALTH,
+               (1.0 / link_health_period_s) if link_health_period_s else 0.0))
         # Surface the resolved nonce prominently (§7.6): the echoed values that
         # come back equal to this prove THIS run's causality.
         self.get_logger().info(
@@ -152,8 +191,12 @@ class ExoCmdNode(Node):
             'applied QoS sub[%s]: %s' % (TOPIC_STATUS, qos_summary(self._sub)))
 
     # ----- clock -------------------------------------------------------------
+    def _now_ns(self) -> int:
+        """Monotonic nanoseconds. §7.1: never wall clock (NTP poisons RTT)."""
+        return time.monotonic_ns()
+
     def _now(self) -> float:
-        """Monotonic seconds. §7.1: never wall clock (NTP jumps poison RTT)."""
+        """Monotonic seconds (for the tracker / sweep / RTT)."""
         return time.monotonic()
 
     # ----- event surfacing ---------------------------------------------------
@@ -173,16 +216,42 @@ class ExoCmdNode(Node):
 
     # ----- timers / callbacks ------------------------------------------------
     def _on_timer(self):
-        seq, events = self._tracker.on_send(self._now())
-        msg = Int32()
-        msg.data = seq
+        # §7.1: the SAME monotonic instant feeds the tracker (seconds) and the
+        # wire stamp (nanoseconds). monotonic_ns() is the single source; the
+        # seconds form passed to on_send is derived from it so RTT pairs cleanly.
+        now_ns = self._now_ns()
+        now_s = now_ns / 1e9
+        seq, events = self._tracker.on_send(now_s)
+        msg = ExoCmd()
+        msg.header.seq = seq
+        msg.header.stamp_mono_ns = now_ns
+        # payload is the loopback value, DECOUPLED from seq. We reuse seq's value
+        # here only as a convenient heartbeat counter; the tracker never reads it
+        # (it pairs on header.seq), so it could be anything.
+        msg.payload = seq & 0x7FFFFFFF
+        msg.header.crc = (compute_crc(seq, now_ns, msg.payload)
+                          if self._crc_enabled else 0)
         self._pub.publish(msg)
-        self.get_logger().debug('sent cmd_heartbeat=%d' % seq)
+        self.get_logger().debug('sent cmd_heartbeat seq=%d' % seq)
         # events here are only the (rare) cap-eviction LOST warnings.
         self._emit(events)
 
-    def _on_status(self, msg: Int32):
-        events = self._tracker.on_echo(msg.data, self._now())
+    def _on_status(self, msg: ExoStatus):
+        # §7.9: when CRC is enabled, verify it BEFORE feeding the tracker, but
+        # NEVER block on a mismatch -- a packing bug must stay observable, not
+        # silently swallow the seq. seq is taken from header.seq (NOT payload).
+        if self._crc_enabled:
+            expected = compute_crc(msg.header.seq, msg.header.stamp_mono_ns,
+                                   msg.payload)
+            if msg.header.crc != expected:
+                self._crc_mismatch_count += 1
+                self.get_logger().warn(
+                    'CRC mismatch seq=%d: got 0x%08X expected 0x%08X '
+                    '(application packing self-check; not blocking; '
+                    'crc_mismatch_count=%d)'
+                    % (msg.header.seq, msg.header.crc, expected,
+                       self._crc_mismatch_count))
+        events = self._tracker.on_echo(msg.header.seq, self._now())
         self._emit(events)
 
     def _on_sweep(self):
@@ -203,6 +272,26 @@ class ExoCmdNode(Node):
         else:
             self.get_logger().error(
                 'RECONCILE BROKEN (sent != matched+lost+inflight): ' + line)
+
+    def _on_link_health(self):
+        # §7.7: publish the structured counters + rolling RTT stats + reconcile
+        # flag. The std_msgs/Header.stamp is wall-clock (diagnostic / bag time
+        # axis only -- NEVER the RTT path, which is monotonic per §7.1).
+        c = self._tracker.counters()
+        r = self._tracker.rtt_stats()
+        msg = LinkHealth()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.sent = c['sent']
+        msg.matched = c['matched']
+        msg.lost = c['lost']
+        msg.duplicate = c['duplicate']
+        msg.stale_duplicate = c['stale_duplicate']
+        msg.inflight = c['inflight']
+        msg.rtt_last_ms = r['rtt_last_ms']
+        msg.rtt_p95_ms = r['rtt_p95_ms']
+        msg.rtt_max_ms = r['rtt_max_ms']
+        msg.reconciles = self._tracker.reconciles()
+        self._health_pub.publish(msg)
 
 
 def main(args=None):

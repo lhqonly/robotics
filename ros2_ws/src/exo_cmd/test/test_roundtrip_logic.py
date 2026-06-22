@@ -234,31 +234,31 @@ def test_a6_never_sent_value_is_unmatched():
 
 
 # --------------------------------------------------------------------------
-# A7: wrap safety. Counter wraps mod 2^31; matching/loss/duplicate correct at
+# A7: wrap safety. Counter wraps mod 2^32; matching/loss/duplicate correct at
 # the wrap point; no signed overflow (Python ints are unbounded).
 # --------------------------------------------------------------------------
 def test_a7_forward_distance_wraps_safely():
     assert forward_distance(0, 1) == 1
     assert forward_distance(5, 3) == SEQ_MODULUS - 2
-    # Across the wrap boundary: 2 steps forward from (2^31-1) lands on 1.
+    # Across the wrap boundary: 2 steps forward from (2^32-1) lands on 1.
     assert forward_distance(SEQ_MODULUS - 1, 1) == 2
     assert forward_distance(SEQ_MODULUS - 1, 0) == 1
 
 
-def test_a7_send_counter_wraps_mod_2_31():
+def test_a7_send_counter_wraps_mod_2_32():
     t = LinkHealthTracker()
     t._next_seq = SEQ_MODULUS - 1      # park at the top of the range
     seq_a, _ = t.on_send(now=0.0)
     seq_b, _ = t.on_send(now=0.0)
     assert seq_a == SEQ_MODULUS - 1
-    assert seq_b == 0                  # wrapped, not 2^31 / not negative
+    assert seq_b == 0                  # wrapped, not 2^32 / not negative
     assert t._next_seq == 1
 
 
 def test_a7_match_correct_across_wrap():
     t = LinkHealthTracker()
     t._next_seq = SEQ_MODULUS - 1
-    s0, _ = t.on_send(now=0.0)          # 2^31-1
+    s0, _ = t.on_send(now=0.0)          # 2^32-1
     s1, _ = t.on_send(now=0.0)          # 0 (wrapped)
     # Echoes pair by exact equality regardless of wrap.
     e1 = t.on_echo(s1, now=0.010)
@@ -270,7 +270,7 @@ def test_a7_match_correct_across_wrap():
 
 
 def test_a7_counters_no_signed_overflow():
-    # Python ints are unbounded; assert the counters keep climbing past 2^31
+    # Python ints are unbounded; assert the counters keep climbing past 2^32
     # without wrapping/overflow (a 32-bit signed counter would have flipped).
     # (Deadline is irrelevant here; use defaults so rtt_warn_ms < rtt_deadline_ms.)
     t = LinkHealthTracker()

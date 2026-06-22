@@ -13,7 +13,7 @@ Focus, per the G2-收尾 / Phase A adversarial brief:
   * §7.4/M4 no silent eviction: backlog + max_inflight cap must settle the
     over-cap victim as LOST + warn, never silently discard; the victim must be
     the OLDEST, not the newest;
-  * §7.6/P1-3 wrap mod 2^31: behaviour AT the boundary, forced full-wrap seq
+  * §7.6/P1-3 wrap mod 2^32: behaviour AT the boundary, forced full-wrap seq
     collision while an old entry is still in flight;
   * §7.5/P1-2 duplicate/retransmit: an already-settled value re-echoed must be
     duplicate, never UNMATCHED/wrong-value;
@@ -237,7 +237,7 @@ def test_no_min_silent_eviction_in_source_strict():
 
 
 # ==========================================================================
-# Group 3 -- §7.6 / P1-3 WRAP at the 2^31 boundary.
+# Group 3 -- §7.6 / P1-3 WRAP at the 2^32 boundary.
 # ==========================================================================
 
 def test_forward_distance_boundary_values():
@@ -253,8 +253,8 @@ def test_forward_distance_boundary_values():
 def test_send_wraps_at_exact_boundary_no_negative_no_overflow():
     t = LinkHealthTracker()
     t._next_seq = SEQ_MODULUS - 2
-    s0, _ = t.on_send(now=0.0)             # 2^31-2
-    s1, _ = t.on_send(now=0.0)             # 2^31-1
+    s0, _ = t.on_send(now=0.0)             # 2^32-2
+    s1, _ = t.on_send(now=0.0)             # 2^32-1
     s2, _ = t.on_send(now=0.0)             # wraps to 0
     assert s0 == SEQ_MODULUS - 2
     assert s1 == SEQ_MODULUS - 1
@@ -265,9 +265,9 @@ def test_send_wraps_at_exact_boundary_no_negative_no_overflow():
 
 def test_forced_full_wrap_seq_collision_settles_stale_as_lost():
     """
-    A full 2^31 wrap onto a still-in-flight seq settles the stale entry LOST.
+    A full 2^32 wrap onto a still-in-flight seq settles the stale entry LOST.
 
-    Pathological: a full 2^31 wrap lands on a seq whose OLD entry is still
+    Pathological: a full 2^32 wrap lands on a seq whose OLD entry is still
     in flight (deadline not yet reached). The stale entry must be settled LOST
     (evict_lost WARN), the dict key must NOT be silently overwritten, the new
     entry takes the slot, and the identity holds. Then the NEW echo matches.
@@ -297,8 +297,8 @@ def test_match_loss_duplicate_all_correct_straddling_wrap():
     """Mixed lifecycle straddling the wrap boundary stays correct."""
     t = LinkHealthTracker(rtt_deadline_ms=100.0)
     t._next_seq = SEQ_MODULUS - 2
-    a, _ = t.on_send(now=0.0)              # 2^31-2  -> will be matched
-    b, _ = t.on_send(now=0.0)              # 2^31-1  -> will be lost
+    a, _ = t.on_send(now=0.0)              # 2^32-2  -> will be matched
+    b, _ = t.on_send(now=0.0)              # 2^32-1  -> will be lost
     c, _ = t.on_send(now=0.0)              # 0 (wrapped) -> matched + duplicate
     t.on_echo(a, now=0.010)
     t.on_echo(c, now=0.010)
@@ -419,16 +419,16 @@ def test_never_sent_value_is_still_unmatched_after_fix():
 
 def test_stale_duplicate_holds_across_full_wrap():
     """
-    After a full 2^31 wrap every value is ever-sent, so a re-echo is stale.
+    After a full 2^32 wrap every value is ever-sent, so a re-echo is stale.
 
-    After a full 2^31 wrap, every value has been sent -> a re-echo of any old
+    After a full 2^32 wrap, every value has been sent -> a re-echo of any old
     value beyond the window is stale_duplicate, never unmatched. Forces
     _next_seq just past a wrap so sent_count >= the wrap space, then re-echoes a
     value that is provably ever-sent but long gone from the window.
     """
     t = LinkHealthTracker(settled_window=2)
     # Cheaply drive _next_seq and sent_count across the wrap boundary without
-    # 2^31 real sends: the tracker exposes _next_seq/sent_count as plain ints.
+    # 2^32 real sends: the tracker exposes _next_seq/sent_count as plain ints.
     t._next_seq = 5
     t.sent_count = SEQ_MODULUS + 10        # well past a full wrap (synthetic)
     # seq 0 is 5 steps behind _next_seq=5 -> within reach -> ever-sent.
@@ -440,14 +440,14 @@ def test_stale_duplicate_holds_across_full_wrap():
     # meaningless here; this test isolates the _ever_sent() wrap reach only.
 
 
-@pytest.mark.parametrize('bad', [-2147483648, -1, SEQ_MODULUS, 2 ** 31,
-                                 2 ** 31 + 50])
+@pytest.mark.parametrize('bad', [-2147483648, -1, SEQ_MODULUS,
+                                 SEQ_MODULUS + 1, SEQ_MODULUS + 50])
 def test_out_of_domain_echo_is_unmatched_not_swallowed(bad):
     """
-    Gill review (High): a negative / >=2^31 echo is UNMATCHED, never swallowed.
+    Gill review (High): a negative / >=2^32 echo is UNMATCHED, never swallowed.
 
-    The sender only emits seq in [0, 2^31). A board fault / corrupt frame /
-    injection echoing an out-of-domain Int32 must NOT be modulo-aliased into the
+    The sender only emits seq in [0, 2^32). A board fault / corrupt frame /
+    injection echoing an out-of-domain value must NOT be modulo-aliased into the
     ever-sent band and silently dropped as stale_duplicate -- it was never sent,
     so it is a genuine UNMATCHED error (§7.5/A6). Under-reporting a real error is
     worse than over-warning.
@@ -545,7 +545,7 @@ def test_post_wrap_seq_equals_next_should_be_stale_not_unmatched():
     """
     KNOWN EDGE (xfail): seq==_next_seq after a full wrap is wrongly UNMATCHED.
 
-    After 2^31 sends the value equal to _next_seq WAS sent one wrap ago, so a
+    After 2^32 sends the value equal to _next_seq WAS sent one wrap ago, so a
     re-echo should be stale_duplicate; today _ever_sent() returns False for
     distance 0 and it is reported UNMATCHED. Documents the boundary; flips to
     pass if/when the d==0 wrap case is handled.

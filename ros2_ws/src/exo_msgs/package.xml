@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>exo_msgs</name>
+  <version>1.7.0</version>
+  <description>
+    Custom interface package for the exoskeleton link (M-A, WSL-side first).
+    Lifts seq / monotonic timestamp / application-level CRC from "inferred on
+    the WSL side" to explicit wire fields, and ships the /exo/link_health
+    diagnostic message. Pure interface package (no logic code): ExoHeader,
+    ExoCmd, ExoStatus, LinkHealth.
+    Interface contract: docs/01-ros2-microros-serial/01-接口契约.md (v1.7).
+  </description>
+  <maintainer email="lhqonly@users.noreply.github.com">Tom</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>rosidl_default_generators</buildtool_depend>
+
+  <depend>builtin_interfaces</depend>
+  <depend>std_msgs</depend>
+
+  <exec_depend>rosidl_default_runtime</exec_depend>
+
+  <member_of_group>rosidl_interface_packages</member_of_group>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

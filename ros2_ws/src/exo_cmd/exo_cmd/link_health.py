@@ -25,10 +25,14 @@ Design contract (see docs/01-ros2-microros-serial/01-接口契约.md §7):
              (still NOT unmatched, per "曾经发出过的值不算错误"; Gill finding #1) --
              a SEPARATE counter so its rate stays a visible link-quality signal.
              Only a value that was NEVER sent -- including any echo outside the
-             [0,2^31) send domain -- is UNMATCHED.
-  * §7.6/P1-3 send counter wraps mod 2^31; ordering uses wrap-safe distance
+             [0,2^32) send domain -- is UNMATCHED.
+  * §7.6/P1-3 send counter wraps mod 2^32; ordering uses wrap-safe distance
              (forward_distance), never a bare `>`; in-flight pairing is exact
              equality. Health counters are Python ints (unbounded, >= 64-bit).
+
+The tracker also keeps a bounded rolling RTT window (deque, exo_msgs M-A / §7.7)
+so the node can publish rtt_last_ms / rtt_p95_ms / rtt_max_ms on
+/exo/link_health alongside the reconciliation counters.
 
 The tracker never logs by itself; it returns a list of structured `Event`
 objects so the caller (ROS node, or a test) decides how to surface them. This
@@ -38,18 +42,32 @@ edge.
 
 from collections import deque
 from dataclasses import dataclass, field
+import math
 import threading
 from typing import Deque, Dict, List, Optional
 
-# §7.6: heartbeat counter is a non-negative Int32 that wraps mod 2^31.
-SEQ_MODULUS = 2 ** 31
+# §7.6 / exo_msgs M-A: seq is the wire field ExoHeader.seq (uint32) that wraps
+# mod 2^32. (Was mod 2^31 under the std_msgs/Int32 baseline; the explicit
+# uint32 field doubles the range and removes the signed-Int32 constraint.)
+SEQ_MODULUS = 2 ** 32
+
+# Default size of the bounded rolling RTT window (exo_msgs M-A / §7.7). At
+# 10 Hz this is ~100 s of history; generous enough for a stable p95 without
+# unbounded memory. Configurable via LinkHealthTracker.rtt_window.
+DEFAULT_RTT_WINDOW = 1024
+
+# Deterministic placeholder for RTT stats when the window is empty: no matched
+# echo has been observed yet, so there is no RTT to report. 0.0 (not nan) keeps
+# the published LinkHealth fields plain floats and the tests' expectations
+# written down explicitly.
+RTT_EMPTY_PLACEHOLDER = 0.0
 
 
 def forward_distance(a: int, b: int) -> int:
     """
-    Wrap-safe forward distance from a to b in the mod-2^31 sequence space.
+    Wrap-safe forward distance from a to b in the mod-2^32 sequence space.
 
-    Returns how many steps forward (0 .. 2^31-1) it is from a to b. Used for
+    Returns how many steps forward (0 .. 2^32-1) it is from a to b. Used for
     "is b after a, and how far" ordering decisions without a bare `>` that
     would misjudge at the wrap point (§7.6 / P1-3). Equality pairing of
     in-flight entries does NOT use this -- it uses exact `==`, which wrap does
@@ -116,12 +134,17 @@ class LinkHealthTracker:
     # decides duplicate vs stale_duplicate labelling, never duplicate-vs-error.
     # Defaults to a generous multiple of the deadline*rate.
     settled_window: int = 4096
-    # Initial value of the send counter (§7.6, wraps mod 2^31). Lets each run
-    # start at a random 31-bit nonce so the echoed values prove THIS run's
+    # Initial value of the send counter (§7.6, wraps mod 2^32). Lets each run
+    # start at a random 32-bit nonce so the echoed values prove THIS run's
     # causality; default 0 keeps Phase-A determinism. Turning the -1 sentinel
     # into a real nonce is the NODE's job; the tracker only accepts a legal
-    # [0, 2^31) start.
+    # [0, 2^32) start.
     start_seq: int = 0
+    # Size of the bounded rolling RTT window (exo_msgs M-A / §7.7). Each matched
+    # echo pushes its rtt_ms; the oldest is evicted once the window is full, so
+    # memory stays bounded. p95/max are computed over this window; rtt_last_ms
+    # is the most recent matched RTT (independent of the window contents).
+    rtt_window: int = DEFAULT_RTT_WINDOW
 
     # ----- the reconciliation counters (Python int, unbounded) ---------------
     sent_count: int = 0
@@ -144,6 +167,12 @@ class LinkHealthTracker:
     # O(1) membership index. Both are kept in lockstep.
     _settled: set = field(default_factory=set)
     _settled_order: Deque[int] = field(default_factory=deque)
+    # Bounded rolling RTT window (exo_msgs M-A / §7.7). maxlen is set in
+    # __post_init__ from rtt_window so the deque self-evicts the oldest sample.
+    # _rtt_last holds the most recent matched RTT even after it ages out of the
+    # window (so rtt_last_ms is always the truly-latest matched echo).
+    _rtt_window: Deque[float] = field(default_factory=deque)
+    _rtt_last: Optional[float] = None
     # Serializes the public mutating/reading entry points so a multi-threaded
     # rclpy executor (sub callback on one thread, sweep/summary timers on others)
     # cannot interleave a counter update with a snapshot or corrupt _inflight /
@@ -166,7 +195,11 @@ class LinkHealthTracker:
             self.settled_window = 1
         if self.start_seq < 0:
             raise ValueError(
-                'start_seq (%s) must be in [0, 2^31)' % self.start_seq)
+                'start_seq (%s) must be in [0, 2^32)' % self.start_seq)
+        if self.rtt_window < 1:
+            self.rtt_window = 1
+        # Bind the deque's maxlen so it self-evicts the oldest RTT sample.
+        self._rtt_window = deque(maxlen=self.rtt_window)
         self._next_seq = self.start_seq % SEQ_MODULUS
         # A non-zero origin stays correct: _ever_sent / forward_distance work off
         # forward_distance(seq, _next_seq) and sent_count, both relative to the
@@ -210,6 +243,44 @@ class LinkHealthTracker:
                 'inflight': len(self._inflight),
             }
 
+    def rtt_stats(self) -> dict:
+        """
+        Snapshot of the rolling-window RTT stats (exo_msgs M-A / §7.7).
+
+        Returns a dict with:
+          * ``rtt_last_ms`` -- the most recent matched RTT (independent of the
+            window; survives a sample ageing out of the window);
+          * ``rtt_p95_ms`` -- the 95th percentile over the current window;
+          * ``rtt_max_ms`` -- the maximum over the current window.
+
+        When no matched echo has been seen yet (empty window), all three are the
+        deterministic placeholder ``RTT_EMPTY_PLACEHOLDER`` (0.0) so the
+        published LinkHealth fields stay plain floats and the expected values are
+        written down explicitly in the tests.
+
+        p95 uses the nearest-rank method on the sorted window
+        (``ceil(0.95 * n)``-th sample, 1-indexed): deterministic, no
+        interpolation, no numpy dependency.
+        """
+        with self._lock:
+            if not self._rtt_window:
+                return {
+                    'rtt_last_ms': RTT_EMPTY_PLACEHOLDER,
+                    'rtt_p95_ms': RTT_EMPTY_PLACEHOLDER,
+                    'rtt_max_ms': RTT_EMPTY_PLACEHOLDER,
+                }
+            ordered = sorted(self._rtt_window)
+            n = len(ordered)
+            # Nearest-rank p95: 1-indexed ceil(0.95*n), clamped into range.
+            rank = max(1, min(n, math.ceil(0.95 * n)))
+            last = self._rtt_last
+            return {
+                'rtt_last_ms': (RTT_EMPTY_PLACEHOLDER if last is None
+                                else last),
+                'rtt_p95_ms': ordered[rank - 1],
+                'rtt_max_ms': ordered[-1],
+            }
+
     def reconciles(self) -> bool:
         """
         Return the A4/A8 reconciliation identity: sent == matched + lost + inflight.
@@ -229,7 +300,7 @@ class LinkHealthTracker:
 
         Returns ``(seq, events)``:
           * ``seq`` is the sequence value to put on the wire. The counter wraps
-            mod 2^31 (§7.6).
+            mod 2^32 (§7.6).
           * ``events`` is a (usually empty) list of structured events. It is
             non-empty only when a memory cap forced an in-flight entry to be
             SETTLED AS LOST (§7.4 / M4) -- never a silent drop.
@@ -240,7 +311,7 @@ class LinkHealthTracker:
             self._next_seq = (self._next_seq + 1) % SEQ_MODULUS
 
             deadline = now + self.rtt_deadline_ms / 1000.0
-            # Pathological wrap: this seq value is reused while a 2^31-old entry
+            # Pathological wrap: this seq value is reused while a 2^32-old entry
             # is somehow still in flight. Settle the stale one as LOST so the
             # dict key is never silently overwritten and the identity stays
             # intact.
@@ -279,7 +350,7 @@ class LinkHealthTracker:
             settled window -- still a benign retransmit, NOT an error; §7.5,
             Gill finding #1; counted in stale_duplicate_count)
           - unmatched (a value we have NEVER sent, INCLUDING any echo outside the
-            [0,2^31) send domain -- a real error, §7.5/A6)
+            [0,2^32) send domain -- a real error, §7.5/A6)
         """
         with self._lock:
             return self._on_echo_locked(seq, now)
@@ -288,7 +359,7 @@ class LinkHealthTracker:
         """Lock-held body of on_echo (caller must hold self._lock)."""
         events: List[Event] = []
         # Domain guard (Gill review, High): the sender only ever emits seq in
-        # [0, 2^31). A negative or >= 2^31 echo cannot have come from us -> it
+        # [0, 2^32). A negative or >= 2^32 echo cannot have come from us -> it
         # was NEVER sent (board fault / corrupt frame / injection). Classify it
         # UNMATCHED here, BEFORE _ever_sent() could modulo-alias an out-of-domain
         # value into the ever-sent band and silently swallow it as a stale
@@ -296,7 +367,7 @@ class LinkHealthTracker:
         if not (0 <= seq < SEQ_MODULUS):
             events.append(Event(
                 kind='unmatched', level='WARN', seq=seq,
-                msg='UNMATCHED echo seq=%d: outside [0,2^31) -- never sent '
+                msg='UNMATCHED echo seq=%d: outside [0,2^32) -- never sent '
                     '(board fault / corrupt frame)' % seq))
             return events
         entry = self._inflight.get(seq)
@@ -306,6 +377,12 @@ class LinkHealthTracker:
             del self._inflight[seq]
             self._mark_settled(seq)
             self.matched_count += 1
+            # exo_msgs M-A / §7.7: feed the bounded rolling RTT window so the
+            # node can publish rtt_last/p95/max on /exo/link_health. The deque's
+            # maxlen evicts the oldest sample; _rtt_last keeps the truly-latest
+            # matched RTT even after it ages out of the window.
+            self._rtt_window.append(rtt_ms)
+            self._rtt_last = rtt_ms
             events.append(Event(
                 kind='matched', level='INFO', seq=seq, rtt_ms=rtt_ms,
                 msg='matched seq=%d rtt_ms=%.3f' % (seq, rtt_ms)))
@@ -368,7 +445,7 @@ class LinkHealthTracker:
         next, not-yet-sent value; distance > reach means ``seq`` is a value we
         have not reached yet (ahead of us) -> never sent. ``reach`` is how many
         distinct values we have ever emitted, capped at the wrap-space size
-        (after a full 2^31 wrap every value has been sent at least once).
+        (after a full 2^32 wrap every value has been sent at least once).
         """
         d = forward_distance(seq, self._next_seq)
         if d == 0:
