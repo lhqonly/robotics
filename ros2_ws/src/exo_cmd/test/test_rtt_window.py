@@ -146,15 +146,18 @@ def test_snapshot_matches_separate_reads():
     t.on_echo(s1, now=0.020)         # matched 20 ms
     t.on_echo(s0, now=0.030)         # duplicate
     t.sweep_deadlines(now=0.100)     # s_lost settles LOST (s @0.5 not yet due)
+    t.note_crc_mismatch()            # Low-3: a side-channel observable too
+    t.note_crc_mismatch()
 
     c = t.counters()
     r = t.rtt_stats()
     rec = t.reconciles()
     s = t.snapshot()
 
-    # Every counter field matches counters().
+    # Every counter field matches counters() -- INCLUDING crc_mismatch (Low-3),
+    # proving snapshot() reads it under the SAME lock as the rest (no torn view).
     for k in ('sent', 'matched', 'lost', 'duplicate', 'stale_duplicate',
-              'inflight'):
+              'crc_mismatch', 'inflight'):
         assert s[k] == c[k], k
     # Every RTT field matches rtt_stats().
     for k in ('rtt_last_ms', 'rtt_p95_ms', 'rtt_max_ms'):
@@ -164,6 +167,9 @@ def test_snapshot_matches_separate_reads():
     # Sanity on the driven state: identity must hold (1 inflight remains).
     assert s['sent'] == 4 and s['matched'] == 2 and s['lost'] == 1
     assert s['duplicate'] == 1 and s['inflight'] == 1
+    assert s['crc_mismatch'] == 2
+    # crc_mismatch is a SIDE CHANNEL: it must NOT perturb the reconcile identity
+    # (sent==matched+lost+inflight stays 4==2+1+1) even with 2 mismatches noted.
     assert s['reconciles'] is True
 
 
@@ -173,6 +179,7 @@ def test_snapshot_empty_window_placeholder():
     s = t.snapshot()
     assert s['sent'] == 0 and s['matched'] == 0 and s['lost'] == 0
     assert s['inflight'] == 0
+    assert s['crc_mismatch'] == 0    # Low-3: starts at zero
     assert s['rtt_last_ms'] == RTT_EMPTY_PLACEHOLDER
     assert s['rtt_p95_ms'] == RTT_EMPTY_PLACEHOLDER
     assert s['rtt_max_ms'] == RTT_EMPTY_PLACEHOLDER

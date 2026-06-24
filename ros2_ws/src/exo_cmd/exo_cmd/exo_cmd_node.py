@@ -99,8 +99,10 @@ class ExoCmdNode(Node):
         link_health_period_s = self.get_parameter('link_health_period_s').value
         settled_window = self.get_parameter('settled_window').value
         self._crc_enabled = bool(self.get_parameter('crc_enabled').value)
-        # Node-level CRC-mismatch counter (§7.9). Observable, non-blocking.
-        self._crc_mismatch_count = 0
+        # CRC-mismatch tally (§7.9) lives in the tracker now (Low-3), so the
+        # count published on /exo/link_health and the count read here come from
+        # ONE source under ONE lock -- no two-copies-can-diverge bug. The node
+        # exposes it via the _crc_mismatch_count read-through property below.
         self.executor_threads = self.get_parameter('executor_threads').value
         start_value = self.get_parameter('start_value').value
 
@@ -190,6 +192,19 @@ class ExoCmdNode(Node):
         self.get_logger().info(
             'applied QoS sub[%s]: %s' % (TOPIC_STATUS, qos_summary(self._sub)))
 
+    # ----- observables -------------------------------------------------------
+    @property
+    def _crc_mismatch_count(self) -> int:
+        """
+        Read-through to the tracker's CRC-mismatch tally (§7.9, single source).
+
+        Kept as a property (not a plain attribute) so the node has no second
+        copy that could drift from what /exo/link_health publishes -- both read
+        the tracker. Preserves the prior `node._crc_mismatch_count` read API the
+        node tests rely on.
+        """
+        return self._tracker.crc_mismatch_count
+
     # ----- clock -------------------------------------------------------------
     def _now_ns(self) -> int:
         """Monotonic nanoseconds. §7.1: never wall clock (NTP poisons RTT)."""
@@ -244,13 +259,16 @@ class ExoCmdNode(Node):
             expected = compute_crc(msg.header.seq, msg.header.stamp_mono_ns,
                                    msg.payload)
             if msg.header.crc != expected:
-                self._crc_mismatch_count += 1
+                # §7.9: count via the tracker (single source of truth, taken
+                # under its lock so it stays coherent with snapshot()). Read the
+                # post-increment value back for the log line.
+                self._tracker.note_crc_mismatch()
                 self.get_logger().warn(
                     'CRC mismatch seq=%d: got 0x%08X expected 0x%08X '
                     '(application packing self-check; not blocking; '
                     'crc_mismatch_count=%d)'
                     % (msg.header.seq, msg.header.crc, expected,
-                       self._crc_mismatch_count))
+                       self._tracker.crc_mismatch_count))
         events = self._tracker.on_echo(msg.header.seq, self._now())
         self._emit(events)
 
@@ -296,6 +314,10 @@ class ExoCmdNode(Node):
         msg.lost = s['lost']
         msg.duplicate = s['duplicate']
         msg.stale_duplicate = s['stale_duplicate']
+        # §7.9 side-channel observable: from the SAME snapshot() as the rest, so
+        # it is never from a different instant (no torn message). 0 when
+        # crc_enabled=False (the tracker is never told to note a mismatch).
+        msg.crc_mismatch = s['crc_mismatch']
         msg.inflight = s['inflight']
         msg.rtt_last_ms = s['rtt_last_ms']
         msg.rtt_p95_ms = s['rtt_p95_ms']

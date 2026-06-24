@@ -19,7 +19,11 @@ messages, exercising the adapter paths the rclpy-free tracker tests cannot:
     recompute) -> crc_mismatch_count==0. Covers the loopback recompute, not a
     node self-sign;
   * LinkHealth publish (§7.7) -- _on_link_health builds a LinkHealth whose fields
-    match the tracker snapshot (counters + RTT stats + reconciles).
+    match the tracker snapshot (counters + RTT stats + reconciles);
+  * crc_mismatch on /exo/link_health (A13 / Low-3, §7.9) -- N bad-crc echoes are
+    counted into the tracker, surface on the topic, stay non-blocking (seqs still
+    matched) and stay OUT of the reconcile identity; crc_enabled=False keeps the
+    published crc_mismatch at 0.
 
 rclpy is initialised once per module; each test builds and destroys its own node
 so parameter overrides are isolated. No agent / DDS round trip is needed -- we
@@ -218,6 +222,68 @@ def test_crc_end_to_end_loopback_resign_no_mismatch():
 
 
 # --------------------------------------------------------------------------
+# A13 (Low-3): crc_mismatch is surfaced on /exo/link_health, is non-blocking,
+# and is a SIDE CHANNEL (never enters the reconcile identity). crc_enabled=False
+# -> the field stays 0 (the counter is never even checked).
+# --------------------------------------------------------------------------
+
+def test_crc_mismatch_published_and_nonblocking():
+    """
+    crc_enabled: N bad-crc echoes are counted, published, and non-blocking.
+
+    snapshot & published crc_mismatch == N, and those seqs are STILL matched /
+    reconciles stays True (§7.9 non-blocking).
+    """
+    captured = []
+    n = 5
+    with make_node(crc_enabled=True, link_health_period_s=0.0,
+                   summary_period_s=0.0) as node:
+        for _ in range(n):
+            seq, _ = node._tracker.on_send(node._now())
+            # Deliberately wrong crc over a non-trivial envelope.
+            bad = make_status(seq=seq, payload=42, stamp_mono_ns=123,
+                              crc=0xDEADBEEF)
+            node._on_status(bad)
+
+        s = node._tracker.snapshot()
+        # The N seqs were NOT dropped on the crc mismatch: each was matched.
+        assert s['crc_mismatch'] == n
+        assert s['matched'] == n
+        assert s['sent'] == n
+        # crc_mismatch is a side channel: the identity sent==matched+lost+inflight
+        # must NOT be perturbed by the N mismatches.
+        assert s['reconciles'] is True
+        assert node._tracker.reconciles() is True
+        # Read-through property agrees with the tracker (single source of truth).
+        assert node._crc_mismatch_count == n
+
+        # And it rides out on the published LinkHealth message (same field).
+        node._health_pub.publish = captured.append
+        node._on_link_health()
+
+    assert len(captured) == 1
+    assert captured[0].crc_mismatch == n
+    assert captured[0].matched == n
+    assert captured[0].reconciles is True
+
+
+def test_crc_disabled_keeps_crc_mismatch_zero_on_topic():
+    """crc_enabled=False: a bad crc is never checked -> published crc_mismatch==0."""
+    captured = []
+    with make_node(crc_enabled=False, link_health_period_s=0.0,
+                   summary_period_s=0.0) as node:
+        seq, _ = node._tracker.on_send(node._now())
+        node._on_status(make_status(seq=seq, payload=42, stamp_mono_ns=123,
+                                    crc=0xBADBADBA))
+        node._health_pub.publish = captured.append
+        node._on_link_health()
+
+    assert node._crc_mismatch_count == 0
+    assert len(captured) == 1
+    assert captured[0].crc_mismatch == 0
+
+
+# --------------------------------------------------------------------------
 # LinkHealth publish (§7.7): _on_link_health snapshot matches the tracker.
 # --------------------------------------------------------------------------
 
@@ -245,6 +311,7 @@ def test_link_health_message_matches_tracker_snapshot():
     assert msg.lost == 0
     assert msg.duplicate == 1
     assert msg.stale_duplicate == 0
+    assert msg.crc_mismatch == 0     # crc_enabled defaults False -> always 0
     assert msg.inflight == 0
     assert msg.reconciles is True
     # RTT stats: last matched was 20 ms; max 20; p95 over [10,20] nearest-rank

@@ -241,6 +241,175 @@ def test_no_min_silent_eviction_in_source_strict():
 
 
 # ==========================================================================
+# Group 2b -- Med-3: O(log N) cap eviction via the deadline min-heap.
+# The optimisation must NOT change §7.4 semantics: victim is still the OLDEST
+# live entry, settled-as-LOST + warned (never silent), and the reconcile
+# identity holds. These cases specifically stress the heap<->dict consistency:
+# stale heap tuples (from matched/lost removals) must be skipped (lazy
+# deletion) so the heap never mis-picks an already-settled entry or raises.
+# ==========================================================================
+
+def test_heap_eviction_skips_already_matched_stale_tuple():
+    """
+    A matched entry leaves a stale heap tuple; eviction must not pick it.
+
+    Send 3 under cap=3 (oldest deadline = s0). MATCH s0 (removes it from
+    _inflight but leaves its stale (deadline, s0) tuple on the heap). Then send
+    two more to force eviction. The victim must be the OLDEST *live* entry
+    (s1) -- the stale s0 tuple must be skipped, not resurrected as a victim,
+    and no KeyError may escape. lost_count counts only live evictions.
+    """
+    t = LinkHealthTracker(rtt_deadline_ms=1000.0, max_inflight=3)
+    s0, _ = t.on_send(now=0.0)            # oldest deadline
+    s1, _ = t.on_send(now=0.1)
+    s2, _ = t.on_send(now=0.2)
+    e = t.on_echo(s0, now=0.3)            # s0 matched -> stale (d,s0) on heap
+    assert 'matched' in kinds(e)
+    s3, ev3 = t.on_send(now=0.4)          # back to 3 in flight, no evict yet
+    assert ev3 == []
+    assert t.inflight == 3
+    s4, ev4 = t.on_send(now=0.5)          # now over cap -> evict OLDEST LIVE (s1)
+    assert [x.kind for x in ev4] == ['evict_lost']
+    assert ev4[0].seq == s1               # NOT the stale s0
+    assert s0 not in t._inflight          # s0 stayed matched, never re-touched
+    assert s1 not in t._inflight          # s1 is the evicted victim
+    assert t.matched_count == 1
+    assert t.lost_count == 1
+    assert t.reconciles()
+
+
+def test_heap_eviction_skips_already_lost_stale_tuple():
+    """
+    A sweep-LOST entry leaves a stale heap tuple; eviction must skip it.
+
+    Same lazy-deletion guarantee but the stale tuple comes from the LOST path
+    (sweep), not a match. After s0 settles LOST via sweep, its tuple lingers on
+    the heap; the next over-cap send must evict the oldest LIVE entry and must
+    not double-count s0.
+    """
+    t = LinkHealthTracker(rtt_deadline_ms=100.0, max_inflight=2)
+    s0, _ = t.on_send(now=0.0)
+    s1, _ = t.on_send(now=0.01)
+    sw = t.sweep_deadlines(now=0.200)     # both s0,s1 past deadline -> LOST
+    assert {e.seq for e in sw} == {s0, s1}
+    assert t.lost_count == 2
+    assert t.inflight == 0
+    # Heap still holds the two stale (deadline, seq) tuples. Refill past the cap.
+    s2, _ = t.on_send(now=0.3)
+    s3, _ = t.on_send(now=0.31)
+    s4, ev = t.on_send(now=0.32)          # over cap -> evict oldest LIVE (s2)
+    assert [x.kind for x in ev] == ['evict_lost']
+    assert ev[0].seq == s2                # the live oldest, not a stale s0/s1
+    assert t.lost_count == 3              # only ONE new eviction
+    assert t.reconciles()
+
+
+def test_heap_victim_is_oldest_by_deadline_under_out_of_order_sends():
+    """
+    Victim is chosen by smallest DEADLINE, not send/insertion order.
+
+    Deadlines come from now + rtt_deadline_ms, so a send at an EARLIER `now`
+    has the smaller deadline regardless of call order. Drive sends with
+    decreasing `now` and assert the smallest-deadline entry is evicted.
+    """
+    t = LinkHealthTracker(rtt_deadline_ms=1000.0, max_inflight=2)
+    s_late, _ = t.on_send(now=5.0)        # deadline 1005
+    s_early, _ = t.on_send(now=1.0)       # deadline 1001 -> smallest deadline
+    s_new, ev = t.on_send(now=9.0)        # over cap -> evict smallest deadline
+    assert [x.kind for x in ev] == ['evict_lost']
+    assert ev[0].seq == s_early           # earliest deadline, though sent 2nd
+    assert s_late in t._inflight
+    assert s_new in t._inflight
+    assert t.reconciles()
+
+
+def test_heap_does_not_grow_unbounded_under_cap_with_churn():
+    """
+    Lazy-deletion stale tuples must be compacted so the heap stays O(live).
+
+    With a cap set but rarely hit, every matched/lost removal leaves a stale
+    heap tuple. Over many send+match cycles the heap must NOT grow without
+    bound -- opportunistic compaction keeps it on the order of the live set.
+    """
+    t = LinkHealthTracker(rtt_deadline_ms=1000.0, max_inflight=100)
+    for i in range(5000):
+        s, ev = t.on_send(now=float(i) * 1e-3)
+        assert ev == []                   # cap never hit (we match immediately)
+        t.on_echo(s, now=float(i) * 1e-3 + 1e-4)   # match -> stale tuple left
+    assert t.inflight == 0
+    # Heap must be bounded near the live set (0 here), not ~5000 stale tuples.
+    assert len(t._inflight_heap) <= 2 * t.inflight + 16
+    assert t.matched_count == 5000
+    assert t.reconciles()
+
+
+def test_heap_eviction_full_wrap_collision_then_cap_still_picks_live():
+    """
+    Wrap-reuse gives a seq two deadlines; a later eviction must use the LIVE one.
+
+    A 2^32 wrap reuses a seq while its old entry is in flight: on_send settles
+    the OLD entry LOST and installs a NEW entry under the same seq with a NEWER
+    deadline. The old (deadline, seq) heap tuple is now STALE (same key, smaller
+    deadline). Since the wrap merely swapped one in-flight entry for another, the
+    in-flight count is unchanged, so that same send does NOT also breach the cap.
+    A SUBSEQUENT send then breaches it: the eviction must validate by deadline,
+    skip the stale old-0 tuple, and pick the oldest LIVE entry -- never resurrect
+    the already-LOST old-0 nor mis-target the new-0 through the stale tuple.
+    """
+    t = LinkHealthTracker(rtt_deadline_ms=1000.0, max_inflight=2)
+    t._next_seq = 0
+    a, _ = t.on_send(now=0.0)             # seq 0, deadline 1000.0
+    assert a == 0
+    b, _ = t.on_send(now=0.1)             # seq 1, deadline 1000.1
+    t._next_seq = 0                       # force a full wrap back onto seq 0
+    c, ev_wrap = t.on_send(now=0.2)       # seq 0 reused: old 0 settled LOST,
+    #                                       new 0 installed (deadline 1000.2).
+    #                                       in-flight count unchanged (2) -> the
+    #                                       cap is NOT additionally breached here.
+    assert c == 0
+    assert [x.kind for x in ev_wrap] == ['evict_lost']   # only the wrap-collision
+    assert t.lost_count == 1
+    assert t.inflight == 2                # seq 1 + new seq 0
+    # Now breach the cap with a fresh, non-colliding seq. seq 1 (deadline 1000.1)
+    # is the oldest LIVE entry; the stale old-0 tuple (deadline 1000.0) is smaller
+    # but no longer live and must be skipped, so the victim is seq 1 -- never the
+    # new seq 0. (Pick _next_seq=100 to avoid re-colliding with the live seq 1.)
+    t._next_seq = 100
+    d, ev_cap = t.on_send(now=0.3)
+    assert d == 100
+    assert [x.kind for x in ev_cap] == ['evict_lost']
+    assert ev_cap[0].seq == b             # oldest LIVE, not the stale old-0
+    assert b not in t._inflight
+    assert 0 in t._inflight               # the new seq-0 survives
+    assert d in t._inflight
+    assert t.lost_count == 2
+    assert t.inflight == 2
+    assert t.reconciles()
+    # The new seq 0 must still echo-match cleanly (proves it was never settled).
+    e = t.on_echo(0, now=0.4)
+    assert 'matched' in kinds(e)
+    assert t.reconciles()
+
+
+def test_uncapped_path_never_touches_heap():
+    """
+    max_inflight=None (default) must not populate the eviction heap at all.
+
+    The no-cap path is the steady-state path; it must stay byte-for-byte
+    unchanged and pay zero heap cost. After many uncapped sends the eviction
+    heap stays empty and behaviour (no evictions) is unchanged.
+    """
+    t = LinkHealthTracker(rtt_deadline_ms=1000.0)   # max_inflight=None
+    for i in range(200):
+        s, ev = t.on_send(now=float(i))
+        assert ev == []
+    assert t.inflight == 200
+    assert t._inflight_heap == []          # heap untouched on the no-cap path
+    assert t.lost_count == 0
+    assert t.reconciles()
+
+
+# ==========================================================================
 # Group 3 -- §7.6 / P1-3 WRAP at the 2^32 boundary.
 # ==========================================================================
 

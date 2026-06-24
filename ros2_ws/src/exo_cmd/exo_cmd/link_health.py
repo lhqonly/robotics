@@ -42,9 +42,10 @@ edge.
 
 from collections import deque
 from dataclasses import dataclass, field
+import heapq
 import math
 import threading
-from typing import Deque, Dict, List, Optional
+from typing import Deque, Dict, List, Optional, Tuple
 
 # §7.6 / exo_msgs M-A: seq is the wire field ExoHeader.seq (uint32) that wraps
 # mod 2^32. (Was mod 2^31 under the std_msgs/Int32 baseline; the explicit
@@ -157,10 +158,42 @@ class LinkHealthTracker:
     # settled_window is undersized / the link is backlogged, NOT ordinary DDS
     # retransmit. Folding them together would mute that signal.
     stale_duplicate_count: int = 0
+    # Application-level CRC self-check mismatches (§7.9). NOT a reconciliation
+    # counter: a CRC mismatch is non-blocking (the seq still flows through the
+    # sent->{matched,lost} lifecycle), so this is a SIDE-CHANNEL observable only
+    # and MUST NOT enter the reconcile identity. It lives in the tracker (not the
+    # node) so snapshot() returns it under the SAME lock as sent/matched/rtt --
+    # i.e. /exo/link_health never publishes a crc_mismatch from a different
+    # instant than the rest of the message (no torn snapshot; High-1 invariant).
+    crc_mismatch_count: int = 0
 
     # ----- internal state ----------------------------------------------------
     _next_seq: int = 0
     _inflight: Dict[int, _InflightEntry] = field(default_factory=dict)
+    # Min-heap of (deadline, seq) over the in-flight entries, used ONLY by the
+    # §7.4 cap-eviction path to find the OLDEST-deadline victim in O(log N)
+    # instead of an O(N) min() scan under the lock (Med-3: the scan held _lock
+    # for O(N) on every over-cap send, lengthening lock occupancy and delaying
+    # safety telemetry when the link is backlogged + the cap is saturated).
+    #
+    # Consistency model (heap <-> _inflight), all maintained INSIDE _lock:
+    #   * The heap is a SUPERSET of the live in-flight entries. matched (on_echo)
+    #     and lost (_settle_lost) removals do NOT eagerly remove from the heap --
+    #     they only delete from _inflight. So the heap accumulates STALE tuples
+    #     whose seq is no longer in _inflight, or whose deadline no longer matches
+    #     the current entry for that seq (a seq reused after a 2^32 wrap gets a new
+    #     deadline => the old tuple is stale).
+    #   * LAZY DELETION at pick time: _pop_oldest_inflight() pops the heap until
+    #     the top tuple is VALIDATED against _inflight (seq present AND deadline
+    #     equal). Stale tuples are discarded. This guarantees the chosen victim is
+    #     a genuinely live, oldest-deadline entry -- never an already-settled one
+    #     (no KeyError, no mis-picked victim).
+    #   * The heap is ONLY maintained when a cap is configured (max_inflight set);
+    #     with no cap (the default) nothing pushes to it, so that path is byte-for
+    #     -byte unchanged and pays zero heap cost. __post_init__ sizes it lazily.
+    # Excluded from compare/repr: it is derived state, not value identity.
+    _inflight_heap: List[Tuple[float, int]] = field(
+        default_factory=list, compare=False, repr=False)
     # Recently-settled seq values (matched OR lost), bounded to settled_window.
     # Lets us tell "never sent" (UNMATCHED, §7.5/A6) from "already settled"
     # (DUPLICATE, §7.5/A5). A FIFO deque drives eviction order; the set is the
@@ -226,6 +259,24 @@ class LinkHealthTracker:
             except ValueError:
                 pass
 
+    # ----- side-channel observables ------------------------------------------
+    def note_crc_mismatch(self) -> None:
+        """
+        Record one application-level CRC self-check mismatch (§7.9).
+
+        Public mutating entry point, taken under self._lock like every other
+        public entry, so the increment is consistent with a concurrent
+        snapshot()/counters() read under the MultiThreadedExecutor. This is the
+        SINGLE source of truth for the CRC-mismatch tally (the node no longer
+        keeps its own copy) so the count published on /exo/link_health and the
+        count the node logs cannot diverge. NON-BLOCKING by contract: callers
+        still feed the echo's seq to on_echo() after noting the mismatch -- the
+        count is an observable signal, never a reason to drop a seq, and it never
+        enters the reconcile identity.
+        """
+        with self._lock:
+            self.crc_mismatch_count += 1
+
     # ----- introspection -----------------------------------------------------
     @property
     def inflight(self) -> int:
@@ -246,6 +297,10 @@ class LinkHealthTracker:
             'lost': self.lost_count,
             'duplicate': self.duplicate_count,
             'stale_duplicate': self.stale_duplicate_count,
+            # Side-channel observable (§7.9): reported alongside the reconcile
+            # counters but deliberately NOT part of the identity (see
+            # reconciles()/_reconciles_locked -- it stays out of the sum).
+            'crc_mismatch': self.crc_mismatch_count,
             'inflight': len(self._inflight),
         }
 
@@ -339,6 +394,7 @@ class LinkHealthTracker:
                 'lost': c['lost'],
                 'duplicate': c['duplicate'],
                 'stale_duplicate': c['stale_duplicate'],
+                'crc_mismatch': c['crc_mismatch'],
                 'inflight': c['inflight'],
                 'rtt_last_ms': r['rtt_last_ms'],
                 'rtt_p95_ms': r['rtt_p95_ms'],
@@ -380,11 +436,30 @@ class LinkHealthTracker:
             self.sent_count += 1
 
             # §7.4: enforce a memory cap WITHOUT a silent drop -- the evicted
-            # entry is settled as LOST and a warning is emitted.
+            # entry is settled as LOST and a warning is emitted. The cap path
+            # uses the deadline min-heap (O(log N)); the no-cap path never
+            # touches the heap, so its behaviour is unchanged.
             if self.max_inflight is not None:
+                # Track the new entry in the heap so it can be a future victim.
+                # (deadline, seq) ties break on seq -- harmless; both are 'oldest'.
+                heapq.heappush(self._inflight_heap, (deadline, seq))
+                # Opportunistic compaction: matched/lost removals leave stale
+                # tuples behind (lazy deletion), so the heap can grow past the
+                # live count even when the cap is rarely hit. When stale tuples
+                # outnumber live entries (heap > 2x live), rebuild the heap from
+                # the live entries only -- O(N) but amortised rare, keeping the
+                # heap O(live) so memory and pops stay bounded. Bounded by the cap
+                # anyway via the eviction below, but this also covers the
+                # cap-set-but-not-yet-hit churn (sends matched/lost faster than
+                # the cap is reached).
+                if len(self._inflight_heap) > 2 * len(self._inflight) + 8:
+                    self._inflight_heap = [
+                        (e.deadline, e.seq) for e in self._inflight.values()]
+                    heapq.heapify(self._inflight_heap)
                 while len(self._inflight) > self.max_inflight:
-                    oldest = min(self._inflight.values(),
-                                 key=lambda e: e.deadline)
+                    oldest = self._pop_oldest_inflight()
+                    # oldest cannot be None here: len(_inflight) > cap >= 1, and
+                    # every live entry has a heap tuple, so a live victim exists.
                     self._settle_lost(oldest, now, kind='evict_lost',
                                       level='WARN',
                                       reason='in-flight cap %d exceeded'
@@ -531,6 +606,53 @@ class LinkHealthTracker:
             return events
 
     # ----- internal ----------------------------------------------------------
+    def _pop_oldest_inflight(self) -> Optional[_InflightEntry]:
+        """
+        Return the live in-flight entry with the smallest deadline (O(log N)).
+
+        Caller must hold self._lock. Pops the (deadline, seq) min-heap, applying
+        LAZY DELETION: a popped tuple is only accepted if it still matches a live
+        _inflight entry -- the seq must be present AND its deadline must equal the
+        tuple's deadline. A tuple fails this check when:
+          * the entry was already settled (matched echo / LOST) -- its dict key is
+            gone, so the tuple is stale; or
+          * the seq was reused after a 2^32 wrap -- the live entry now carries a
+            DIFFERENT (newer) deadline, so the OLD tuple is stale and must not be
+            allowed to mis-target the fresh entry.
+        Stale tuples are discarded (they are pure garbage at this point). This is
+        why on_echo / _settle_lost need not touch the heap: their removals simply
+        leave tuples that this routine skips. Returns None only if the heap holds
+        no live entry (should not happen when len(_inflight) > 0, but handled
+        defensively rather than raising).
+
+        The popped victim's tuple is consumed here; _settle_lost then removes it
+        from _inflight, so no further heap bookkeeping is needed for the victim.
+
+        CORRECTNESS DEPENDENCY (do not break in refactors): the deadline-equality
+        check distinguishes a stale tuple from a live one ONLY when their deadlines
+        differ. A wrap-reused seq could in principle land on the SAME deadline as
+        the old tuple (clock granularity collision); then `entry.deadline ==
+        deadline` cannot tell old from new. Safety does NOT rely on that check in
+        the collision case -- it relies on the invariant that the OLD entry has
+        ALREADY left _inflight before the new same-seq entry is admitted: a seq is
+        only re-armed after its prior occupant was settled (matched echo or
+        _settle_lost popped it from _inflight). So at any instant _inflight holds
+        at most one entry per seq, and `.get(seq)` returns the live (new) entry;
+        the old tuple, when later popped, finds either no seq (already settled) or
+        a newer entry whose deadline differs -> discarded. The deadline check is
+        thus a fast-path filter for the common stale case, not the load-bearing
+        guard for wrap collisions. If a future change ever allows two live entries
+        with the same seq to coexist in _inflight, this routine becomes unsound.
+        """
+        while self._inflight_heap:
+            deadline, seq = heapq.heappop(self._inflight_heap)
+            entry = self._inflight.get(seq)
+            if entry is not None and entry.deadline == deadline:
+                return entry
+            # else: stale tuple (settled, or superseded by a wrap-reused seq) ->
+            # discard and keep popping.
+        return None
+
     def _settle_lost(self, entry: _InflightEntry, now: float, kind: str,
                      level: str, reason: str, out: List[Event]) -> None:
         """Move an entry out of in-flight via the LOST path (never silent)."""

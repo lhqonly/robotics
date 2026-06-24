@@ -4,6 +4,7 @@ uint64 matched
 uint64 lost
 uint64 duplicate
 uint64 stale_duplicate
+uint64 crc_mismatch      # 应用级 CRC 自检失配累计（§7.9）：crc_enabled=False 时恒 0；旁路观测量，不入 reconciles 对账等式
 uint32 inflight
 float64 rtt_last_ms
 float64 rtt_p95_ms
