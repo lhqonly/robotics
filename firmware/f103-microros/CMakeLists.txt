@@ -70,7 +70,9 @@ set(SOURCES
     ${CMAKE_SOURCE_DIR}/src/main.c
     ${CMAKE_SOURCE_DIR}/src/stm32f1xx_it.c
     ${CMAKE_SOURCE_DIR}/src/microros_transport.c   # T5:自定义串口 transport 4 回调
-    ${CMAKE_SOURCE_DIR}/src/microros_app.c         # T5:rclc 双向应用(exo_mcu)
+    ${CMAKE_SOURCE_DIR}/src/microros_app.c         # T5/M-B:rclc 双向应用(exo_mcu,exo_msgs 载体)
+    ${CMAKE_SOURCE_DIR}/src/dwt_time.c             # M-B 任务3:DWT CYCCNT 单调时钟(stamp_mono_ns)
+    ${CMAKE_SOURCE_DIR}/src/exo_crc.c              # M-B 任务4:应用级 CRC-32(§7.9,host 可对拍)
     ${CMSIS_DEV}/Source/Templates/system_stm32f1xx.c
     ${CMSIS_DEV}/Source/Templates/gcc/startup_stm32f103xb.s
     # FreeRTOS core

@@ -52,7 +52,9 @@ extern uint32_t SystemCoreClock;
 
 /* 钩子 */
 #define configUSE_IDLE_HOOK                     0
-#define configUSE_TICK_HOOK                     0
+#define configUSE_TICK_HOOK                     1   /* M-B 任务 3(H3):vApplicationTickHook 1kHz
+                                                     * 维护 DWT CYCCNT 64 位回绕扩展(独立高频源,
+                                                     * << 59.65s 回绕周期 → 不漏回绕)。见 main.c。 */
 #define configCHECK_FOR_STACK_OVERFLOW          2   /* 模式2:栈水位 + 模式覆盖检测,调试期开 */
 #define configUSE_MALLOC_FAILED_HOOK            1   /* malloc 失败要暴露,不静默 */
 #define configUSE_DAEMON_TASK_STARTUP_HOOK      0

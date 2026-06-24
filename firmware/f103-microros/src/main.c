@@ -74,6 +74,7 @@ void *_sbrk(ptrdiff_t incr)
 
 #include "microros_app.h"   /* T5:micro-ROS 应用任务(替代 T4 的 echo AppTask) */
 #include "uart_ll.h"        /* T5:本文件实现 uart_ll_write_blocking / uart_ll_read 供 transport 用 */
+#include "dwt_time.h"       /* M-B 任务 3:DWT CYCCNT 单调时钟(stamp_mono_ns)+ tick 钩子回绕扩展 */
 
 #include <time.h>           /* T5:clock_gettime 实现(libmicroros 的 rcutils/xrce 取时依赖) */
 
@@ -419,6 +420,15 @@ int main(void)
     DMA_Init();
     USART1_Init();
 
+    /* M-B 任务 3:初始化 DWT CYCCNT 单调时钟(stamp_mono_ns 来源)。
+     * ★ 必须在 vTaskStartScheduler 之前:调度器一起跑,1kHz tick 钩子(vApplicationTickHook)
+     *   就会调 dwt_tick_update() 维护 64 位回绕扩展——init 必须先把 CYCCNT 使能并把
+     *   g_dwt_last_cyccnt 置好,否则首个 tick 读到未使能/未初始化的低位。
+     * 返回 0(CYCCNT 不可用)在 F103 上不应发生;若发生,stamp 恒 0(暴露,不静默降级)。
+     * 不死等/不 fail:stamp 不可用不该让整个 micro-ROS 链路停摆(回环值仍正确,只是 stamp=0
+     * 可观测),与「值正确性 > 时效地基」的分层一致。 */
+    (void)dwt_init();
+
     rx_last_pos   = 0;
     app_ring_head = 0;
     app_ring_tail = 0;
@@ -465,4 +475,15 @@ void vApplicationMallocFailedHook(void)
 {
     taskDISABLE_INTERRUPTS();
     for (;;) { }
+}
+
+/* ===== M-B 任务 3:FreeRTOS tick 钩子 —— DWT 64 位回绕扩展的独立高频源(H3) =====
+ * configUSE_TICK_HOOK=1 时,FreeRTOS 每个 tick(1kHz = 1ms)在 SysTick ISR 上下文调本钩子。
+ * 这里把它转给 dwt_tick_update():每 1ms 采样一次 CYCCNT、检测/累加 32 位回绕到 64 位高位。
+ * 1ms << CYCCNT 回绕周期 59.65s → 两 tick 间至多走 72000 cycle,绝不可能跨整圈 2^32,
+ *   故回绕检测无遗漏(H3 核心:不靠 dwt_now_ns 调用频率,链路断流 >59.65s 也不漏回绕)。
+ * 钩子内只读一次寄存器 + 一次比较 + 至多一次自增,极轻(几十 ns),不拖累 tick。 */
+void vApplicationTickHook(void)
+{
+    dwt_tick_update();
 }

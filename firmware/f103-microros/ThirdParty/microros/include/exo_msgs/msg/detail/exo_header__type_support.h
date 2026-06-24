@@ -1,0 +1,36 @@
+// generated from rosidl_generator_c/resource/idl__type_support.h.em
+// with input from exo_msgs:msg/ExoHeader.idl
+// generated code does not contain a copyright notice
+
+// IWYU pragma: private, include "exo_msgs/msg/exo_header.h"
+
+
+#ifndef EXO_MSGS__MSG__DETAIL__EXO_HEADER__TYPE_SUPPORT_H_
+#define EXO_MSGS__MSG__DETAIL__EXO_HEADER__TYPE_SUPPORT_H_
+
+#include "rosidl_typesupport_interface/macros.h"
+
+#include "exo_msgs/msg/rosidl_generator_c__visibility_control.h"
+
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
+#include "rosidl_runtime_c/message_type_support_struct.h"
+
+// Forward declare the get type support functions for this type.
+ROSIDL_GENERATOR_C_PUBLIC_exo_msgs
+const rosidl_message_type_support_t *
+ROSIDL_TYPESUPPORT_INTERFACE__MESSAGE_SYMBOL_NAME(
+  rosidl_typesupport_c,
+  exo_msgs,
+  msg,
+  ExoHeader
+)(void);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif  // EXO_MSGS__MSG__DETAIL__EXO_HEADER__TYPE_SUPPORT_H_
