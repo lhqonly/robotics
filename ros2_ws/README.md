@@ -1,13 +1,14 @@
 # ros2_ws — exoskeleton ROS2 workspace (Jazzy)
 
-WSL-side ROS2 packages for the ROS2 ↔ micro-ROS minimal serial loopback.
+MacBook-side ROS2 packages for the ROS2 ↔ micro-ROS minimal serial loopback.
 Interface contract: `docs/01-ros2-microros-serial/01-接口契约.md` (v1.0).
 
 ## Packages
 
-- **exo_cmd** (ament_python) — WSL command node + local MCU simulator.
-  - `exo_cmd_node`: pub `/exo/cmd_heartbeat` (Int32, 10 Hz, monotonic counter
-    from 0), sub `/exo/mcu_status`, verifies round-trip values.
+- **exo_cmd** (ament_python) — MacBook command node + local MCU simulator.
+  - `exo_cmd_node`: pub `/exo/cmd_heartbeat` (`exo_msgs/ExoCmd`, 10 Hz,
+    monotonic `header.seq`), sub `/exo/mcu_status` (`exo_msgs/ExoStatus`),
+    verifies round-trip sequence values.
   - `loopback_node`: Phase-A MCU stand-in. Sub `/exo/cmd_heartbeat`, echoes the
     same value to `/exo/mcu_status`.
 - **exo_bringup** (ament_python) — launch files.
@@ -51,3 +52,22 @@ ros2 topic info -v /exo/mcu_status
 Pass: `/exo/mcu_status` carries the same monotonically increasing values that
 `exo_cmd` publishes on `/exo/cmd_heartbeat`, and the `exo_cmd` node logs
 `round-trip OK`.
+
+## Real F103 board on macOS
+
+Connect the USB-TTL adapter to the MacBook and wire it to USART1 on the F103:
+USB-TTL RXD ← PA9, TXD → PA10, GND ↔ GND. Do not power the board from the
+USB-TTL VCC pin unless the hardware setup explicitly requires it.
+
+```bash
+# Optional: pick the serial device explicitly if multiple adapters are present.
+export EXO_DEV=/dev/cu.usbserial-xxxx
+
+# Terminal 1: agent
+../tools/run-agent.sh
+
+# Terminal 2: full hardware acceptance
+./scripts/hw_acceptance.sh all
+```
+
+If ROS2 is not already on `PATH`, set `EXO_ROS_SETUP=/path/to/setup.bash`.

@@ -4,7 +4,7 @@
   <name>exo_cmd</name>
   <version>1.7.0</version>
   <description>
-    WSL-side ROS2 nodes for the exoskeleton serial loopback (exo_msgs M-A).
+    MacBook-side ROS2 nodes for the exoskeleton serial loopback (exo_msgs M-A).
     Publishes /exo/cmd_heartbeat (exo_msgs/ExoCmd, 10 Hz; header.seq wraps
     mod 2^32, header.stamp_mono_ns, optional header.crc; payload decoupled from
     seq) and subscribes /exo/mcu_status (exo_msgs/ExoStatus) to verify the

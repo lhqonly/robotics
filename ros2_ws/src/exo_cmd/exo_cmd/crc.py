@@ -18,7 +18,7 @@ byte-for-byte:
       payload        -> int32   (4 bytes, LE, two's complement)
   * algorithm = CRC-32 (zlib.crc32), matching the 32-bit ``crc`` field width.
 
-M-A delivers only the WSL-side Python implementation of this canonical recipe;
+M-A delivers only the host-side Python implementation of this canonical recipe;
 making the F103 firmware compute the identical bytes is an M-B integration task.
 """
 

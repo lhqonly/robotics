@@ -8,7 +8,7 @@ fixes the QoS for BOTH topics (/exo/cmd_heartbeat and /exo/mcu_status):
     History     = KEEP_LAST
     Depth       = 10
 
-Keeping it in one place guarantees the WSL nodes here and any future
+Keeping it in one place guarantees the MacBook-side nodes here and any future
 contributor use exactly the same settings. The MCU (micro-ROS) side must
 match this profile or DDS endpoint matching will silently fail.
 """

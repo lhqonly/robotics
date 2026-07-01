@@ -15,12 +15,12 @@ setup(
     zip_safe=True,
     maintainer='Tom',
     maintainer_email='lhqonly@users.noreply.github.com',
-    description='WSL-side pub/sub nodes for the exoskeleton serial loopback.',
+    description='MacBook-side pub/sub nodes for the exoskeleton serial loopback.',
     license='MIT',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            # WSL command node: pub /exo/cmd_heartbeat, sub /exo/mcu_status
+            # MacBook command node: pub /exo/cmd_heartbeat, sub /exo/mcu_status
             'exo_cmd_node = exo_cmd.exo_cmd_node:main',
             # Local MCU simulator: sub /exo/cmd_heartbeat -> pub /exo/mcu_status
             'loopback_node = exo_cmd.loopback_node:main',

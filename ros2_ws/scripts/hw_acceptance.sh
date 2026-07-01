@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Real-hardware acceptance for WSL(ROS2 Jazzy) <-> Nucleo-F103RB(micro-ROS)
+# Real-hardware acceptance for MacBook(ROS2 Jazzy) <-> Nucleo-F103RB(micro-ROS)
 # bidirectional pub/sub over serial.  (designed by Gill; run by 主 agent)
 #
 # This is NOT a loopback test. The micro-ROS Agent + the real board replace the
-# loopback_node. exo_cmd_node (WSL side) is the SAME node used in Phase A: it
+# loopback_node. exo_cmd_node (MacBook side) is the SAME node used in Phase A: it
 # publishes /exo/cmd_heartbeat and subscribes /exo/mcu_status with the v1.1
-# LinkHealthTracker. The board echoes cmd_heartbeat.data back on mcu_status.
+# LinkHealthTracker. The board echoes ExoCmd.header.seq back in
+# ExoStatus.header.seq on mcu_status.
 #
-# Prereqs (主 agent verifies before running):
-#   - usbipd attached, /dev/ttyACM0 present & openable @921600 (G-B-1 done)
+# Prereqs:
+#   - USB-TTL is connected directly to the MacBook and openable @921600
 #   - firmware flashed onto F103 (T4/T5/T8 done)
-#   - micro_ros_agent built/installed (T3 done)
+#   - micro_ros_agent built/installed and visible via ROS2 overlay
 #
 # Usage:
 #   hw_acceptance.sh <phase> [run_seconds]
@@ -19,19 +20,23 @@
 #     run_seconds default per-phase below
 #
 # Exit code 0 = phase PASS, non-zero = FAIL (grep the .log files for evidence).
-# Everything is killed by process group (setsid + kill -- -PGID), per the
-# 2026-06-18 orphan-crosstalk lesson (see tools/run-scenario.sh).
+# Everything is killed by process tree, because macOS does not ship Linux
+# setsid/timeout by default.
 # =============================================================================
 set +u
-source /opt/ros/jazzy/setup.bash
-source /home/lhq24/robotics/ros2_ws/install/setup.bash
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/../../tools/host-common.sh"
+exo_source_agent || exit 1
 set -uo pipefail
 
-# Contract v1.3+: comms port = independent USB-TTL on USART1 = /dev/ttyUSB0.
-# (ST-Link /dev/ttyACM0 is SWD-flash ONLY, not the micro-ROS serial.)
-DEV="${EXO_DEV:-/dev/ttyUSB0}"
+# Comms port = independent USB-TTL on USART1. Use /dev/cu.* on macOS.
+DEV="${EXO_DEV:-}"
+if [ -z "$DEV" ]; then
+  DEV="$(exo_detect_serial_dev || true)"
+fi
 BAUD="${EXO_BAUD:-921600}"
-LOGDIR=/home/lhq24/robotics/log
+LOGDIR="$EXO_LOGDIR"
 mkdir -p "$LOGDIR"
 PHASE="${1:-all}"
 SECS="${2:-}"
@@ -72,8 +77,9 @@ preflight() {
   local term
   term=$(pgrep -f 'screen|minicom|picocom|cu ' | tr '\n' ' ')
   [ -n "$term" ] && { red "PREFLIGHT WARN: serial terminal PIDs present: $term (may hold $DEV)"; }
-  if [ ! -e "$DEV" ]; then
-    red "PREFLIGHT FAIL: $DEV does not exist. usbipd attach + flash first."
+  if [ -z "$DEV" ] || [ ! -e "$DEV" ]; then
+    red "PREFLIGHT FAIL: USB-TTL serial device not found."
+    exo_print_serial_help
     exit 2
   fi
   # HARD gate: nobody may already own the port (Codex finding -- a single open()
@@ -85,12 +91,12 @@ preflight() {
   fi
   if [ -n "$holders" ]; then
     red "PREFLIGHT FAIL: $DEV already held by PID(s): $holders"
-    red "  (Windows tool over usbip? a second agent? screen/minicom?) Aborting."
+    red "  (a second agent? screen/minicom/cu? another terminal?) Aborting."
     exit 2
   fi
-  # device must be openable (not held by Windows / another agent)
+  # device must be openable (not held by another agent/terminal)
   if ! { exec 9<>"$DEV"; } 2>/dev/null; then
-    red "PREFLIGHT FAIL: cannot open $DEV (busy? permissions? Windows holding it?)"
+    red "PREFLIGHT FAIL: cannot open $DEV (busy? permissions?)"
     exit 2
   fi
   exec 9>&-
@@ -108,22 +114,17 @@ preflight() {
 
 start_agent() {
   # IMPORTANT: agent must own the serial port. Nothing else (no screen/minicom,
-  # no second agent, no Windows tool) may have /dev/ttyACM0 open.
-  setsid ros2 run micro_ros_agent micro_ros_agent serial \
+  # no second agent) may have it open.
+  ros2 run micro_ros_agent micro_ros_agent serial \
       --dev "$DEV" -b "$BAUD" -v6 > "$AGENT_LOG" 2>&1 &
   AGENT_PGID=$!
-  echo "agent started pgid=$AGENT_PGID -> $AGENT_LOG"
+  echo "agent started pid=$AGENT_PGID -> $AGENT_LOG"
 }
 
 stop_all() {
-  for p in "${AGENT_PGID:-}" "${CMD_PGID:-}"; do
-    [ -n "$p" ] && kill -TERM -- -"$p" 2>/dev/null || true
+  for p in "${ECHO_PID:-}" "${CMD_PGID:-}" "${AGENT_PGID:-}"; do
+    [ -n "$p" ] && exo_kill_tree "$p"
   done
-  sleep 1
-  for p in "${AGENT_PGID:-}" "${CMD_PGID:-}"; do
-    [ -n "$p" ] && kill -9 -- -"$p" 2>/dev/null || true
-  done
-  sleep 1
   local leak
   leak=$(pgrep -f 'exo_cmd/lib/exo_cmd/exo_cmd_node|micro_ros_agent' | tr '\n' ' ')
   [ -n "$leak" ] && { red "LEAK after stop: $leak"; kill -9 $leak 2>/dev/null || true; }
@@ -158,7 +159,7 @@ phase_session() {
     return 1
   fi
   # Agent process must still be alive (it can connect then die on a bad frame).
-  if ! kill -0 -- -"$AGENT_PGID" 2>/dev/null && ! pgrep -f micro_ros_agent >/dev/null; then
+  if ! kill -0 "$AGENT_PGID" 2>/dev/null && ! pgrep -f micro_ros_agent >/dev/null; then
     red "SESSION FAIL: agent process exited after connecting. See $AGENT_LOG tail:"
     tail -20 "$AGENT_LOG"; return 1
   fi
@@ -277,16 +278,16 @@ phase_uni() {
 # PHASE 3 : BIDI -- real end-to-end roundtrip, value sequence consistent
 # ===========================================================================
 phase_bidi() {
-  hr; echo "PHASE 3: BIDI (WSL drives cmd_heartbeat, board echoes mcu_status)"; hr
+  hr; echo "PHASE 3: BIDI (MacBook drives cmd_heartbeat, board echoes mcu_status)"; hr
   local run="${SECS:-30}"
   local deadline_s=0.2   # rtt_deadline_ms default = 200ms
   # Drive the link with the real exo_cmd_node (10 Hz heartbeat + link health).
   # start_value:=-1 -> a random 31-bit run nonce, so the board's echoed first
   # heartbeat proves THIS run's causality (replaying an old 0.. sequence fails).
-  setsid ros2 run exo_cmd exo_cmd_node --ros-args -p start_value:=-1 \
+  ros2 run exo_cmd exo_cmd_node --ros-args -p start_value:=-1 \
       > "$CMD_LOG" 2>&1 &
   CMD_PGID=$!
-  echo "exo_cmd_node started pgid=$CMD_PGID -> $CMD_LOG"
+  echo "exo_cmd_node started pid=$CMD_PGID -> $CMD_LOG"
   # WARMUP: exo_cmd_node publishes at 10 Hz the instant it starts, but its
   # cmd_heartbeat publisher takes a couple seconds to DDS-match the board's
   # datareader (esp. bridged via the agent). Those first sends get no echo and
@@ -308,18 +309,21 @@ phase_bidi() {
     red "  BIDI WARN: link did not start matching within 15s warmup -- measuring from 0 (expect startup losses)."
   fi
   # capture the echo stream independently as ground truth (causality cross-check)
-  setsid timeout "$run" ros2 topic echo /exo/mcu_status std_msgs/msg/Int32 \
-      > "$ECHO_LOG" 2>&1 &
+  ros2 topic echo /exo/mcu_status exo_msgs/msg/ExoStatus > "$ECHO_LOG" 2>&1 &
+  ECHO_PID=$!
   # let it run (measured steady-state window)
   sleep "$run"
+  exo_kill_tree "$ECHO_PID"
+  ECHO_PID=""
 
   # CAUSALITY: stop the publisher, wait > 2*deadline, then the tracker MUST drain
   # inflight to 0 (every outstanding seq settles to matched or lost). A board
   # that is publishing AUTONOMOUSLY (not echoing) would keep producing values we
-  # never sent -> shows up as UNMATCHED; and if WSL->MCU is dead, the values we
+  # never sent -> shows up as UNMATCHED; and if MacBook->MCU is dead, the values we
   # DID send all settle as LOST. Either way the drained state is diagnostic.
   echo "stopping publisher, draining inflight (wait $(awk "BEGIN{print 2*$deadline_s+0.5}")s)..."
-  kill -TERM -- -"$CMD_PGID" 2>/dev/null || true
+  exo_kill_tree "$CMD_PGID"
+  CMD_PGID=""
   sleep 1   # let the node print its shutdown / final state
 
   echo "--- ros2 topic hz: NOTE this is WEAK proof. Run in a SEPARATE shell DURING"
@@ -430,7 +434,7 @@ phase_bidi() {
     echo "        needed retransmits -> physical margin is thin even if matched is full)."
   fi
   # 7) causality cross-check from the independent echo capture
-  echo "  echo-capture lines: $(grep -c 'data:' "$ECHO_LOG" 2>/dev/null || echo 0) (independent ground-truth of mcu_status values)"
+  echo "  echo-capture lines: $(grep -c 'seq:' "$ECHO_LOG" 2>/dev/null || echo 0) (independent ground-truth of mcu_status seq values)"
   # 8) run-nonce causality (implemented: start_value:=-1 nonce). Parse the nonce
   #    exo_cmd_node logged, then require the independent echo capture to contain
   #    it -- the board's first echoed heartbeat. A board replaying an old 0..
@@ -441,8 +445,8 @@ phase_bidi() {
   if [ -z "$nonce" ]; then
     red "  WARN nonce: no 'start_seq=' line in $CMD_LOG -- cannot run the causality"
     red "       cross-check (old build?). Skipping (not a FAIL)."
-  elif grep -qE "data: *${nonce}\b" "$ECHO_LOG" 2>/dev/null; then
-    grn "  OK nonce: echo capture contains run nonce $nonce -> board echoed THIS run"
+  elif grep -qE "seq: *${nonce}\b" "$ECHO_LOG" 2>/dev/null; then
+    grn "  OK nonce: echo capture contains run nonce seq=$nonce -> board echoed THIS run"
   else
     red "  FAIL nonce: run nonce $nonce NOT in echo capture -> board did NOT echo our"
     red "        nonce (replaying an old 0.. sequence? autonomous counter? not echoing?)."

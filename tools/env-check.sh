@@ -17,19 +17,12 @@
 
 set -uo pipefail
 
-# ---- 可被环境变量覆盖的默认值 ----
-ROS_DISTRO_DEFAULT="jazzy"
-ROS_SETUP="/opt/ros/${ROS_DISTRO:-$ROS_DISTRO_DEFAULT}/setup.bash"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/host-common.sh"
 
 # 若 ROS2 已安装但当前 shell 未 source，则临时 source，让 ros2/colcon 可见。
-# 注意：ROS 的 setup.bash 引用了未初始化的 AMENT_TRACE_SETUP_FILES 等变量，
-# 与本脚本的 `set -u` 不兼容，故 source 前后临时关闭 -u。
-if [[ -f "$ROS_SETUP" ]]; then
-  set +u
-  # shellcheck disable=SC1090
-  source "$ROS_SETUP"
-  set -u
-fi
+exo_source_ros >/dev/null 2>&1 || true
 
 # ---- 颜色（仅在 TTY 下启用，避免污染日志/管道）----
 if [[ -t 1 ]]; then
@@ -60,9 +53,9 @@ check() {
   fi
 }
 
-echo "================= 外骨骼项目 环境自检 (T1 / G1) ================="
+echo "================= 外骨骼项目 macOS 环境自检 ================="
 echo "主机: $(uname -srm)    用户: $(whoami)    日期: $(date '+%F %T')"
-echo "ROS setup: ${ROS_SETUP} $( [[ -f "$ROS_SETUP" ]] && echo '(已 source)' || echo '(不存在)')"
+echo "ROS setup: ${EXO_ROS_SETUP:-auto/PATH}    ROS workspace: $EXO_ROS_WS"
 echo "----------------------------------------------------------------"
 
 echo "[ROS2 / micro-ROS 侧]"
@@ -95,6 +88,15 @@ check OPT "st-info"        st-info           st-info --version
 check OPT "openocd"        openocd           openocd --version
 echo
 
+echo "[macOS 串口]"
+if dev="$(exo_detect_serial_dev 2>/dev/null)"; then
+  printf "%b[ OK ]%b %-22s %s\n" "$C_OK" "$C_RST" "USB serial" "$dev"
+else
+  printf "%b[MISS]%b %-22s %s未发现 /dev/cu.usbserial* 等 USB-TTL 设备%s\n" \
+    "$C_WARN" "$C_RST" "USB serial" "$C_DIM" "$C_RST"
+fi
+echo
+
 echo "[评审工具]"
 check KEY "codex"          codex             codex --version
 echo
@@ -104,6 +106,6 @@ if [[ "$FAIL" -eq 0 ]]; then
   echo "${C_OK}结果: 关键组件齐备。${C_RST}"
   exit 0
 else
-  echo "${C_BAD}结果: 有 ${FAIL} 个关键组件缺失。请运行 tools/install-toolchain.sh 或参考 T1 任务卡。${C_RST}"
+  echo "${C_BAD}结果: 有 ${FAIL} 个关键组件缺失。请先安装 macOS 侧 ROS2/colcon/固件工具链；若 ROS2 已安装但未在 PATH 上，设置 EXO_ROS_SETUP=/path/to/setup.bash。${C_RST}"
   exit 1
 fi

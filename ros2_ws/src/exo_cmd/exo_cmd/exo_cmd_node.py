@@ -1,5 +1,5 @@
 """
-exo_cmd node: WSL-side heartbeat publisher + link-health monitor.
+exo_cmd node: MacBook-side heartbeat publisher + link-health monitor.
 
 Per the interface contract (v1.7, exo_msgs M-A):
   - publishes /exo/cmd_heartbeat  (exo_msgs/ExoCmd, 10 Hz). header.seq is the
