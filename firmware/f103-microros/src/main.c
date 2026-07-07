@@ -398,12 +398,12 @@ static void LedTask(void *arg)
 }
 
 /* ===== 静态 task 资源(configSUPPORT_STATIC_ALLOCATION=1) =====
- * micro-ROS 任务栈:rcl→rmw→xrce 调用链较深,05 文档 T8 建议起测 ~2500 words,
- *   烧板后用 uxTaskGetStackHighWaterMark 收敛到「HWM_min + ≥128 words 余量」。
- *   先取 2560 words(=10KB)起测——这是 20KB RAM 里最大的单块,T8 会量化并回收余量。
+ * micro-ROS 任务栈:rcl→rmw→xrce 调用链较深。早期按 05 文档 T8 建议从 ~2500 words
+ *   起测,现已基于 gdb 栈水位和硬件验收收敛到 1024 words。
  * LED 任务栈:64 words(=256B),只翻 GPIO + delay,够用。 */
-#define MICROROS_TASK_STACK_WORDS  1536u   /* 6KB。gdb 实测 rcl_init+create_session 全程栈最深仅用 ~235 words
-                                            * (HWM 余 1813/2048),6KB 余量充足;留更多 RAM 给 newlib heap。
+#define MICROROS_TASK_STACK_WORDS  1024u   /* 4KB。gdb 实测 rcl_init+create_session 全程栈最深仅用 ~235 words
+                                            * (早期 2048-word 栈 HWM 余 1813),4KB 仍保留约 3KB 栈余量;
+                                            * 省下 2KB SRAM 给 newlib heap / micro-ROS 运行余量。
                                             * (注:建链 hang 与栈无关,真因是 best_effort 流配置见 colcon.meta;
                                             *  此前 10KB→6KB 的栈调整是误判方向,栈从来不是瓶颈。) */
 #define LED_TASK_STACK_WORDS       64u     /* = 256B */
