@@ -78,9 +78,6 @@ set(SOURCES
     # FreeRTOS core
     ${FREERTOS}/tasks.c
     ${FREERTOS}/list.c
-    ${FREERTOS}/queue.c
-    ${FREERTOS}/timers.c
-    ${FREERTOS}/croutine.c
     ${FREERTOS}/portable/GCC/ARM_CM3/port.c
 )
 
