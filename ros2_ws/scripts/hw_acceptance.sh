@@ -24,6 +24,7 @@
 # =============================================================================
 set +u
 source /opt/ros/jazzy/setup.bash
+source "$HOME/uros_ws/install/local_setup.bash"
 source /home/lhq24/robotics/ros2_ws/install/setup.bash
 set -uo pipefail
 
@@ -308,7 +309,7 @@ phase_bidi() {
     red "  BIDI WARN: link did not start matching within 15s warmup -- measuring from 0 (expect startup losses)."
   fi
   # capture the echo stream independently as ground truth (causality cross-check)
-  setsid timeout "$run" ros2 topic echo /exo/mcu_status std_msgs/msg/Int32 \
+  setsid timeout "$run" ros2 topic echo /exo/mcu_status exo_msgs/msg/ExoStatus \
       > "$ECHO_LOG" 2>&1 &
   # let it run (measured steady-state window)
   sleep "$run"
@@ -430,22 +431,27 @@ phase_bidi() {
     echo "        needed retransmits -> physical margin is thin even if matched is full)."
   fi
   # 7) causality cross-check from the independent echo capture
-  echo "  echo-capture lines: $(grep -c 'data:' "$ECHO_LOG" 2>/dev/null || echo 0) (independent ground-truth of mcu_status values)"
-  # 8) run-nonce causality (implemented: start_value:=-1 nonce). Parse the nonce
-  #    exo_cmd_node logged, then require the independent echo capture to contain
-  #    it -- the board's first echoed heartbeat. A board replaying an old 0..
-  #    sequence (or autonomously counting from 0) will NOT echo our random nonce.
-  #    No nonce parsed (older firmware log / no start_seq line) -> WARN, not FAIL.
-  local nonce
+  echo "  echo-capture lines: $(grep -c 'seq:' "$ECHO_LOG" 2>/dev/null || echo 0) (independent ground-truth of mcu_status values)"
+  # 8) independent causality cross-check. The authoritative causality proof is
+  #    the tracker itself: zero UNMATCHED + matched seqs means the board echoed
+  #    values that THIS exo_cmd run sent. The separate `ros2 topic echo` starts
+  #    after warmup, so it may miss the first run nonce; instead, require at
+  #    least one captured ExoStatus.header.seq to also appear as a matched seq
+  #    in the exo_cmd log.
+  local nonce first_echo_seq
   nonce=$(sed -nE 's/.*start_seq=([0-9]+).*/\1/p' "$CMD_LOG" | head -1)
+  first_echo_seq=$(sed -nE 's/^[[:space:]]*seq: *([0-9]+).*/\1/p' "$ECHO_LOG" | head -1)
   if [ -z "$nonce" ]; then
     red "  WARN nonce: no 'start_seq=' line in $CMD_LOG -- cannot run the causality"
     red "       cross-check (old build?). Skipping (not a FAIL)."
-  elif grep -qE "data: *${nonce}\b" "$ECHO_LOG" 2>/dev/null; then
-    grn "  OK nonce: echo capture contains run nonce $nonce -> board echoed THIS run"
+  elif [ -z "$first_echo_seq" ]; then
+    red "  FAIL echo-capture: no ExoStatus.header.seq captured on /exo/mcu_status"
+    ok=1
+  elif grep -qE "matched seq=${first_echo_seq}\b" "$CMD_LOG" 2>/dev/null; then
+    grn "  OK echo-capture: captured seq $first_echo_seq is matched by exo_cmd in this run (start_seq=$nonce)"
   else
-    red "  FAIL nonce: run nonce $nonce NOT in echo capture -> board did NOT echo our"
-    red "        nonce (replaying an old 0.. sequence? autonomous counter? not echoing?)."
+    red "  FAIL echo-capture: captured seq $first_echo_seq is not matched by exo_cmd"
+    red "        (wrong source on /exo/mcu_status? echo capture from another run?)"
     ok=1
   fi
   return $ok

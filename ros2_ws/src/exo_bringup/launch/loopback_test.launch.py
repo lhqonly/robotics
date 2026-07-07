@@ -1,4 +1,5 @@
-"""Hardware-free self-test launch (Phase A).
+"""
+Hardware-free self-test launch (Phase A).
 
 Brings up BOTH:
   - exo_cmd      : publishes /exo/cmd_heartbeat, checks /exo/mcu_status

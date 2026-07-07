@@ -1,4 +1,5 @@
-"""Launch only the WSL exo_cmd node.
+"""
+Launch only the WSL exo_cmd node.
 
 Use this when the other end of the loopback is the real MCU (Phase B) or the
 micro-ROS agent, i.e. when you do NOT want the local simulator.
