@@ -44,10 +44,10 @@ extern uint32_t SystemCoreClock;
 #define configENABLE_BACKWARD_COMPATIBILITY     0
 #define configNUM_THREAD_LOCAL_STORAGE_POINTERS 0
 
-/* 内存分配:静态优先;dynamic 兜底,heap 给小且明确上界。 */
+/* 内存分配:全静态。micro-ROS/rmw 使用自身静态池,newlib heap 由 _sbrk 边界保护。 */
 #define configSUPPORT_STATIC_ALLOCATION         1
-#define configSUPPORT_DYNAMIC_ALLOCATION        1
-#define configTOTAL_HEAP_SIZE                   ( ( size_t ) ( 512 ) )   /* 【RAM 优化 2026-06-20】FreeRTOS heap 几乎没人用(全静态 task、micro-ROS 走 newlib malloc),2KB→512B 回收 .bss 给 newlib heap;留 512B 兜底(若 UXR_LOCK 用 FreeRTOS 信号量) */
+#define configSUPPORT_DYNAMIC_ALLOCATION        0
+#define configTOTAL_HEAP_SIZE                   ( ( size_t ) ( 0 ) )
 #define configAPPLICATION_ALLOCATED_HEAP        0
 
 /* 钩子 */

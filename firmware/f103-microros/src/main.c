@@ -425,7 +425,6 @@ static volatile uint32_t t8_probe_anchor;
 T8_PROBE_NOINLINE uint32_t t8_probe_microros_stack_hwm_words(void);
 T8_PROBE_NOINLINE uint32_t t8_probe_led_stack_hwm_words(void);
 T8_PROBE_NOINLINE uint32_t t8_probe_idle_stack_hwm_words(void);
-T8_PROBE_NOINLINE uint32_t t8_probe_freertos_heap_min_bytes(void);
 
 int main(void)
 {
@@ -463,7 +462,6 @@ int main(void)
         t8_probe_anchor += t8_probe_microros_stack_hwm_words();
         t8_probe_anchor += t8_probe_led_stack_hwm_words();
         t8_probe_anchor += t8_probe_idle_stack_hwm_words();
-        t8_probe_anchor += t8_probe_freertos_heap_min_bytes();
     }
 
     vTaskStartScheduler();
@@ -499,11 +497,6 @@ T8_PROBE_NOINLINE uint32_t t8_probe_led_stack_hwm_words(void)
 T8_PROBE_NOINLINE uint32_t t8_probe_idle_stack_hwm_words(void)
 {
     return (uint32_t)uxTaskGetStackHighWaterMark((TaskHandle_t)&idle_task_tcb);
-}
-
-T8_PROBE_NOINLINE uint32_t t8_probe_freertos_heap_min_bytes(void)
-{
-    return (uint32_t)xPortGetMinimumEverFreeHeapSize();
 }
 
 #undef T8_PROBE_NOINLINE

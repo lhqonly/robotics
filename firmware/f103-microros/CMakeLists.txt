@@ -82,7 +82,6 @@ set(SOURCES
     ${FREERTOS}/timers.c
     ${FREERTOS}/croutine.c
     ${FREERTOS}/portable/GCC/ARM_CM3/port.c
-    ${FREERTOS}/portable/MemMang/heap_4.c
 )
 
 add_executable(${PROJECT_NAME}.elf ${SOURCES})
