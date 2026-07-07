@@ -412,6 +412,20 @@ static StaticTask_t microros_task_tcb;
 static StackType_t  microros_task_stack[MICROROS_TASK_STACK_WORDS];
 static StaticTask_t led_task_tcb;
 static StackType_t  led_task_stack[LED_TASK_STACK_WORDS];
+static StaticTask_t idle_task_tcb;
+static StackType_t  idle_task_stack[configMINIMAL_STACK_SIZE];
+static volatile uint32_t t8_probe_anchor;
+
+#if defined(__GNUC__)
+#define T8_PROBE_NOINLINE __attribute__((noinline, used))
+#else
+#define T8_PROBE_NOINLINE
+#endif
+
+T8_PROBE_NOINLINE uint32_t t8_probe_microros_stack_hwm_words(void);
+T8_PROBE_NOINLINE uint32_t t8_probe_led_stack_hwm_words(void);
+T8_PROBE_NOINLINE uint32_t t8_probe_idle_stack_hwm_words(void);
+T8_PROBE_NOINLINE uint32_t t8_probe_freertos_heap_min_bytes(void);
 
 int main(void)
 {
@@ -443,6 +457,15 @@ int main(void)
     xTaskCreateStatic(LedTask, "led", LED_TASK_STACK_WORDS, NULL,
                       1 /*prio*/, led_task_stack, &led_task_tcb);
 
+    /* GDB 可把 t8_probe_anchor 置成 magic 后单步调用;默认值为 0,正常启动不触发。
+     * 这条 volatile 分支的主要作用是让 linker 保留 t8_probe_* 符号和 FreeRTOS 查询函数。 */
+    if (t8_probe_anchor == 0x54385052u) {  /* "T8PR" */
+        t8_probe_anchor += t8_probe_microros_stack_hwm_words();
+        t8_probe_anchor += t8_probe_led_stack_hwm_words();
+        t8_probe_anchor += t8_probe_idle_stack_hwm_words();
+        t8_probe_anchor += t8_probe_freertos_heap_min_bytes();
+    }
+
     vTaskStartScheduler();
 
     /* 调度器不应返回;若返回说明 heap/资源问题,死循环暴露。 */
@@ -455,12 +478,35 @@ void vApplicationGetIdleTaskMemory(StaticTask_t **ppxIdleTaskTCBBuffer,
                                    StackType_t **ppxIdleTaskStackBuffer,
                                    uint32_t *pulIdleTaskStackSize)
 {
-    static StaticTask_t idle_tcb;
-    static StackType_t  idle_stack[configMINIMAL_STACK_SIZE];
-    *ppxIdleTaskTCBBuffer   = &idle_tcb;
-    *ppxIdleTaskStackBuffer = idle_stack;
+    *ppxIdleTaskTCBBuffer   = &idle_task_tcb;
+    *ppxIdleTaskStackBuffer = idle_task_stack;
     *pulIdleTaskStackSize   = configMINIMAL_STACK_SIZE;
 }
+
+/* ===== T8 SWD/GDB-only probes =====
+ * 这些函数只为调试器保留符号,正常运行路径不调用。它们避免把诊断塞进 ExoStatus
+ * payload,也不增加 micro-ROS publisher。 */
+T8_PROBE_NOINLINE uint32_t t8_probe_microros_stack_hwm_words(void)
+{
+    return (uint32_t)uxTaskGetStackHighWaterMark((TaskHandle_t)&microros_task_tcb);
+}
+
+T8_PROBE_NOINLINE uint32_t t8_probe_led_stack_hwm_words(void)
+{
+    return (uint32_t)uxTaskGetStackHighWaterMark((TaskHandle_t)&led_task_tcb);
+}
+
+T8_PROBE_NOINLINE uint32_t t8_probe_idle_stack_hwm_words(void)
+{
+    return (uint32_t)uxTaskGetStackHighWaterMark((TaskHandle_t)&idle_task_tcb);
+}
+
+T8_PROBE_NOINLINE uint32_t t8_probe_freertos_heap_min_bytes(void)
+{
+    return (uint32_t)xPortGetMinimumEverFreeHeapSize();
+}
+
+#undef T8_PROBE_NOINLINE
 
 /* configCHECK_FOR_STACK_OVERFLOW != 0 时需要;栈溢出 = 安全事件,死循环暴露给调试器。 */
 void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
