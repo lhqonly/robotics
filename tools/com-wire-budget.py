@@ -5,6 +5,34 @@ import argparse
 from pathlib import Path
 
 
+def parse_float_list(raw: str) -> list[float]:
+    values: list[float] = []
+    for item in raw.replace(",", " ").split():
+        try:
+            values.append(float(item))
+        except ValueError as exc:
+            raise argparse.ArgumentTypeError(
+                f"expected number list, got {raw!r}"
+            ) from exc
+    if not values:
+        raise argparse.ArgumentTypeError("expected at least one number")
+    return values
+
+
+def parse_int_list(raw: str) -> list[int]:
+    values: list[int] = []
+    for item in raw.replace(",", " ").split():
+        try:
+            values.append(int(item))
+        except ValueError as exc:
+            raise argparse.ArgumentTypeError(
+                f"expected integer list, got {raw!r}"
+            ) from exc
+    if not values:
+        raise argparse.ArgumentTypeError("expected at least one integer")
+    return values
+
+
 def parse_metrics(path: Path) -> dict[str, float]:
     metrics: dict[str, float] = {}
     for line in path.read_text(encoding="utf-8").splitlines():
@@ -39,9 +67,24 @@ def main() -> int:
     parser.add_argument("--baseline-status-hz", type=float, default=20.0)
     parser.add_argument("--tx-kbit-s", type=float, help="agent->MCU serial kbit/s")
     parser.add_argument("--rx-kbit-s", type=float, help="MCU->agent serial kbit/s")
-    parser.add_argument("--cmd-hz", type=float, default=200.0)
-    parser.add_argument("--status-every-n", type=int, default=40)
-    parser.add_argument("--baud", type=float, default=921600.0)
+    parser.add_argument(
+        "--cmd-hz",
+        type=parse_float_list,
+        default=parse_float_list("200"),
+        help="Target command rates, comma/space separated. Default: 200.",
+    )
+    parser.add_argument(
+        "--status-every-n",
+        type=parse_int_list,
+        default=parse_int_list("40"),
+        help="Status decimation factors, comma/space separated. Default: 40.",
+    )
+    parser.add_argument(
+        "--baud",
+        type=parse_float_list,
+        default=parse_float_list("921600"),
+        help="UART baud rates, comma/space separated. Default: 921600.",
+    )
     args = parser.parse_args()
 
     tx_kbit_s = args.tx_kbit_s
@@ -62,16 +105,13 @@ def main() -> int:
         )
     if args.baseline_cmd_hz <= 0 or args.baseline_status_hz <= 0:
         raise SystemExit("ERROR: baseline rates must be > 0")
-    if args.cmd_hz <= 0 or args.status_every_n < 1 or args.baud <= 0:
+    if any(cmd_hz <= 0 for cmd_hz in args.cmd_hz) or \
+            any(status_every_n < 1 for status_every_n in args.status_every_n) or \
+            any(baud <= 0 for baud in args.baud):
         raise SystemExit("ERROR: cmd-hz/baud must be > 0 and status-every-n >= 1")
 
     tx_bits_per_cmd = tx_kbit_s * 1000.0 / args.baseline_cmd_hz
     rx_bits_per_status = rx_kbit_s * 1000.0 / args.baseline_status_hz
-    projected_status_hz = args.cmd_hz / args.status_every_n
-    projected_tx_kbit_s = tx_bits_per_cmd * args.cmd_hz / 1000.0
-    projected_rx_kbit_s = rx_bits_per_status * projected_status_hz / 1000.0
-    projected_total_kbit_s = projected_tx_kbit_s + projected_rx_kbit_s
-    projected_util = projected_total_kbit_s * 1000.0 * 100.0 / args.baud
 
     print("# Communication Wire Budget Estimate")
     print()
@@ -92,12 +132,22 @@ def main() -> int:
     print()
     print("| cmd Hz | status every N | status Hz | baud | tx kbit/s | rx kbit/s | total kbit/s | baud util % |")
     print("|---:|---:|---:|---:|---:|---:|---:|---:|")
-    print(
-        f"| {fmt(args.cmd_hz)} | {args.status_every_n} | "
-        f"{fmt(projected_status_hz)} | {int(args.baud)} | "
-        f"{fmt(projected_tx_kbit_s)} | {fmt(projected_rx_kbit_s)} | "
-        f"{fmt(projected_total_kbit_s)} | {fmt(projected_util)} |"
-    )
+    for cmd_hz in args.cmd_hz:
+        for status_every_n in args.status_every_n:
+            projected_status_hz = cmd_hz / status_every_n
+            projected_tx_kbit_s = tx_bits_per_cmd * cmd_hz / 1000.0
+            projected_rx_kbit_s = (
+                rx_bits_per_status * projected_status_hz / 1000.0
+            )
+            projected_total_kbit_s = projected_tx_kbit_s + projected_rx_kbit_s
+            for baud in args.baud:
+                projected_util = projected_total_kbit_s * 1000.0 * 100.0 / baud
+                print(
+                    f"| {fmt(cmd_hz)} | {status_every_n} | "
+                    f"{fmt(projected_status_hz)} | {int(baud)} | "
+                    f"{fmt(projected_tx_kbit_s)} | {fmt(projected_rx_kbit_s)} | "
+                    f"{fmt(projected_total_kbit_s)} | {fmt(projected_util)} |"
+                )
     print()
     print(
         "Note: this linear model uses measured XRCE serial bytes from one profile. "

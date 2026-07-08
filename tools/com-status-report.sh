@@ -210,21 +210,15 @@ wire_budget_source="$latest_wire"
 if [ -z "$wire_budget_source" ]; then
   wire_budget_source="$latest_any_wire"
 fi
-wire_budget_921600=""
-wire_budget_2000000=""
+wire_budget_matrix=""
 if [ -n "$wire_budget_source" ] && [ -f "$wire_budget_source" ] &&
     [ -x "$ROOT/tools/com-wire-budget.py" ]; then
   wire_budget_source_rel="${wire_budget_source#$ROOT/}"
-  wire_budget_921600="$(cd "$ROOT" && tools/com-wire-budget.py \
+  wire_budget_matrix="$(cd "$ROOT" && tools/com-wire-budget.py \
     --wire-log "$wire_budget_source_rel" \
-    --cmd-hz 200 \
-    --status-every-n 40 \
-    --baud 921600 2>/dev/null || true)"
-  wire_budget_2000000="$(cd "$ROOT" && tools/com-wire-budget.py \
-    --wire-log "$wire_budget_source_rel" \
-    --cmd-hz 200 \
-    --status-every-n 40 \
-    --baud 2000000 2>/dev/null || true)"
+    --cmd-hz 200,1000 \
+    --status-every-n 1,10,40 \
+    --baud 921600,2000000 2>/dev/null || true)"
 fi
 
 recovery_sampler="$COM_LOGDIR/noflash_recovery_20hz_after_200hz.sampler.log"
@@ -325,17 +319,11 @@ serial_users="$(serial_lsof)"
   echo
   echo "来源：$(relpath "$wire_budget_source")"
   echo
-  if [ -n "$wire_budget_921600" ]; then
-    printf '%s\n' "$wire_budget_921600"
+  if [ -n "$wire_budget_matrix" ]; then
+    printf '%s\n' "$wire_budget_matrix"
     echo
   else
     echo "- missing wire budget: no usable .wire.log"
-    echo
-  fi
-  if [ -n "$wire_budget_2000000" ]; then
-    echo "### 2Mbps 对照"
-    echo
-    printf '%s\n' "$wire_budget_2000000"
     echo
   fi
   echo "## overnight no-flash 趋势"

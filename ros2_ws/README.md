@@ -514,6 +514,16 @@ tools/com-wire-budget.py \
   --baud 921600
 ```
 
+也可以一次输出矩阵，横向比较 topic 频率、状态降频和波特率：
+
+```bash
+tools/com-wire-budget.py \
+  --wire-log log/com-perf/<tag>.wire.log \
+  --cmd-hz 200,1000 \
+  --status-every-n 1,10,40 \
+  --baud 921600,2000000
+```
+
 这个工具用已测 XRCE 串口字节数做线性估算，只用于排序实验优先级；真实验收仍以
 上板 `run-com-perf.sh` / staircase 实测为准。
 
