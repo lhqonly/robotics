@@ -13,6 +13,7 @@ SPIN_TIMEOUT_LOGDIR="$ROOT/log/firmware-spin-timeout-sweep"
 LINKER_RESERVE_LOGDIR="$ROOT/log/firmware-linker-reserve-sweep"
 WATCH_LOGDIR="$ROOT/log/overnight-com-watch"
 SCHED_LOGDIR="$ROOT/log/pc-scheduler-sweep"
+FIRMWARE_ELF="$ROOT/firmware/f103-microros/build/f103-microros.elf"
 
 mkdir -p "$OUTDIR"
 
@@ -80,6 +81,26 @@ markdown_table_from_prefix() {
     in_table && /^\|/ {print; next}
     in_table && !/^\|/ {exit}
   ' "$file"
+}
+
+firmware_ram_categories() {
+  if [ ! -f "$FIRMWARE_ELF" ]; then
+    echo "-"
+    return 0
+  fi
+  if [ ! -x "$ROOT/tools/firmware-size-report.sh" ]; then
+    echo "-"
+    return 0
+  fi
+
+  local size_report
+  size_report="$("$ROOT/tools/firmware-size-report.sh" "$FIRMWARE_ELF" 2>/dev/null || true)"
+  printf '%s\n' "$size_report" |
+    awk '
+      /^ram_category_summary:/ {in_section = 1; print; next}
+      in_section && NF == 0 {exit}
+      in_section {print}
+    '
 }
 
 probe_stlink() {
@@ -168,6 +189,7 @@ latest_spin_timeout_md="$(latest_file "$SPIN_TIMEOUT_LOGDIR" '*.md')"
 latest_linker_reserve_md="$(latest_file "$LINKER_RESERVE_LOGDIR" '*.md')"
 latest_watch_summary="$(latest_file "$WATCH_LOGDIR" '*.summary.md')"
 latest_scheduler_metrics="$(latest_file "$SCHED_LOGDIR" '*.metrics.md')"
+ram_categories="$(firmware_ram_categories)"
 latest_is_scheduler_experiment=0
 case "${latest_tag:-}" in
   scheduler_*|pc_sched_*|latest_gate_*)
@@ -380,6 +402,14 @@ serial_users="$(serial_lsof)"
   first_table_rows "$latest_size_md" 12
   echo '```'
   echo
+  echo "### 当前 ELF RAM 分类"
+  echo
+  echo "来源：$(relpath "$FIRMWARE_ELF")"
+  echo
+  echo '```text'
+  printf '%s\n' "$ram_categories"
+  echo '```'
+  echo
   echo "## micro-ROS 栈候选"
   echo
   echo "来源：$(relpath "$latest_stack_md")"
@@ -411,6 +441,7 @@ serial_users="$(serial_lsof)"
   echo "- UART read polling 候选 \`EXO_UART_READ_POLL_YIELDS=4\` 仅完成编译/size 验证，是否改善 RTT/gap 长尾待上板实测。"
   echo "- executor spin timeout 候选 \`EXO_EXECUTOR_SPIN_TIMEOUT_US=500/200/100\` 仅完成编译/size 验证，是否改善 RTT/gap 长尾待上板实测。"
   echo "- linker heap/MSP reserve 候选 \`EXO_NEWLIB_HEAP_BYTES=0\`、\`EXO_MSP_STACK_BYTES=512/768\` 仅完成静态验证；默认仍保持 512B/1024B，必须等 SWD 恢复后确认 MSP/ISR 栈和 newlib malloc 失败路径。"
+  echo "- 当前 ELF 中 \`rosidl_type_metadata\` 约 2.8KB RAM，是新的内存优化重点；但 \`ROSIDL_TYPESUPPORT_SINGLE_TYPESUPPORT\` 曾是 T5 HardFault/agent 兼容修复的一部分，需用独立 libmicroros rebuild 矩阵验证后再改默认。"
   echo "- DWT snapshot 算法已有 host-side 模型测试 \`tools/test-dwt-snapshot-model.sh\`，但真实 stamp 单调性仍需 SWD 恢复后做 >60s 静默恢复对抗。"
   echo "- idle stack 96 words、micro-ROS stack 704/640 words 目前是静态候选，必须上板用 \`tools/measure-stack-hwm.sh\` 复测后再设为默认。"
   echo "- \`cmd_catchup_max=1\` 只应用于 best-effort/status decimation/sampled 的 latest-target profile；不要用于 reliable/status_every_1/full-echo 默认诊断。"
