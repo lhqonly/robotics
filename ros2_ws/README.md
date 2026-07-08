@@ -413,7 +413,8 @@ FORMAT=csv tools/summarize-com-staircase.sh log/com-staircase/<tag>.summary.log
 
 表格会从 stage 名拆出 `loop_hz`、`baud`、`timer_irq_priority`、
 `uart_read_poll_yields`、`executor_spin_timeout_us`、`pc_cmd_hz`、`qos`、
-`status_every_n`，方便横向比较 1/2/5/10kHz、921600/2Mbps、TIM2 IRQ
+`status_every_n`，并从 summary 里带出 `pc_launch_prefix`，方便横向比较
+1/2/5/10kHz、921600/2Mbps、TIM2 IRQ
 优先级、UART polling 和 executor spin timeout 候选。
 表格还会给每个已知 profile 标出 `verdict/reason`：baseline 按 20Hz reliable
 smoke 判断，latest-target 阶段按 200Hz 目标接收率、gap 和 lost/duplicate 判断；
