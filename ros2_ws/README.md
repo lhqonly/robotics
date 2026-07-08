@@ -1,7 +1,7 @@
 # ros2_ws — ROS2 communication workspace (Jazzy)
 
 WSL-side ROS2 packages for the ROS2 ↔ micro-ROS minimal serial loopback.
-Interface contract: `docs/01-ros2-microros-serial/01-接口契约.md` (v1.14).
+Interface contract: `docs/01-ros2-microros-serial/01-接口契约.md` (v1.15).
 
 ## Packages
 
@@ -121,6 +121,14 @@ ros2 launch com_bringup pc_cmd.launch.py \
 # 固件侧重新 configure/build 时使用
 cmake -S firmware/f103-microros -B firmware/f103-microros/build \
   -DEXO_QOS_BEST_EFFORT=ON
+```
+
+波特率实验同样要两边一致：
+
+```bash
+cmake -S firmware/f103-microros -B firmware/f103-microros/build \
+  -DEXO_UART_BAUD=2000000
+tools/run-bridge.sh /dev/ttyUSB0 2000000
 ```
 
 终端 3：查看通信结果。

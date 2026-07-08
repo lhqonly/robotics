@@ -1,6 +1,6 @@
 /* main.c — STM32F103RB 固件主文件 (T5 / 里程碑 M2/M3)
  *
- * 目标:时钟树 72MHz + LED(PA5) 心跳 + USART1(PA9/PA10) @921600 8N1 +
+ * 目标:时钟树 72MHz + LED(PA5) 心跳 + USART1(PA9/PA10) @EXO_UART_BAUD 8N1 +
  *       DMA1 Ch5 RX circular + USART1 IDLE 中断收变长帧 + DMA1 Ch4 TX 发送。
  *       底层收发(DMA/IDLE/app_ring,RX bug 已修见 git 573a226)沿用 T4,不改动。
  *
@@ -101,6 +101,11 @@ int clock_gettime(clockid_t clk_id, struct timespec *tp)
 #define UART_MTU            128u
 #define RX_DMA_BUF_SIZE     (2u * UART_MTU)   /* circular 双半区 = 256B */
 #define TX_DMA_BUF_SIZE     UART_MTU          /* 单缓冲 128B */
+
+#ifndef EXO_UART_BAUD
+#  define EXO_UART_BAUD 921600u
+#endif
+#define USART1_BRR_VALUE    ((uint32_t)((72000000u + (EXO_UART_BAUD / 2u)) / EXO_UART_BAUD))
 
 static volatile uint8_t rx_dma_buf[RX_DMA_BUF_SIZE] __attribute__((aligned(4)));
 static          uint8_t tx_dma_buf[TX_DMA_BUF_SIZE] __attribute__((aligned(4)));
@@ -261,7 +266,7 @@ static void DMA_Init(void)
     DMA1_Channel5->CCR |= DMA_CCR_EN;
 }
 
-/* ===== USART1 @921600 8N1,DMA TX/RX + IDLE 中断 ===== */
+/* ===== USART1 @EXO_UART_BAUD 8N1,DMA TX/RX + IDLE 中断 ===== */
 static void USART1_Init(void)
 {
     RCC->APB2ENR |= RCC_APB2ENR_USART1EN;   /* USART1 在 APB2(72MHz),区别于 USART2 的 APB1(36MHz) */
@@ -270,13 +275,10 @@ static void USART1_Init(void)
     USART1->CR2 = 0;
     USART1->CR3 = 0;
 
-    /* 波特率:USARTDIV = fCK / (16 × baud),fCK = PCLK2 = 72MHz,baud = 921600。
-     *   USARTDIV = 72e6 / (16 × 921600) = 4.8828  →  mantissa=4,frac=round(0.8828×16)=14
-     *   BRR = (4 << 4) | 14 = 0x4E = 78。实际 baud = 72e6/(16×4.875)=923077,误差 +0.16%。
-     * 等价整数式 BRR = (PCLK2 + baud/2)/baud = (72e6+460800)/921600 = 78。
-     * 直接写常数,避免运行期浮点(固件路径禁浮点)。
-     * 注:USART1 在 APB2/72MHz,故 BRR=0x4E,区别于 USART2 的 APB1/36MHz/0x27。 */
-    USART1->BRR = 0x4Eu;                   /* = 78, USART1@921600 (PCLK2=72MHz) */
+    /* 波特率:oversampling by 16 时 BRR 等价整数式为 round(PCLK2 / baud)。
+     * 默认 EXO_UART_BAUD=921600 -> BRR=78(0x4E),实际 923077,误差 +0.16%。
+     * 2Mbps -> BRR=36(0x24),3Mbps -> BRR=24(0x18),均需 USB-TTL 实测确认。 */
+    USART1->BRR = USART1_BRR_VALUE;
 
     /* CR3:开 DMA 收发。 */
     USART1->CR3 = USART_CR3_DMAT | USART_CR3_DMAR;

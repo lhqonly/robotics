@@ -23,6 +23,7 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
 option(EXO_QOS_BEST_EFFORT "Use best-effort QoS for ExoCmd/ExoStatus perf tests" OFF)
+set(EXO_UART_BAUD "921600" CACHE STRING "USART1 baud rate for the micro-ROS serial link")
 
 # ---- 路径 ----
 set(TP        ${CMAKE_SOURCE_DIR}/ThirdParty)
@@ -40,6 +41,7 @@ if(EXO_QOS_BEST_EFFORT)
 else()
     add_compile_definitions(EXO_QOS_BEST_EFFORT=0)
 endif()
+add_compile_definitions(EXO_UART_BAUD=${EXO_UART_BAUD})
 
 # ---- micro-ROS 静态库(T5)----
 # [MICROROS-INCLUDE] / [MICROROS-LIB]:libmicroros.a + 其 include/ 由主 agent 用
