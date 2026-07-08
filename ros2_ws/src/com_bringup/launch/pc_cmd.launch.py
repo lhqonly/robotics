@@ -32,6 +32,7 @@ def generate_launch_description():
     rtt_warn_ms = LaunchConfiguration('rtt_warn_ms')
     rtt_deadline_ms = LaunchConfiguration('rtt_deadline_ms')
     sweep_period_s = LaunchConfiguration('sweep_period_s')
+    executor_threads = LaunchConfiguration('executor_threads')
 
     return LaunchDescription([
         DeclareLaunchArgument(
@@ -74,6 +75,10 @@ def generate_launch_description():
             'sweep_period_s',
             default_value='0.005',
             description='Deadline sweep period in seconds.'),
+        DeclareLaunchArgument(
+            'executor_threads',
+            default_value='0',
+            description='MultiThreadedExecutor threads. 0 lets rclpy auto-pick.'),
 
         Node(
             package='exo_cmd',
@@ -90,6 +95,8 @@ def generate_launch_description():
                 'sweep_period_s': ParameterValue(sweep_period_s, value_type=float),
                 'rtt_warn_ms': ParameterValue(rtt_warn_ms, value_type=float),
                 'rtt_deadline_ms': ParameterValue(rtt_deadline_ms, value_type=float),
+                'executor_threads': ParameterValue(
+                    executor_threads, value_type=int),
             }],
             arguments=['--ros-args', '--log-level', log_level],
         ),

@@ -28,6 +28,7 @@ SAMPLE_WINDOW="${SAMPLE_WINDOW:-4096}"
 RTT_WARN_MS="${RTT_WARN_MS:-10.0}"
 RTT_DEADLINE_MS="${RTT_DEADLINE_MS:-100.0}"
 SWEEP_PERIOD_S="${SWEEP_PERIOD_S:-0.005}"
+EXECUTOR_THREADS="${EXECUTOR_THREADS:-0}"
 CONTROL_LOOP_HZ="${CONTROL_LOOP_HZ:-1000}"
 RUN_SECONDS="${RUN_SECONDS:-18}"
 WARMUP_SECONDS="${WARMUP_SECONDS:-5}"
@@ -68,7 +69,7 @@ fi
 
 echo "[com-perf] tag=$TAG"
 echo "[com-perf] firmware: qos_best_effort=$EXO_QOS_BEST_EFFORT baud=$BAUD control_loop_hz=$CONTROL_LOOP_HZ status_every_n=$STATUS_EVERY_N"
-echo "[com-perf] pc: cmd_rate_hz=$CMD_RATE_HZ qos_depth=$QOS_DEPTH qos_reliability=$QOS_RELIABILITY tracking_mode=$TRACKING_MODE rtt_warn_ms=$RTT_WARN_MS rtt_deadline_ms=$RTT_DEADLINE_MS"
+echo "[com-perf] pc: cmd_rate_hz=$CMD_RATE_HZ qos_depth=$QOS_DEPTH qos_reliability=$QOS_RELIABILITY tracking_mode=$TRACKING_MODE rtt_warn_ms=$RTT_WARN_MS rtt_deadline_ms=$RTT_DEADLINE_MS executor_threads=$EXECUTOR_THREADS"
 echo "[com-perf] logs: $LOGDIR/$TAG.*.log"
 
 flash_firmware() {
@@ -138,6 +139,7 @@ setsid ros2 launch com_bringup pc_cmd.launch.py \
   rtt_warn_ms:="$RTT_WARN_MS" \
   rtt_deadline_ms:="$RTT_DEADLINE_MS" \
   sweep_period_s:="$SWEEP_PERIOD_S" \
+  executor_threads:="$EXECUTOR_THREADS" \
   log_level:=info >"$CMD_LOG" 2>&1 &
 CMD_PID=$!
 
@@ -187,6 +189,7 @@ fi
 summary="$(grep 'link-health summary' "$CMD_LOG" | tail -1 || true)"
 wire_sent="$(printf '%s\n' "$summary" | grep -o 'wire_sent=[0-9]*' | tail -1 | cut -d= -f2 || true)"
 wire_rate_hz="$(printf '%s\n' "$summary" | grep -o 'wire_rate_hz=[0-9.]*' | tail -1 | cut -d= -f2 || true)"
+wire_window_hz="$(printf '%s\n' "$summary" | grep -o 'wire_window_hz=[0-9.]*' | tail -1 | cut -d= -f2 || true)"
 
 echo "[com-perf] graph:"
 cat "$GRAPH_LOG"
@@ -195,6 +198,7 @@ echo "[com-perf] estimated_mcu_target_rx_hz=${estimated_rx_hz:-NA}"
 echo "[com-perf] hz_stats=${hz_stats:-NA}"
 echo "[com-perf] pc_wire_sent=${wire_sent:-NA}"
 echo "[com-perf] pc_wire_rate_hz=${wire_rate_hz:-NA}"
+echo "[com-perf] pc_wire_window_hz=${wire_window_hz:-NA}"
 echo "[com-perf] last_summary=${summary:-NA}"
 echo "[com-perf] hz_tail:"
 tail -n 12 "$HZ_LOG"

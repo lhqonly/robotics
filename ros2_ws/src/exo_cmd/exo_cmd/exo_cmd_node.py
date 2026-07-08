@@ -175,6 +175,8 @@ class ExoCmdNode(Node):
         self._start_s = self._now()
         self._wire_seq = start_seq
         self._wire_send_count = 0
+        self._last_summary_s = self._start_s
+        self._last_summary_wire_count = 0
         self._sampled_sends = {}
         self._sampled_order = deque()
         self._sampled_seen = set()
@@ -369,14 +371,21 @@ class ExoCmdNode(Node):
         # instant, or a concurrent rx echo could make the logged line self-
         # contradictory (e.g. reconciles=True printed against stale counters).
         s = self._tracker.snapshot()
-        elapsed_s = max(self._now() - self._start_s, 1e-9)
+        now_s = self._now()
+        elapsed_s = max(now_s - self._start_s, 1e-9)
         wire_rate_hz = self._wire_send_count / elapsed_s
+        window_s = max(now_s - self._last_summary_s, 1e-9)
+        window_wire_rate_hz = (
+            (self._wire_send_count - self._last_summary_wire_count) / window_s)
+        self._last_summary_s = now_s
+        self._last_summary_wire_count = self._wire_send_count
         line = ('link-health summary: sent=%d matched=%d lost=%d '
                 'duplicate=%d inflight=%d stale_duplicate=%d '
-                'wire_sent=%d wire_rate_hz=%.3f'
+                'wire_sent=%d wire_rate_hz=%.3f wire_window_hz=%.3f'
                 % (s['sent'], s['matched'], s['lost'], s['duplicate'],
                    s['inflight'], s['stale_duplicate'],
-                   self._wire_send_count, wire_rate_hz))
+                   self._wire_send_count, wire_rate_hz,
+                   window_wire_rate_hz))
         if s['reconciles']:
             self.get_logger().info(line)
         else:
