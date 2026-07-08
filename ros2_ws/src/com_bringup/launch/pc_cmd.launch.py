@@ -38,6 +38,7 @@ def generate_launch_description():
     executor_threads = LaunchConfiguration('executor_threads')
     log_matched_events = LaunchConfiguration('log_matched_events')
     rtt_warn_log_period_s = LaunchConfiguration('rtt_warn_log_period_s')
+    launch_prefix = LaunchConfiguration('launch_prefix')
 
     return LaunchDescription([
         DeclareLaunchArgument(
@@ -106,12 +107,19 @@ def generate_launch_description():
             'rtt_warn_log_period_s',
             default_value='1.0',
             description='Throttle soft RTT warning logs; 0 disables throttling.'),
+        DeclareLaunchArgument(
+            'launch_prefix',
+            default_value='',
+            description=(
+                'Optional process prefix for host scheduling experiments, '
+                'for example "taskset -c 2" or "chrt -f 20".')),
 
         Node(
             package='exo_cmd',
             executable='exo_cmd_node',
             name='node_com_cmd',
             output='screen',
+            prefix=launch_prefix,
             parameters=[{
                 'cmd_rate_hz': ParameterValue(cmd_rate_hz, value_type=float),
                 'cmd_catchup_max': ParameterValue(

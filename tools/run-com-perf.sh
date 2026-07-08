@@ -32,6 +32,7 @@ SWEEP_PERIOD_S="${SWEEP_PERIOD_S:-0.02}"
 SUMMARY_PERIOD_S="${SUMMARY_PERIOD_S:-1.0}"
 STARTUP_GRACE_S="${STARTUP_GRACE_S:-3.0}"
 EXECUTOR_THREADS="${EXECUTOR_THREADS:-0}"
+PC_LAUNCH_PREFIX="${PC_LAUNCH_PREFIX:-}"
 LOG_MATCHED_EVENTS="${LOG_MATCHED_EVENTS:-false}"
 RTT_WARN_LOG_PERIOD_S="${RTT_WARN_LOG_PERIOD_S:-1.0}"
 CONTROL_LOOP_HZ="${CONTROL_LOOP_HZ:-1000}"
@@ -109,7 +110,7 @@ fi
 
 echo "[com-perf] tag=$TAG"
 echo "[com-perf] firmware: qos_best_effort=$EXO_QOS_BEST_EFFORT baud=$BAUD control_loop_hz=$CONTROL_LOOP_HZ status_every_n=$STATUS_EVERY_N uart_read_poll_yields=$UART_READ_POLL_YIELDS executor_spin_timeout_us=$EXECUTOR_SPIN_TIMEOUT_US"
-echo "[com-perf] pc: cmd_rate_hz=$CMD_RATE_HZ cmd_catchup_max=$CMD_CATCHUP_MAX qos_depth=$QOS_DEPTH qos_reliability=$QOS_RELIABILITY tracking_mode=$TRACKING_MODE rtt_warn_ms=$RTT_WARN_MS rtt_deadline_ms=$RTT_DEADLINE_MS sweep_period_s=$SWEEP_PERIOD_S summary_period_s=$SUMMARY_PERIOD_S startup_grace_s=$STARTUP_GRACE_S executor_threads=$EXECUTOR_THREADS log_matched_events=$LOG_MATCHED_EVENTS rtt_warn_log_period_s=$RTT_WARN_LOG_PERIOD_S"
+echo "[com-perf] pc: cmd_rate_hz=$CMD_RATE_HZ cmd_catchup_max=$CMD_CATCHUP_MAX qos_depth=$QOS_DEPTH qos_reliability=$QOS_RELIABILITY tracking_mode=$TRACKING_MODE rtt_warn_ms=$RTT_WARN_MS rtt_deadline_ms=$RTT_DEADLINE_MS sweep_period_s=$SWEEP_PERIOD_S summary_period_s=$SUMMARY_PERIOD_S startup_grace_s=$STARTUP_GRACE_S executor_threads=$EXECUTOR_THREADS launch_prefix=${PC_LAUNCH_PREFIX:-none} log_matched_events=$LOG_MATCHED_EVENTS rtt_warn_log_period_s=$RTT_WARN_LOG_PERIOD_S"
 echo "[com-perf] sampler: spin_timeout_s=$SAMPLER_SPIN_TIMEOUT_S"
 echo "[com-perf] wire_stats: mode=$WIRE_STATS skip_s=$WIRE_STATS_SKIP_SECONDS agent_verbosity=$MICROROS_AGENT_VERBOSITY"
 echo "[com-perf] flash: flash_firmware=$FLASH_FIRMWARE reset_target=$RESET_TARGET stlink_preflight=$STLINK_PREFLIGHT flash_timeout_s=$FLASH_TIMEOUT_SECONDS reset_timeout_s=$RESET_TIMEOUT_SECONDS"
@@ -210,6 +211,7 @@ setsid ros2 launch com_bringup pc_cmd.launch.py \
   summary_period_s:="$SUMMARY_PERIOD_S" \
   startup_grace_s:="$STARTUP_GRACE_S" \
   executor_threads:="$EXECUTOR_THREADS" \
+  launch_prefix:="$PC_LAUNCH_PREFIX" \
   log_matched_events:="$LOG_MATCHED_EVENTS" \
   rtt_warn_log_period_s:="$RTT_WARN_LOG_PERIOD_S" \
   log_level:=info >"$CMD_LOG" 2>&1 &

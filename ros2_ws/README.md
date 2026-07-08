@@ -238,6 +238,16 @@ BUILD_FIRMWARE=0 FLASH_FIRMWARE=0 tools/run-com-perf.sh no_flash_smoke
 `FLASH_FIRMWARE=0` 时脚本默认也会跳过 OpenOCD reset；确实需要只 reset 不重刷时，
 显式追加 `RESET_TARGET=1`。
 
+如果要验证 PC 主机调度是否导致 command timer 长尾，可以给 PC command node 加
+launch prefix。常用的低权限实验是绑到某个 CPU 核，跑完后对比
+`pc_wire_gap_p95/p99/max_ms`：
+
+```bash
+PC_LAUNCH_PREFIX="taskset -c 2" \
+BUILD_FIRMWARE=0 FLASH_FIRMWARE=0 \
+tools/run-com-perf.sh no_flash_taskset_cpu2
+```
+
 要按阶梯一次跑完整验证矩阵，用：
 
 ```bash
