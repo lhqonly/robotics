@@ -189,6 +189,17 @@ ros2 launch com_bringup pc_cmd.launch.py \
   status_every_n:=40
 ```
 
+推荐的 PC 侧 200Hz latest-target preset 已封装成单独 launch：
+
+```bash
+ros2 launch com_bringup pc_latest_target.launch.py
+```
+
+它默认等价于 `cmd_rate_hz=200`、`cmd_catchup_max=1`、`qos_depth=1`、
+`qos_reliability=best_effort`、`tracking_mode=sampled`、`status_every_n=40`。
+MCU 固件也必须用匹配 profile（`EXO_QOS_BEST_EFFORT=ON`、
+`EXO_STATUS_EVERY_N=40`），否则 DDS QoS 或监控语义会不匹配。
+
 如果要一键复现某个真机通信 profile，可以用压测脚本。它会编译/烧录固件、
 重启 bridge、跑 PC node、采样 `/com/tp_mcu_status`，最后打印状态频率、
 按 `status_every_n` 反推的 MCU 目标接收频率、status seq 步长
