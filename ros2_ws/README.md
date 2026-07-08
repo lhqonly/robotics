@@ -214,7 +214,7 @@ tools/run-com-staircase.sh staircase_$(date +%Y%m%d_%H%M)
 与 200Hz PC latest-target profile。单个阶段失败会写入
 `log/com-staircase/<tag>.summary.log` 并继续；每个完成阶段会追加一行
 `METRICS`，汇总 `sampler_hz`、gap p95/p99/max、seq 步长和
-`lost/duplicate/inflight`。当前 ST-LINK/SWD 不可用时，
+`zero_gap_count`、`lost/duplicate/inflight`。当前 ST-LINK/SWD 不可用时，
 脚本会跳过需要烧录的阶梯，自动 fallback 到 no-flash smoke，继续验证串口/ROS
 链路。只想看将要跑哪些阶段、不碰硬件：
 

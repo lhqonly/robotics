@@ -32,6 +32,7 @@ class StatusStats:
         self.sum_gap_s = 0.0
         self.sum_gap_sq_s = 0.0
         self.gaps_s = []
+        self.zero_gap_count = 0
         self.first_seq = None
         self.last_seq = None
         self.seq_delta_count = 0
@@ -50,6 +51,8 @@ class StatusStats:
             self.sum_gap_s += gap_s
             self.sum_gap_sq_s += gap_s * gap_s
             self.gaps_s.append(gap_s)
+            if gap_s <= 0.0005:
+                self.zero_gap_count += 1
         if self.last_seq is not None:
             delta = forward_distance(self.last_seq, seq)
             self.seq_delta_count += 1
@@ -68,7 +71,7 @@ class StatusStats:
         if self.count < 2 or self.first_s is None or self.last_s is None:
             return ('status_sampler: count=%d rate_hz=0.000 min_gap_s=0.000 '
                     'max_gap_s=0.000 p95_gap_s=0.000 p99_gap_s=0.000 '
-                    'std_gap_s=0.000 duration_s=0.000 '
+                    'std_gap_s=0.000 zero_gap_count=0 duration_s=0.000 '
                     'seq_rate_hz=0.000 seq_delta_avg=0.000 '
                     'seq_delta_min=0 seq_delta_max=0'
                     % self.count)
@@ -93,12 +96,13 @@ class StatusStats:
             seq_delta_max = 0
         return ('status_sampler: count=%d rate_hz=%.3f min_gap_s=%.3f '
                 'max_gap_s=%.3f p95_gap_s=%.3f p99_gap_s=%.3f '
-                'std_gap_s=%.5f duration_s=%.3f '
+                'std_gap_s=%.5f zero_gap_count=%d duration_s=%.3f '
                 'seq_rate_hz=%.3f seq_delta_avg=%.3f '
                 'seq_delta_min=%d seq_delta_max=%d'
                 % (self.count, rate_hz, self.min_gap_s, self.max_gap_s,
-                   p95_gap_s, p99_gap_s, math.sqrt(variance), duration_s,
-                   seq_rate_hz, seq_delta_avg, seq_delta_min, seq_delta_max))
+                   p95_gap_s, p99_gap_s, math.sqrt(variance),
+                   self.zero_gap_count, duration_s, seq_rate_hz,
+                   seq_delta_avg, seq_delta_min, seq_delta_max))
 
     def _percentile_gap(self, percentile: float) -> float:
         """Return nearest-rank percentile over observed receive gaps."""

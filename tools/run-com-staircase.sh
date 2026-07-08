@@ -74,7 +74,7 @@ record_stage_metrics() {
   local stage_log="$2"
   local status_hz sampler_hz sampler_target_rx_hz
   local sampler_max_gap_s sampler_p95_gap_s sampler_p99_gap_s
-  local sampler_seq_rate_hz sampler_seq_delta_avg
+  local sampler_zero_gap_count sampler_seq_rate_hz sampler_seq_delta_avg
   local sampler_seq_delta_min sampler_seq_delta_max
   local pc_target_rate_hz pc_target_window_hz last_summary
   local lost duplicate inflight
@@ -91,6 +91,8 @@ record_stage_metrics() {
   sampler_max_gap_s="$(extract_com_perf_metric "$stage_log" sampler_max_gap_s)"
   sampler_p95_gap_s="$(extract_com_perf_metric "$stage_log" sampler_p95_gap_s)"
   sampler_p99_gap_s="$(extract_com_perf_metric "$stage_log" sampler_p99_gap_s)"
+  sampler_zero_gap_count="$(
+    extract_com_perf_metric "$stage_log" sampler_zero_gap_count)"
   sampler_seq_rate_hz="$(
     extract_com_perf_metric "$stage_log" sampler_seq_rate_hz)"
   sampler_seq_delta_avg="$(
@@ -108,7 +110,7 @@ record_stage_metrics() {
   duplicate="$(extract_summary_counter "$last_summary" duplicate)"
   inflight="$(extract_summary_counter "$last_summary" inflight)"
 
-  record "METRICS $tag status_hz=$(value_or_na "$status_hz") sampler_hz=$(value_or_na "$sampler_hz") sampler_target_rx_hz=$(value_or_na "$sampler_target_rx_hz") sampler_p95_gap_s=$(value_or_na "$sampler_p95_gap_s") sampler_p99_gap_s=$(value_or_na "$sampler_p99_gap_s") sampler_max_gap_s=$(value_or_na "$sampler_max_gap_s") sampler_seq_rate_hz=$(value_or_na "$sampler_seq_rate_hz") seq_delta_avg=$(value_or_na "$sampler_seq_delta_avg") seq_delta_min=$(value_or_na "$sampler_seq_delta_min") seq_delta_max=$(value_or_na "$sampler_seq_delta_max") pc_target_rate_hz=$(value_or_na "$pc_target_rate_hz") pc_target_window_hz=$(value_or_na "$pc_target_window_hz") lost=$(value_or_na "$lost") duplicate=$(value_or_na "$duplicate") inflight=$(value_or_na "$inflight")"
+  record "METRICS $tag status_hz=$(value_or_na "$status_hz") sampler_hz=$(value_or_na "$sampler_hz") sampler_target_rx_hz=$(value_or_na "$sampler_target_rx_hz") sampler_p95_gap_s=$(value_or_na "$sampler_p95_gap_s") sampler_p99_gap_s=$(value_or_na "$sampler_p99_gap_s") sampler_max_gap_s=$(value_or_na "$sampler_max_gap_s") sampler_zero_gap_count=$(value_or_na "$sampler_zero_gap_count") sampler_seq_rate_hz=$(value_or_na "$sampler_seq_rate_hz") seq_delta_avg=$(value_or_na "$sampler_seq_delta_avg") seq_delta_min=$(value_or_na "$sampler_seq_delta_min") seq_delta_max=$(value_or_na "$sampler_seq_delta_max") pc_target_rate_hz=$(value_or_na "$pc_target_rate_hz") pc_target_window_hz=$(value_or_na "$pc_target_window_hz") lost=$(value_or_na "$lost") duplicate=$(value_or_na "$duplicate") inflight=$(value_or_na "$inflight")"
 }
 
 check_stlink_ready() {

@@ -16,6 +16,7 @@ def test_status_stats_reports_rate_and_seq_steps():
     assert 'rate_hz=4.000' in summary
     assert 'p95_gap_s=0.250' in summary
     assert 'p99_gap_s=0.250' in summary
+    assert 'zero_gap_count=0' in summary
     assert 'seq_rate_hz=160.000' in summary
     assert 'seq_delta_avg=40.000' in summary
     assert 'seq_delta_min=40' in summary
@@ -47,6 +48,18 @@ def test_status_stats_reports_gap_tail_percentiles():
     assert 'max_gap_s=0.170' in summary
     assert 'p95_gap_s=0.170' in summary
     assert 'p99_gap_s=0.170' in summary
+
+
+def test_status_stats_counts_near_zero_gaps():
+    stats = StatusStats()
+
+    stats.add(1.0, 1)
+    stats.add(1.0002, 2)
+    stats.add(1.0500, 3)
+
+    summary = stats.summary()
+
+    assert 'zero_gap_count=1' in summary
 
 
 def test_status_sampler_spin_timeout_default_is_low_latency():
