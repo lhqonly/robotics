@@ -242,6 +242,15 @@ STATUS_EVERY_N=40 \
 tools/run-com-perf.sh n40_200hz
 ```
 
+`tools/run-com-perf.sh` 默认传 `log_sent_commands:=false`。如果确实要看每条
+PC 命令发送日志，可用 `LOG_SENT_COMMANDS=true` 临时打开；正式 200Hz/1000Hz
+性能采样保持默认关闭。
+
+```bash
+LOG_SENT_COMMANDS=true BUILD_FIRMWARE=0 FLASH_FIRMWARE=0 \
+tools/run-com-perf.sh debug_sent_commands
+```
+
 脚本默认跑完会停止本次 bridge；如果希望保留 bridge，追加 `KEEP_BRIDGE=1`。
 如果当前固件已在板上，只想复测 PC/ROS 串口通信而不碰 ST-LINK/SWD，可以用：
 
