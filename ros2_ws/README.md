@@ -217,6 +217,11 @@ tools/measure-stack-hwm.sh firmware/f103-microros/build/f103-microros.elf
 ```
 
 这个脚本通过 GDB 读 RAM，会短暂停核；不要和 `ros2 topic hz` 这类实时测量同时跑。
+如果只想看固件静态 Flash/RAM、任务栈大小和最大符号，不需要连接硬件：
+
+```bash
+tools/firmware-size-report.sh firmware/f103-microros/build/f103-microros.elf
+```
 
 终端 3：查看通信结果。
 
