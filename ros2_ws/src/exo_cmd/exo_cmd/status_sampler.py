@@ -122,7 +122,14 @@ def parse_args(args=None):
     parser.add_argument('--qos-depth', type=int, default=1)
     parser.add_argument('--qos-reliability', default='reliable',
                         choices=('reliable', 'best_effort'))
-    return parser.parse_args(args)
+    parser.add_argument(
+        '--spin-timeout-s', type=float, default=0.005,
+        help='Maximum rclpy spin_once wait while sampling; lower values reduce '
+             'end-of-run quantization without affecting received timestamps.')
+    parsed = parser.parse_args(args)
+    if parsed.spin_timeout_s <= 0.0:
+        parser.error('--spin-timeout-s must be > 0')
+    return parsed
 
 
 def main(args=None):
@@ -132,7 +139,7 @@ def main(args=None):
                          parsed.qos_reliability)
     try:
         while rclpy.ok() and not node.done:
-            rclpy.spin_once(node, timeout_sec=0.05)
+            rclpy.spin_once(node, timeout_sec=parsed.spin_timeout_s)
         print(node.summary(), flush=True)
     finally:
         node.destroy_node()

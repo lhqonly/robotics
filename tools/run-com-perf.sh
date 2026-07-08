@@ -38,6 +38,7 @@ CONTROL_LOOP_HZ="${CONTROL_LOOP_HZ:-1000}"
 RUN_SECONDS="${RUN_SECONDS:-18}"
 WARMUP_SECONDS="${WARMUP_SECONDS:-5}"
 HZ_SECONDS="${HZ_SECONDS:-10}"
+SAMPLER_SPIN_TIMEOUT_S="${SAMPLER_SPIN_TIMEOUT_S:-0.005}"
 BUILD_FIRMWARE="${BUILD_FIRMWARE:-1}"
 FLASH_FIRMWARE="${FLASH_FIRMWARE:-1}"
 KEEP_BRIDGE="${KEEP_BRIDGE:-0}"
@@ -102,6 +103,7 @@ fi
 echo "[com-perf] tag=$TAG"
 echo "[com-perf] firmware: qos_best_effort=$EXO_QOS_BEST_EFFORT baud=$BAUD control_loop_hz=$CONTROL_LOOP_HZ status_every_n=$STATUS_EVERY_N"
 echo "[com-perf] pc: cmd_rate_hz=$CMD_RATE_HZ cmd_catchup_max=$CMD_CATCHUP_MAX qos_depth=$QOS_DEPTH qos_reliability=$QOS_RELIABILITY tracking_mode=$TRACKING_MODE rtt_warn_ms=$RTT_WARN_MS rtt_deadline_ms=$RTT_DEADLINE_MS sweep_period_s=$SWEEP_PERIOD_S summary_period_s=$SUMMARY_PERIOD_S startup_grace_s=$STARTUP_GRACE_S executor_threads=$EXECUTOR_THREADS log_matched_events=$LOG_MATCHED_EVENTS rtt_warn_log_period_s=$RTT_WARN_LOG_PERIOD_S"
+echo "[com-perf] sampler: spin_timeout_s=$SAMPLER_SPIN_TIMEOUT_S"
 echo "[com-perf] flash: flash_firmware=$FLASH_FIRMWARE stlink_preflight=$STLINK_PREFLIGHT flash_timeout_s=$FLASH_TIMEOUT_SECONDS"
 echo "[com-perf] logs: $LOGDIR/$TAG.*.log"
 
@@ -192,7 +194,8 @@ graph_snapshot "after_pc_warmup"
 ros2 run exo_cmd status_sampler \
   --duration-s "$HZ_SECONDS" \
   --qos-depth "$QOS_DEPTH" \
-  --qos-reliability "$QOS_RELIABILITY" >"$SAMPLER_LOG" 2>&1 &
+  --qos-reliability "$QOS_RELIABILITY" \
+  --spin-timeout-s "$SAMPLER_SPIN_TIMEOUT_S" >"$SAMPLER_LOG" 2>&1 &
 SAMPLER_PID=$!
 timeout "$HZ_SECONDS" ros2 topic hz /com/tp_mcu_status >"$HZ_LOG" 2>&1 || true
 wait "$SAMPLER_PID" || true

@@ -1,5 +1,6 @@
 from exo_cmd.link_health import SEQ_MODULUS
-from exo_cmd.status_sampler import StatusStats
+from exo_cmd.status_sampler import StatusStats, parse_args
+import pytest
 
 
 def test_status_stats_reports_rate_and_seq_steps():
@@ -31,3 +32,14 @@ def test_status_stats_seq_steps_are_wrap_safe():
     assert 'seq_delta_avg=30.000' in summary
     assert 'seq_delta_min=30' in summary
     assert 'seq_delta_max=30' in summary
+
+
+def test_status_sampler_spin_timeout_default_is_low_latency():
+    parsed = parse_args([])
+
+    assert parsed.spin_timeout_s == 0.005
+
+
+def test_status_sampler_rejects_non_positive_spin_timeout():
+    with pytest.raises(SystemExit):
+        parse_args(['--spin-timeout-s', '0'])
