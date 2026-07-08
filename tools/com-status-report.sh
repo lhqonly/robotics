@@ -177,6 +177,9 @@ link_summary=""
 if [ -f "$latest_cmd" ]; then
   link_summary="$(grep 'link-health summary' "$latest_cmd" | tail -1 || true)"
 fi
+pc_wire_gap_p95_ms="$(metric_from_line "$link_summary" wire_gap_p95_ms)"
+pc_wire_gap_p99_ms="$(metric_from_line "$link_summary" wire_gap_p99_ms)"
+pc_wire_gap_max_ms="$(metric_from_line "$link_summary" wire_gap_max_ms)"
 wire_metrics=""
 if [ -f "$latest_wire" ]; then
   wire_metrics="$(grep '^METRICS ' "$latest_wire" | tail -1 || true)"
@@ -288,6 +291,7 @@ serial_users="$(serial_lsof)"
   echo "- ros2 topic hz status_hz=${status_hz:-unknown}"
   echo "- sampler：${sampler_summary:-unknown}"
   echo "- LinkHealth：${link_summary:-unknown}"
+  echo "- PC publish gap p95/p99/max ms：${pc_wire_gap_p95_ms:-unknown}/${pc_wire_gap_p99_ms:-unknown}/${pc_wire_gap_max_ms:-unknown}"
   echo "- same-tag wire：${wire_metrics:-unknown}"
   echo
   echo "## 线速预算外推"

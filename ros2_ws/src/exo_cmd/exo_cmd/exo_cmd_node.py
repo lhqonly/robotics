@@ -208,6 +208,8 @@ class ExoCmdNode(Node):
         self._last_summary_wire_count = 0
         self._last_summary_sent_count = 0
         self._last_summary_matched_count = 0
+        self._last_wire_publish_s = None
+        self._wire_gap_window = deque(maxlen=4096)
         self._last_rtt_warn_log_s = 0.0
         self._rtt_warn_suppressed = 0
         self._sampled_sends = {}
@@ -337,6 +339,8 @@ class ExoCmdNode(Node):
         self._start_s = now_s
         self._last_summary_s = now_s
         self._next_cmd_due_s = now_s + self._heartbeat_period_s
+        self._last_wire_publish_s = None
+        self._wire_gap_window.clear()
         self.get_logger().info(
             'startup grace ended after %.3fs; link-health counters start at '
             'seq=%d'
@@ -399,6 +403,35 @@ class ExoCmdNode(Node):
             (now_s - self._next_cmd_due_s) / self._heartbeat_period_s) + 1
         return max(1, min(periods_due, self._cmd_catchup_max + 1))
 
+    def _remember_wire_gap(self, now_s: float) -> None:
+        """Track PC-side command publish intervals for jitter diagnosis."""
+        if self._last_wire_publish_s is not None:
+            self._wire_gap_window.append(now_s - self._last_wire_publish_s)
+        self._last_wire_publish_s = now_s
+
+    def _wire_gap_stats_ms(self):
+        """Return avg/p95/p99/max publish gap in milliseconds."""
+        if not self._wire_gap_window:
+            return 0.0, 0.0, 0.0, 0.0
+        gaps = list(self._wire_gap_window)
+        ordered = sorted(gaps)
+        count = len(ordered)
+
+        def nearest_rank(percent: float) -> float:
+            rank = int(percent * count)
+            if rank < percent * count:
+                rank += 1
+            rank = max(1, min(rank, count))
+            return ordered[rank - 1] * 1000.0
+
+        avg_ms = sum(gaps) * 1000.0 / count
+        return (
+            avg_ms,
+            nearest_rank(0.95),
+            nearest_rank(0.99),
+            ordered[-1] * 1000.0,
+        )
+
     # ----- timers / callbacks ------------------------------------------------
     def _on_timer(self):
         count = self._due_command_count(self._now())
@@ -424,6 +457,8 @@ class ExoCmdNode(Node):
             events = []
         else:
             seq, events = self._tracker.on_send(now_s)
+        if not self._startup_grace_active:
+            self._remember_wire_gap(now_s)
         self._wire_send_count += 1
         msg = self._cmd_msg
         msg.header.seq = seq
@@ -510,6 +545,8 @@ class ExoCmdNode(Node):
         window_matched_hz = (
             (s['matched'] - self._last_summary_matched_count) / window_s)
         window_target_hz = window_matched_hz * self._status_every_n
+        gap_avg_ms, gap_p95_ms, gap_p99_ms, gap_max_ms = (
+            self._wire_gap_stats_ms())
         self._last_summary_s = now_s
         self._last_summary_wire_count = self._wire_send_count
         self._last_summary_sent_count = s['sent']
@@ -519,12 +556,15 @@ class ExoCmdNode(Node):
                 'wire_sent=%d wire_rate_hz=%.3f sent_rate_hz=%.3f '
                 'matched_rate_hz=%.3f target_rate_hz=%.3f '
                 'wire_window_hz=%.3f sent_window_hz=%.3f '
-                'matched_window_hz=%.3f target_window_hz=%.3f'
+                'matched_window_hz=%.3f target_window_hz=%.3f '
+                'wire_gap_avg_ms=%.3f wire_gap_p95_ms=%.3f '
+                'wire_gap_p99_ms=%.3f wire_gap_max_ms=%.3f'
                 % (s['sent'], s['matched'], s['lost'], s['duplicate'],
                    s['inflight'], s['stale_duplicate'],
                    self._wire_send_count, wire_rate_hz, sent_rate_hz,
                    matched_rate_hz, target_rate_hz, window_wire_rate_hz,
-                   window_sent_hz, window_matched_hz, window_target_hz))
+                   window_sent_hz, window_matched_hz, window_target_hz,
+                   gap_avg_ms, gap_p95_ms, gap_p99_ms, gap_max_ms))
         if s['reconciles']:
             self.get_logger().info(line)
         else:

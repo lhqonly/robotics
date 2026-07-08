@@ -97,6 +97,20 @@ def capture_publish_into(out, ids=None):
     return _capture
 
 
+def test_wire_gap_stats_report_publish_jitter_window():
+    """PC publish gap stats expose avg/tail/max command timer jitter."""
+    with make_node(link_health_period_s=0.0, summary_period_s=0.0) as node:
+        for now_s in (10.000, 10.010, 10.030, 10.130):
+            node._remember_wire_gap(now_s)
+
+        avg_ms, p95_ms, p99_ms, max_ms = node._wire_gap_stats_ms()
+
+        assert avg_ms == pytest.approx((10.0 + 20.0 + 100.0) / 3.0)
+        assert p95_ms == pytest.approx(100.0)
+        assert p99_ms == pytest.approx(100.0)
+        assert max_ms == pytest.approx(100.0)
+
+
 # --------------------------------------------------------------------------
 # payload / seq decoupling: the tracker pairs on header.seq, never payload.
 # --------------------------------------------------------------------------

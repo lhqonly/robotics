@@ -159,10 +159,10 @@ awk -v format="$FORMAT" '
 
   BEGIN {
     if (format == "csv") {
-      print "stage,verdict,reason,loop_hz,baud,uart_read_poll_yields,executor_spin_timeout_us,pc_cmd_hz,qos,status_every_n,status_hz,sampler_hz,target_rx_hz,p95_gap_s,p99_gap_s,max_gap_s,zero_gap_count,seq_rate_hz,seq_delta_avg,seq_delta_min,seq_delta_max,pc_target_rate_hz,pc_target_window_hz,wire_kbit_s,wire_baud_util_pct,tx_kbit_s,rx_kbit_s,lost,duplicate,inflight"
+      print "stage,verdict,reason,loop_hz,baud,uart_read_poll_yields,executor_spin_timeout_us,pc_cmd_hz,qos,status_every_n,status_hz,sampler_hz,target_rx_hz,p95_gap_s,p99_gap_s,max_gap_s,zero_gap_count,seq_rate_hz,seq_delta_avg,seq_delta_min,seq_delta_max,pc_target_rate_hz,pc_target_window_hz,pc_wire_gap_p95_ms,pc_wire_gap_p99_ms,pc_wire_gap_max_ms,wire_kbit_s,wire_baud_util_pct,tx_kbit_s,rx_kbit_s,lost,duplicate,inflight"
     } else {
-      print "| Stage | verdict | reason | loop Hz | baud | poll yields | spin us | PC Hz | QoS | status N | status Hz | sampler Hz | target rx Hz | p95 gap s | p99 gap s | max gap s | zero gaps | seq Hz | seq delta avg/min/max | PC target Hz | wire kbit/s | baud util % | lost | duplicate | inflight |"
-      print "|---|---|---|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"
+      print "| Stage | verdict | reason | loop Hz | baud | poll yields | spin us | PC Hz | QoS | status N | status Hz | sampler Hz | target rx Hz | p95 gap s | p99 gap s | max gap s | zero gaps | seq Hz | seq delta avg/min/max | PC target Hz | PC gap p95/p99/max ms | wire kbit/s | baud util % | lost | duplicate | inflight |"
+      print "|---|---|---|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"
     }
   }
 
@@ -183,6 +183,9 @@ awk -v format="$FORMAT" '
     seq_delta_max = metric("seq_delta_max")
     pc_target_rate_hz = metric("pc_target_rate_hz")
     pc_target_window_hz = metric("pc_target_window_hz")
+    pc_wire_gap_p95_ms = metric("pc_wire_gap_p95_ms")
+    pc_wire_gap_p99_ms = metric("pc_wire_gap_p99_ms")
+    pc_wire_gap_max_ms = metric("pc_wire_gap_max_ms")
     wire_kbit_s = metric("wire_kbit_s")
     wire_baud_util_pct = metric("wire_baud_util_pct")
     tx_kbit_s = metric("tx_kbit_s")
@@ -197,21 +200,24 @@ awk -v format="$FORMAT" '
     reason = substr(verdict_csv, index(verdict_csv, ",") + 1)
 
     if (format == "csv") {
-      printf "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n",
+      printf "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n",
         stage, verdict, reason, meta["loop_hz"], meta["baud"], meta["poll_yields"],
         meta["spin_timeout_us"], meta["pc_cmd_hz"], meta["qos"], meta["status_every_n"],
         status_hz, sampler_hz, target_rx_hz, p95_gap_s, p99_gap_s,
         max_gap_s, zero_gap_count, seq_rate_hz, seq_delta_avg, seq_delta_min,
-        seq_delta_max, pc_target_rate_hz, pc_target_window_hz, wire_kbit_s,
-        wire_baud_util_pct, tx_kbit_s, rx_kbit_s, lost, duplicate, inflight
+        seq_delta_max, pc_target_rate_hz, pc_target_window_hz,
+        pc_wire_gap_p95_ms, pc_wire_gap_p99_ms, pc_wire_gap_max_ms,
+        wire_kbit_s, wire_baud_util_pct, tx_kbit_s, rx_kbit_s, lost,
+        duplicate, inflight
     } else {
-      printf "| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s/%s/%s | %s / %s | %s | %s | %s | %s | %s |\n",
+      printf "| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s/%s/%s | %s / %s | %s/%s/%s | %s | %s | %s | %s | %s |\n",
         stage, verdict, reason, meta["loop_hz"], meta["baud"], meta["poll_yields"],
         meta["spin_timeout_us"], meta["pc_cmd_hz"], meta["qos"], meta["status_every_n"],
         status_hz, sampler_hz, target_rx_hz, p95_gap_s, p99_gap_s,
         max_gap_s, zero_gap_count, seq_rate_hz, seq_delta_avg, seq_delta_min,
-        seq_delta_max, pc_target_rate_hz, pc_target_window_hz, wire_kbit_s,
-        wire_baud_util_pct, lost, duplicate, inflight
+        seq_delta_max, pc_target_rate_hz, pc_target_window_hz,
+        pc_wire_gap_p95_ms, pc_wire_gap_p99_ms, pc_wire_gap_max_ms,
+        wire_kbit_s, wire_baud_util_pct, lost, duplicate, inflight
     }
   }
 ' "$SUMMARY"

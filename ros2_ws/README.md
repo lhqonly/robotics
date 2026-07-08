@@ -214,7 +214,8 @@ MCU 固件也必须用匹配 profile（`EXO_QOS_BEST_EFFORT=ON`、
 如果要一键复现某个真机通信 profile，可以用压测脚本。它会编译/烧录固件、
 重启 bridge、跑 PC node、采样 `/com/tp_mcu_status`，最后打印状态频率、
 按 `status_every_n` 反推的 MCU 目标接收频率、status seq 步长
-（`seq_delta_avg/min/max`，用来识别 best-effort 跳号），以及最后一条
+（`seq_delta_avg/min/max`，用来识别 best-effort 跳号）、PC 命令发布 gap
+（`pc_wire_gap_p95/p99/max_ms`，用来识别 ROS 侧 timer 长尾），以及最后一条
 LinkHealth summary：
 
 ```bash
@@ -296,8 +297,8 @@ FORMAT=csv tools/summarize-com-staircase.sh log/com-staircase/<tag>.summary.log
 ```
 
 表格会从 stage 名拆出 `loop_hz`、`baud`、`uart_read_poll_yields`、
-`pc_cmd_hz`、`qos`、`status_every_n`，方便横向比较 1/2/5/10kHz、
-921600/2Mbps 和 UART polling 候选。
+`executor_spin_timeout_us`、`pc_cmd_hz`、`qos`、`status_every_n`，方便横向比较
+1/2/5/10kHz、921600/2Mbps、UART polling 和 executor spin timeout 候选。
 表格还会给每个已知 profile 标出 `verdict/reason`：baseline 按 20Hz reliable
 smoke 判断，latest-target 阶段按 200Hz 目标接收率、gap 和 lost/duplicate 判断；
 未知 fallback 阶段标 `INFO`。
