@@ -12,6 +12,7 @@ tests=(
   "tools/test-com-perf-contract.sh"
   "tools/test-com-summary-parsers.sh"
   "tools/test-com-staircase-dry-run.sh"
+  "tools/test-com-docs.sh"
   "tools/test-com-status-report.sh"
   "tools/test-firmware-size-report.sh"
 )

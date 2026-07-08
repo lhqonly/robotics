@@ -220,7 +220,19 @@ ros2 launch com_bringup pc_latest_target.launch.py
 
 它默认等价于 `cmd_rate_hz=200`、`cmd_catchup_max=1`、`qos_depth=1`、
 `qos_reliability=best_effort`、`tracking_mode=sampled`、`status_every_n=40`、
-`sample_window=1024`。
+`sample_window=1024`、`summary_period_s=5.0`、`link_health_period_s=5.0`。
+这组参数的含义是：
+
+| 参数 | 默认值 | 用途 |
+|---|---:|---|
+| `cmd_rate_hz` | `200` | PC/ROS 下发 latest target 的目标频率 |
+| `cmd_catchup_max` | `1` | ROS timer 偶发慢一拍时允许补发 1 条，贴近长期 200Hz |
+| `qos_reliability` | `best_effort` | 控制目标采用“最新值优先”，避免 reliable 重传拖慢实时链路 |
+| `status_every_n` | `40` | MCU 每 40 条命令回一次状态，200Hz 下约 5Hz 状态 topic |
+| `sample_window` | `1024` | PC 侧 sampled 匹配窗口，200Hz 下覆盖约 5.1s |
+| `summary_period_s` | `5.0` | 降低 PC 诊断 summary timer 对 200Hz command timer 的干扰 |
+| `link_health_period_s` | `5.0` | 降低 `/com/tp_link_health` 发布频率，保留链路健康观测但减少热路径负载 |
+
 逐条发送日志默认关闭，避免 200Hz/1000Hz 热路径里为 debug 文本产生额外分配；
 排障时可临时追加 `log_sent_commands:=true`。
 MCU 固件也必须用匹配 profile（`EXO_QOS_BEST_EFFORT=ON`、
@@ -326,6 +338,11 @@ tools/run-com-staircase.sh staircase_$(date +%Y%m%d_%H%M)
 `zero_gap_count`、`lost/duplicate/inflight`。当前 ST-LINK/SWD 不可用时，
 脚本会跳过需要烧录的阶梯，自动 fallback 到 no-flash smoke，继续验证串口/ROS
 链路。只想看将要跑哪些阶段、不碰硬件：
+
+阶梯的目的不是让 PC/ROS 直接跑 1/2/5/10kHz，而是验证“MCU 本地闭环频率提高后，
+200Hz PC latest-target 通信是否仍然稳定”。因此收益判断主要看每档的
+`sampler_target_rx_hz` 是否接近 200Hz、`pc_wire_gap_p99/max_ms` 是否收敛、
+`lost/duplicate` 是否为 0，以及状态回传 gap 是否没有长尾失控。
 
 ```bash
 DRY_RUN=1 tools/run-com-staircase.sh dryrun
