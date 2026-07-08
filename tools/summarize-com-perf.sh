@@ -5,6 +5,13 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOGDIR="${LOGDIR:-$ROOT/log/com-perf}"
 FORMAT="${FORMAT:-markdown}"
+PERF_EXPECTED_RATE_HZ="${PERF_EXPECTED_RATE_HZ:-}"
+PERF_MIN_RATE_RATIO="${PERF_MIN_RATE_RATIO:-0.90}"
+PERF_MAX_RATE_RATIO="${PERF_MAX_RATE_RATIO:-1.10}"
+PERF_MAX_LOST="${PERF_MAX_LOST:-0}"
+PERF_MAX_DUPLICATE="${PERF_MAX_DUPLICATE:-0}"
+PERF_MAX_P99_GAP_S="${PERF_MAX_P99_GAP_S:-0.10}"
+PERF_MAX_MAX_GAP_S="${PERF_MAX_MAX_GAP_S:-0.25}"
 
 case "$FORMAT" in
   markdown|md|csv) ;;
@@ -46,11 +53,89 @@ tag_from_arg() {
 
 print_header() {
   if [ "$FORMAT" = "csv" ]; then
-    echo "tag,status_hz,sampler_hz,seq_rate_hz,seq_delta_avg,seq_delta_min,seq_delta_max,p95_gap_s,p99_gap_s,max_gap_s,zero_gap_count,pc_wire_rate_hz,pc_target_rate_hz,pc_target_window_hz,wire_kbit_s,baud_util_pct,lost,duplicate,inflight"
+    if [ -n "$PERF_EXPECTED_RATE_HZ" ]; then
+      echo "tag,verdict,reason,status_hz,sampler_hz,seq_rate_hz,seq_delta_avg,seq_delta_min,seq_delta_max,p95_gap_s,p99_gap_s,max_gap_s,zero_gap_count,pc_wire_rate_hz,pc_target_rate_hz,pc_target_window_hz,wire_kbit_s,baud_util_pct,lost,duplicate,inflight"
+    else
+      echo "tag,status_hz,sampler_hz,seq_rate_hz,seq_delta_avg,seq_delta_min,seq_delta_max,p95_gap_s,p99_gap_s,max_gap_s,zero_gap_count,pc_wire_rate_hz,pc_target_rate_hz,pc_target_window_hz,wire_kbit_s,baud_util_pct,lost,duplicate,inflight"
+    fi
   else
-    echo "| Tag | status Hz | sampler Hz | seq Hz | seq delta avg/min/max | p95 gap s | p99 gap s | max gap s | zero gaps | PC wire Hz | PC target Hz | wire kbit/s | baud util % | lost | duplicate | inflight |"
-    echo "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"
+    if [ -n "$PERF_EXPECTED_RATE_HZ" ]; then
+      echo "| Tag | verdict | reason | status Hz | sampler Hz | seq Hz | seq delta avg/min/max | p95 gap s | p99 gap s | max gap s | zero gaps | PC wire Hz | PC target Hz | wire kbit/s | baud util % | lost | duplicate | inflight |"
+      echo "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"
+    else
+      echo "| Tag | status Hz | sampler Hz | seq Hz | seq delta avg/min/max | p95 gap s | p99 gap s | max gap s | zero gaps | PC wire Hz | PC target Hz | wire kbit/s | baud util % | lost | duplicate | inflight |"
+      echo "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"
+    fi
   fi
+}
+
+smoke_verdict() {
+  local sampler_hz="$1"
+  local seq_delta_min="$2"
+  local seq_delta_max="$3"
+  local p99_gap_s="$4"
+  local max_gap_s="$5"
+  local lost="$6"
+  local duplicate="$7"
+
+  awk \
+    -v expected="$PERF_EXPECTED_RATE_HZ" \
+    -v min_ratio="$PERF_MIN_RATE_RATIO" \
+    -v max_ratio="$PERF_MAX_RATE_RATIO" \
+    -v max_lost="$PERF_MAX_LOST" \
+    -v max_duplicate="$PERF_MAX_DUPLICATE" \
+    -v max_p99_gap="$PERF_MAX_P99_GAP_S" \
+    -v max_max_gap="$PERF_MAX_MAX_GAP_S" \
+    -v sampler_hz="$sampler_hz" \
+    -v seq_delta_min="$seq_delta_min" \
+    -v seq_delta_max="$seq_delta_max" \
+    -v p99_gap_s="$p99_gap_s" \
+    -v max_gap_s="$max_gap_s" \
+    -v lost="$lost" \
+    -v duplicate="$duplicate" '
+      function missing(v) { return v == "" || v == "NA" }
+      function add_reason(reason) {
+        if (reasons == "") reasons = reason
+        else reasons = reasons ";" reason
+      }
+      BEGIN {
+        verdict = "PASS"
+        if (missing(sampler_hz) || missing(seq_delta_min) ||
+            missing(seq_delta_max) || missing(lost) || missing(duplicate)) {
+          verdict = "WARN"
+          add_reason("missing_metrics")
+        }
+        if (!missing(sampler_hz) &&
+            (sampler_hz + 0 < expected * min_ratio ||
+             sampler_hz + 0 > expected * max_ratio)) {
+          verdict = "WARN"
+          add_reason("rate_out_of_band")
+        }
+        if (!missing(seq_delta_min) && !missing(seq_delta_max) &&
+            (seq_delta_min + 0 != 1 || seq_delta_max + 0 != 1)) {
+          verdict = "WARN"
+          add_reason("seq_delta_not_1")
+        }
+        if (!missing(p99_gap_s) && p99_gap_s + 0 > max_p99_gap) {
+          verdict = "WARN"
+          add_reason("p99_gap_high")
+        }
+        if (!missing(max_gap_s) && max_gap_s + 0 > max_max_gap) {
+          verdict = "WARN"
+          add_reason("max_gap_high")
+        }
+        if (!missing(duplicate) && duplicate + 0 > max_duplicate) {
+          verdict = "WARN"
+          add_reason("duplicate_nonzero")
+        }
+        if (!missing(lost) && lost + 0 > max_lost) {
+          verdict = "FAIL"
+          add_reason("lost_nonzero")
+        }
+        if (reasons == "") reasons = "-"
+        printf "%s,%s", verdict, reasons
+      }
+    '
 }
 
 summarize_tag() {
@@ -64,6 +149,7 @@ summarize_tag() {
   local p95_gap_s p99_gap_s max_gap_s zero_gap_count
   local pc_wire_rate_hz pc_target_rate_hz pc_target_window_hz
   local wire_kbit_s baud_util_pct lost duplicate inflight
+  local verdict reason verdict_csv
 
   status_hz="NA"
   if [ -f "$hz_log" ]; then
@@ -103,20 +189,47 @@ summarize_tag() {
   wire_kbit_s="$(metric_from_line "$wire_line" total_serial_kbit_s)"
   baud_util_pct="$(metric_from_line "$wire_line" baud_util_pct)"
 
+  verdict=""
+  reason=""
+  if [ -n "$PERF_EXPECTED_RATE_HZ" ]; then
+    verdict_csv="$(smoke_verdict "$sampler_hz" "$seq_delta_min" \
+      "$seq_delta_max" "$p99_gap_s" "$max_gap_s" "$lost" "$duplicate")"
+    verdict="${verdict_csv%%,*}"
+    reason="${verdict_csv#*,}"
+  fi
+
   if [ "$FORMAT" = "csv" ]; then
-    printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
-      "$tag" "$status_hz" "$sampler_hz" "$seq_rate_hz" \
-      "$seq_delta_avg" "$seq_delta_min" "$seq_delta_max" \
-      "$p95_gap_s" "$p99_gap_s" "$max_gap_s" "$zero_gap_count" \
-      "$pc_wire_rate_hz" "$pc_target_rate_hz" "$pc_target_window_hz" \
-      "$wire_kbit_s" "$baud_util_pct" "$lost" "$duplicate" "$inflight"
+    if [ -n "$PERF_EXPECTED_RATE_HZ" ]; then
+      printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
+        "$tag" "$verdict" "$reason" "$status_hz" "$sampler_hz" "$seq_rate_hz" \
+        "$seq_delta_avg" "$seq_delta_min" "$seq_delta_max" \
+        "$p95_gap_s" "$p99_gap_s" "$max_gap_s" "$zero_gap_count" \
+        "$pc_wire_rate_hz" "$pc_target_rate_hz" "$pc_target_window_hz" \
+        "$wire_kbit_s" "$baud_util_pct" "$lost" "$duplicate" "$inflight"
+    else
+      printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
+        "$tag" "$status_hz" "$sampler_hz" "$seq_rate_hz" \
+        "$seq_delta_avg" "$seq_delta_min" "$seq_delta_max" \
+        "$p95_gap_s" "$p99_gap_s" "$max_gap_s" "$zero_gap_count" \
+        "$pc_wire_rate_hz" "$pc_target_rate_hz" "$pc_target_window_hz" \
+        "$wire_kbit_s" "$baud_util_pct" "$lost" "$duplicate" "$inflight"
+    fi
   else
-    printf '| %s | %s | %s | %s | %s/%s/%s | %s | %s | %s | %s | %s | %s / %s | %s | %s | %s | %s | %s |\n' \
-      "$tag" "$status_hz" "$sampler_hz" "$seq_rate_hz" \
-      "$seq_delta_avg" "$seq_delta_min" "$seq_delta_max" \
-      "$p95_gap_s" "$p99_gap_s" "$max_gap_s" "$zero_gap_count" \
-      "$pc_wire_rate_hz" "$pc_target_rate_hz" "$pc_target_window_hz" \
-      "$wire_kbit_s" "$baud_util_pct" "$lost" "$duplicate" "$inflight"
+    if [ -n "$PERF_EXPECTED_RATE_HZ" ]; then
+      printf '| %s | %s | %s | %s | %s | %s | %s/%s/%s | %s | %s | %s | %s | %s | %s / %s | %s | %s | %s | %s | %s |\n' \
+        "$tag" "$verdict" "$reason" "$status_hz" "$sampler_hz" "$seq_rate_hz" \
+        "$seq_delta_avg" "$seq_delta_min" "$seq_delta_max" \
+        "$p95_gap_s" "$p99_gap_s" "$max_gap_s" "$zero_gap_count" \
+        "$pc_wire_rate_hz" "$pc_target_rate_hz" "$pc_target_window_hz" \
+        "$wire_kbit_s" "$baud_util_pct" "$lost" "$duplicate" "$inflight"
+    else
+      printf '| %s | %s | %s | %s | %s/%s/%s | %s | %s | %s | %s | %s | %s / %s | %s | %s | %s | %s | %s |\n' \
+        "$tag" "$status_hz" "$sampler_hz" "$seq_rate_hz" \
+        "$seq_delta_avg" "$seq_delta_min" "$seq_delta_max" \
+        "$p95_gap_s" "$p99_gap_s" "$max_gap_s" "$zero_gap_count" \
+        "$pc_wire_rate_hz" "$pc_target_rate_hz" "$pc_target_window_hz" \
+        "$wire_kbit_s" "$baud_util_pct" "$lost" "$duplicate" "$inflight"
+    fi
   fi
 }
 

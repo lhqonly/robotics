@@ -5,6 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WATCH_LOGDIR="${WATCH_LOGDIR:-$ROOT/log/overnight-com-watch}"
 FORMAT="${FORMAT:-markdown}"
+PERF_EXPECTED_RATE_HZ="${PERF_EXPECTED_RATE_HZ:-20}"
 INPUT="${1:-}"
 
 case "$FORMAT" in
@@ -48,7 +49,8 @@ if [ "${#tags[@]}" -eq 0 ]; then
 fi
 
 if [ "$FORMAT" = "csv" ]; then
-  FORMAT=csv "$ROOT/tools/summarize-com-perf.sh" "${tags[@]}"
+  PERF_EXPECTED_RATE_HZ="$PERF_EXPECTED_RATE_HZ" \
+    FORMAT=csv "$ROOT/tools/summarize-com-perf.sh" "${tags[@]}"
   exit 0
 fi
 
@@ -67,4 +69,5 @@ echo '```'
 echo
 echo "## Communication Samples"
 echo
-"$ROOT/tools/summarize-com-perf.sh" "${tags[@]}"
+PERF_EXPECTED_RATE_HZ="$PERF_EXPECTED_RATE_HZ" \
+  "$ROOT/tools/summarize-com-perf.sh" "${tags[@]}"

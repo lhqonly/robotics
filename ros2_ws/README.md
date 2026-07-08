@@ -319,6 +319,12 @@ tools/summarize-overnight-com-watch.sh log/overnight-com-watch/<tag>.log
 FORMAT=csv tools/summarize-overnight-com-watch.sh log/overnight-com-watch/<tag>.log
 ```
 
+overnight 汇总默认按 20Hz no-flash smoke 标出 `PASS/WARN/FAIL` 和原因；这只是
+当前板上固件的串口/ROS 健康观察，不代表 200Hz latest-target 高频 profile 已完成上板验收。
+默认门槛为 `PERF_EXPECTED_RATE_HZ=20`、`lost=0`、`duplicate=0`、
+`seq_delta_min/max=1/1`、`p99_gap_s<=0.10`、`max_gap_s<=0.25`；需要时可用同名
+环境变量覆盖。
+
 烧录并启动 bridge 后，可以用 SWD 粗测本地 tick 档位：
 
 ```bash
