@@ -445,6 +445,11 @@ tools/com-status-report.sh morning_$(date +%Y%m%d_%H%M)
 
 报告会写到 `log/handoff/<tag>.md`，里面汇总当前 git 版本、最近提交、SWD 状态、
 串口设备、最近 no-flash 指标、latest overnight summary、静态内存矩阵、栈候选和未解决项。
+只想看 blockers 时，可以直接抽取 `未解决项`：
+
+```bash
+tools/summarize-com-unresolved.sh morning_$(date +%Y%m%d_%H%M)
+```
 
 如果要无人值守地持续观察一晚，可用 overnight watcher。它只跑 no-flash smoke
 和 handoff 报告，不 build、不 flash、不 reset：

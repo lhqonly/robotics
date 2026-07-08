@@ -45,6 +45,19 @@ assert_contains "$report" "## overnight no-flash 趋势" \
 assert_contains "$report" "## 未解决项" \
   "unresolved section"
 
+unresolved="$(
+  OUTDIR="$TMPDIR" COM_STATUS_PROBE_STLINK=0 \
+    "$ROOT/tools/summarize-com-unresolved.sh" status_report_unresolved_smoke
+)"
+printf '%s\n' "$unresolved" | grep -Fq -- "## 未解决项" || {
+  echo "FAIL: unresolved summary missing section header" >&2
+  exit 1
+}
+printf '%s\n' "$unresolved" | grep -Fq -- "SWD 仍需恢复" || {
+  echo "FAIL: unresolved summary missing SWD blocker" >&2
+  exit 1
+}
+
 if find "$ROOT/log/overnight-com-watch" -maxdepth 1 -type f -name '*.log' | grep -q .; then
   assert_contains "$report" "### Verdict Summary" \
     "live overnight verdict summary"
