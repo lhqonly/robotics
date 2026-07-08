@@ -39,6 +39,8 @@ assert_contains "$default_summary" \
 assert_contains "$default_summary" \
   "SUMMARY_PERIOD_S=5.0 LINK_HEALTH_PERIOD_S=5.0" \
   "default latest diagnostic periods"
+assert_contains "$default_summary" "pc_launch_prefix=none" \
+  "default staircase records absent PC launch prefix"
 assert_contains "$default_summary" \
   "START latest_10000hz_921600baud_irqp4_poll0_spin1000us_200hz_be_n40" \
   "default 10k latest stage"
@@ -50,11 +52,14 @@ LOGDIR="$TMPDIR/matrix" DRY_RUN=1 \
   STAIRCASE_CONTROL_TIMER_IRQ_PRIORITIES="4 5" \
   STAIRCASE_UART_READ_POLL_YIELDS="0 4" \
   STAIRCASE_EXECUTOR_SPIN_TIMEOUT_US="1000 200" \
+  PC_LAUNCH_PREFIX="taskset -c 2" \
   "$ROOT/tools/run-com-staircase.sh" dry_matrix >/dev/null
 matrix_summary="$TMPDIR/matrix/dry_matrix.summary.log"
 assert_contains "$matrix_summary" \
   "START latest_10000hz_2000000baud_irqp5_poll4_spin200us_200hz_be_n40" \
   "expanded 10k 2Mbps irq/poll/spin stage"
+assert_contains "$matrix_summary" "pc_launch_prefix=taskset -c 2" \
+  "expanded staircase records PC launch prefix"
 assert_count "$matrix_summary" '^START latest_' 64 \
   "expanded latest stage count"
 assert_contains "$matrix_summary" "DONE failures=0" \
