@@ -49,6 +49,15 @@ write_perf_logs() {
   printf '%s\n' \
     '[node_com_cmd] link-health summary: wire_rate_hz=20.000 target_rate_hz=20.000 target_window_hz=20.000 wire_gap_p95_ms=50.0 wire_gap_p99_ms=250.0 wire_gap_max_ms=600.0 lost=0 duplicate=0 inflight=1' \
     >"$TMPDIR/com-perf/badpc.cmd.log"
+
+  printf '%s\n' 'average rate: 20.000' >"$TMPDIR/com-perf/lostcase.hz.log"
+  printf '%s\n' \
+    'status_sampler: rate_hz=20.000 seq_rate_hz=20.000 seq_delta_avg=1.005 seq_delta_min=1 seq_delta_max=2 p95_gap_s=0.050 p99_gap_s=0.060 max_gap_s=0.080 zero_gap_count=0' \
+    >"$TMPDIR/com-perf/lostcase.sampler.log"
+  printf '%s\n' \
+    '[node_com_cmd] [ERROR] [123.456] [node_com_cmd]: LOST seq=42: deadline 120.0 ms exceeded (waited_ms=123.456, deadline_ms=120.0, lost_count=1)' \
+    '[node_com_cmd] link-health summary: wire_rate_hz=20.000 target_rate_hz=20.000 target_window_hz=20.000 wire_gap_p95_ms=50.0 wire_gap_p99_ms=60.0 wire_gap_max_ms=80.0 lost=1 duplicate=0 inflight=1' \
+    >"$TMPDIR/com-perf/lostcase.cmd.log"
 }
 
 test_com_perf_summary() {
@@ -116,6 +125,7 @@ test_overnight_summary() {
     '[2026-07-08 23:00:00] start tag_prefix=overnight_test interval_s=1' \
     '[2026-07-08 23:00:01] iteration=1 smoke tag=sample' \
     '[2026-07-08 23:00:02] iteration=2 smoke tag=legacy' \
+    '[2026-07-08 23:00:02] iteration=3 smoke tag=lostcase' \
     '[2026-07-08 23:00:03] done failures=0' \
     >"$watch_log"
 
@@ -126,12 +136,18 @@ test_overnight_summary() {
     'overnight csv delegates legacy metrics'
 
   md="$(LOGDIR="$TMPDIR/com-perf" "$ROOT/tools/summarize-overnight-com-watch.sh" "$watch_log")"
-  assert_contains "$md" '- smoke samples: 2' \
+  assert_contains "$md" '- smoke samples: 3' \
     'overnight markdown counts smoke samples'
-  assert_contains "$md" '- PASS/WARN/FAIL/INFO: 2/0/0/0' \
+  assert_contains "$md" '- PASS/WARN/FAIL/INFO: 2/0/1/0' \
     'overnight markdown includes verdict summary'
-  assert_contains "$md" '- reasons: -' \
-    'overnight markdown includes empty reason summary'
+  assert_contains "$md" 'lost_nonzero=1' \
+    'overnight markdown includes lost reason summary'
+  assert_contains "$md" 'seq_delta_not_1=1' \
+    'overnight markdown includes seq-delta reason summary'
+  assert_contains "$md" '## Failure Events' \
+    'overnight markdown includes failure events section'
+  assert_contains "$md" '- lostcase: LOST seq=42: deadline 120.0 ms exceeded (waited_ms=123.456, deadline_ms=120.0, lost_count=1)' \
+    'overnight markdown summarizes lost event detail'
   assert_contains "$md" '| sample | PASS | - | 19.997 | 20.001' \
     'overnight markdown includes summarized sample row'
 }

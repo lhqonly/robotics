@@ -4,6 +4,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WATCH_LOGDIR="${WATCH_LOGDIR:-$ROOT/log/overnight-com-watch}"
+PERF_LOGDIR="${LOGDIR:-$ROOT/log/com-perf}"
 FORMAT="${FORMAT:-markdown}"
 PERF_EXPECTED_RATE_HZ="${PERF_EXPECTED_RATE_HZ:-20}"
 INPUT="${1:-}"
@@ -90,6 +91,40 @@ print_verdict_summary() {
     '
 }
 
+print_failure_events() {
+  local tag cmd_log events any
+  any=0
+
+  for tag in "${tags[@]}"; do
+    cmd_log="$PERF_LOGDIR/$tag.cmd.log"
+    [ -f "$cmd_log" ] || continue
+    events="$(awk '
+      /LOST seq=/ {
+        count += 1
+        line = $0
+        sub(/^.*node_com_cmd\]: /, "", line)
+        if (count <= 3) {
+          if (summary != "") summary = summary "; "
+          summary = summary line
+        }
+      }
+      END {
+        if (count > 0) {
+          if (count > 3) summary = summary "; ... (" count " lost events)"
+          print summary
+        }
+      }
+    ' "$cmd_log")"
+    [ -n "$events" ] || continue
+    printf -- "- %s: %s\n" "$tag" "$events"
+    any=1
+  done
+
+  if [ "$any" -eq 0 ]; then
+    echo "- none"
+  fi
+}
+
 rel_watch_log="${WATCH_LOG#$ROOT/}"
 echo "# Overnight Communication Watch Summary"
 echo
@@ -106,6 +141,10 @@ echo
 echo "## Verdict Summary"
 echo
 print_verdict_summary
+echo
+echo "## Failure Events"
+echo
+print_failure_events
 echo
 echo "## Communication Samples"
 echo
