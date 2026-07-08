@@ -1,4 +1,6 @@
 # --- ROS2 / colcon 构建产物（绝不进库） ---
+/build/
+/install/
 ros2_ws/build/
 ros2_ws/install/
 ros2_ws/log/
