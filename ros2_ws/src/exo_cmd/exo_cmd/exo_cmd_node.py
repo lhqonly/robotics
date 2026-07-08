@@ -458,6 +458,9 @@ class ExoCmdNode(Node):
         now_s = self._now()
         elapsed_s = max(now_s - self._start_s, 1e-9)
         wire_rate_hz = self._wire_send_count / elapsed_s
+        sent_rate_hz = s['sent'] / elapsed_s
+        matched_rate_hz = s['matched'] / elapsed_s
+        target_rate_hz = matched_rate_hz * self._status_every_n
         window_s = max(now_s - self._last_summary_s, 1e-9)
         window_wire_rate_hz = (
             (self._wire_send_count - self._last_summary_wire_count) / window_s)
@@ -472,14 +475,15 @@ class ExoCmdNode(Node):
         self._last_summary_matched_count = s['matched']
         line = ('link-health summary: sent=%d matched=%d lost=%d '
                 'duplicate=%d inflight=%d stale_duplicate=%d '
-                'wire_sent=%d wire_rate_hz=%.3f wire_window_hz=%.3f '
-                'sent_window_hz=%.3f matched_window_hz=%.3f '
-                'target_window_hz=%.3f'
+                'wire_sent=%d wire_rate_hz=%.3f sent_rate_hz=%.3f '
+                'matched_rate_hz=%.3f target_rate_hz=%.3f '
+                'wire_window_hz=%.3f sent_window_hz=%.3f '
+                'matched_window_hz=%.3f target_window_hz=%.3f'
                 % (s['sent'], s['matched'], s['lost'], s['duplicate'],
                    s['inflight'], s['stale_duplicate'],
-                   self._wire_send_count, wire_rate_hz,
-                   window_wire_rate_hz, window_sent_hz,
-                   window_matched_hz, window_target_hz))
+                   self._wire_send_count, wire_rate_hz, sent_rate_hz,
+                   matched_rate_hz, target_rate_hz, window_wire_rate_hz,
+                   window_sent_hz, window_matched_hz, window_target_hz))
         if s['reconciles']:
             self.get_logger().info(line)
         else:

@@ -28,6 +28,7 @@ SAMPLE_WINDOW="${SAMPLE_WINDOW:-4096}"
 RTT_WARN_MS="${RTT_WARN_MS:-10.0}"
 RTT_DEADLINE_MS="${RTT_DEADLINE_MS:-120.0}"
 SWEEP_PERIOD_S="${SWEEP_PERIOD_S:-0.02}"
+SUMMARY_PERIOD_S="${SUMMARY_PERIOD_S:-1.0}"
 STARTUP_GRACE_S="${STARTUP_GRACE_S:-0.5}"
 EXECUTOR_THREADS="${EXECUTOR_THREADS:-0}"
 LOG_MATCHED_EVENTS="${LOG_MATCHED_EVENTS:-false}"
@@ -73,7 +74,7 @@ fi
 
 echo "[com-perf] tag=$TAG"
 echo "[com-perf] firmware: qos_best_effort=$EXO_QOS_BEST_EFFORT baud=$BAUD control_loop_hz=$CONTROL_LOOP_HZ status_every_n=$STATUS_EVERY_N"
-echo "[com-perf] pc: cmd_rate_hz=$CMD_RATE_HZ qos_depth=$QOS_DEPTH qos_reliability=$QOS_RELIABILITY tracking_mode=$TRACKING_MODE rtt_warn_ms=$RTT_WARN_MS rtt_deadline_ms=$RTT_DEADLINE_MS startup_grace_s=$STARTUP_GRACE_S executor_threads=$EXECUTOR_THREADS log_matched_events=$LOG_MATCHED_EVENTS rtt_warn_log_period_s=$RTT_WARN_LOG_PERIOD_S"
+echo "[com-perf] pc: cmd_rate_hz=$CMD_RATE_HZ qos_depth=$QOS_DEPTH qos_reliability=$QOS_RELIABILITY tracking_mode=$TRACKING_MODE rtt_warn_ms=$RTT_WARN_MS rtt_deadline_ms=$RTT_DEADLINE_MS sweep_period_s=$SWEEP_PERIOD_S summary_period_s=$SUMMARY_PERIOD_S startup_grace_s=$STARTUP_GRACE_S executor_threads=$EXECUTOR_THREADS log_matched_events=$LOG_MATCHED_EVENTS rtt_warn_log_period_s=$RTT_WARN_LOG_PERIOD_S"
 echo "[com-perf] logs: $LOGDIR/$TAG.*.log"
 
 flash_firmware() {
@@ -143,6 +144,7 @@ setsid ros2 launch com_bringup pc_cmd.launch.py \
   rtt_warn_ms:="$RTT_WARN_MS" \
   rtt_deadline_ms:="$RTT_DEADLINE_MS" \
   sweep_period_s:="$SWEEP_PERIOD_S" \
+  summary_period_s:="$SUMMARY_PERIOD_S" \
   startup_grace_s:="$STARTUP_GRACE_S" \
   executor_threads:="$EXECUTOR_THREADS" \
   log_matched_events:="$LOG_MATCHED_EVENTS" \
@@ -209,6 +211,7 @@ fi
 summary="$(grep 'link-health summary' "$CMD_LOG" | tail -1 || true)"
 wire_sent="$(printf '%s\n' "$summary" | grep -o 'wire_sent=[0-9]*' | tail -1 | cut -d= -f2 || true)"
 wire_rate_hz="$(printf '%s\n' "$summary" | grep -o 'wire_rate_hz=[0-9.]*' | tail -1 | cut -d= -f2 || true)"
+target_rate_hz="$(printf '%s\n' "$summary" | grep -o 'target_rate_hz=[0-9.]*' | tail -1 | cut -d= -f2 || true)"
 wire_window_hz="$(printf '%s\n' "$summary" | grep -o 'wire_window_hz=[0-9.]*' | tail -1 | cut -d= -f2 || true)"
 sent_window_hz="$(printf '%s\n' "$summary" | grep -o 'sent_window_hz=[0-9.]*' | tail -1 | cut -d= -f2 || true)"
 matched_window_hz="$(printf '%s\n' "$summary" | grep -o 'matched_window_hz=[0-9.]*' | tail -1 | cut -d= -f2 || true)"
@@ -224,6 +227,7 @@ echo "[com-perf] sampler_target_rx_hz=${sampler_target_rx_hz:-NA}"
 echo "[com-perf] sampler_max_gap_s=${sampler_max_gap_s:-NA}"
 echo "[com-perf] pc_wire_sent=${wire_sent:-NA}"
 echo "[com-perf] pc_wire_rate_hz=${wire_rate_hz:-NA}"
+echo "[com-perf] pc_target_rate_hz=${target_rate_hz:-NA}"
 echo "[com-perf] pc_wire_window_hz=${wire_window_hz:-NA}"
 echo "[com-perf] pc_sent_window_hz=${sent_window_hz:-NA}"
 echo "[com-perf] pc_matched_window_hz=${matched_window_hz:-NA}"

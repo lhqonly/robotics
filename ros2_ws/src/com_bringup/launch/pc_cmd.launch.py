@@ -32,6 +32,7 @@ def generate_launch_description():
     rtt_warn_ms = LaunchConfiguration('rtt_warn_ms')
     rtt_deadline_ms = LaunchConfiguration('rtt_deadline_ms')
     sweep_period_s = LaunchConfiguration('sweep_period_s')
+    summary_period_s = LaunchConfiguration('summary_period_s')
     startup_grace_s = LaunchConfiguration('startup_grace_s')
     executor_threads = LaunchConfiguration('executor_threads')
     log_matched_events = LaunchConfiguration('log_matched_events')
@@ -79,6 +80,10 @@ def generate_launch_description():
             default_value='0.02',
             description='Deadline sweep period in seconds.'),
         DeclareLaunchArgument(
+            'summary_period_s',
+            default_value='1.0',
+            description='Link-health summary log period in seconds.'),
+        DeclareLaunchArgument(
             'startup_grace_s',
             default_value='0.5',
             description=(
@@ -110,6 +115,8 @@ def generate_launch_description():
                 'status_every_n': ParameterValue(status_every_n, value_type=int),
                 'sample_window': ParameterValue(sample_window, value_type=int),
                 'sweep_period_s': ParameterValue(sweep_period_s, value_type=float),
+                'summary_period_s': ParameterValue(
+                    summary_period_s, value_type=float),
                 'startup_grace_s': ParameterValue(
                     startup_grace_s, value_type=float),
                 'rtt_warn_ms': ParameterValue(rtt_warn_ms, value_type=float),
