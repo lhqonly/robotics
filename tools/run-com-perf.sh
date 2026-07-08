@@ -209,7 +209,8 @@ ros2 run exo_cmd status_sampler \
   --qos-reliability "$QOS_RELIABILITY" \
   --spin-timeout-s "$SAMPLER_SPIN_TIMEOUT_S" >"$SAMPLER_LOG" 2>&1 &
 SAMPLER_PID=$!
-timeout "$HZ_SECONDS" ros2 topic hz /com/tp_mcu_status >"$HZ_LOG" 2>&1 || true
+timeout -s INT "$HZ_SECONDS" ros2 topic hz /com/tp_mcu_status \
+  >"$HZ_LOG" 2>&1 || true
 wait "$SAMPLER_PID" || true
 
 elapsed=$((WARMUP_SECONDS + HZ_SECONDS))
