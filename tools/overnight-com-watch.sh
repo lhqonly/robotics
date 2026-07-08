@@ -15,6 +15,7 @@ WARMUP_SECONDS="${WARMUP_SECONDS:-5}"
 HZ_SECONDS="${HZ_SECONDS:-10}"
 WIRE_EVERY_N="${WIRE_EVERY_N:-0}"
 WIRE_AGENT_VERBOSITY="${WIRE_AGENT_VERBOSITY:-6}"
+PC_LAUNCH_PREFIX="${PC_LAUNCH_PREFIX:-}"
 
 mkdir -p "$LOGDIR"
 LOG="$LOGDIR/$TAG_PREFIX.log"
@@ -40,7 +41,7 @@ if [ -z "$end_epoch" ]; then
   exit 1
 fi
 
-log "start tag_prefix=$TAG_PREFIX end_at=$END_AT interval_s=$INTERVAL_SECONDS wire_every_n=$WIRE_EVERY_N"
+log "start tag_prefix=$TAG_PREFIX end_at=$END_AT interval_s=$INTERVAL_SECONDS wire_every_n=$WIRE_EVERY_N pc_launch_prefix=${PC_LAUNCH_PREFIX:-none}"
 iteration=0
 while [ "$(date +%s)" -lt "$end_epoch" ]; do
   iteration=$((iteration + 1))
@@ -56,6 +57,7 @@ while [ "$(date +%s)" -lt "$end_epoch" ]; do
       WARMUP_SECONDS="$WARMUP_SECONDS" \
       HZ_SECONDS="$HZ_SECONDS" \
       MICROROS_AGENT_VERBOSITY="$agent_verbosity" \
+      PC_LAUNCH_PREFIX="$PC_LAUNCH_PREFIX" \
       "$ROOT/tools/run-com-perf.sh" "$tag" >>"$LOG" 2>&1; then
     log "iteration=$iteration smoke=ok"
   else

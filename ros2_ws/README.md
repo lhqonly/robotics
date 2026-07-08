@@ -372,6 +372,16 @@ END_AT="tomorrow 09:00" INTERVAL_SECONDS=1800 \
 tools/overnight-com-watch.sh overnight_$(date +%Y%m%d_%H%M)
 ```
 
+如果要把 PC command node 绑到固定 CPU 核做长期调度对比，可把同一个
+`PC_LAUNCH_PREFIX` 传给 watcher；每一轮 no-flash smoke 都会透传给
+`tools/run-com-perf.sh`：
+
+```bash
+END_AT="tomorrow 09:00" INTERVAL_SECONDS=1800 \
+PC_LAUNCH_PREFIX="taskset -c 2" \
+tools/overnight-com-watch.sh overnight_taskset_$(date +%Y%m%d_%H%M)
+```
+
 默认 `WIRE_EVERY_N=0`，不会开 micro-ROS Agent `-v6`，日志比较小。如果想每隔几轮
 额外采一次同 tag 的串口线速统计，可以打开周期采样：
 
@@ -399,7 +409,8 @@ overnight 汇总默认按 20Hz no-flash smoke 标出 `PASS/WARN/FAIL` 和原因�
 当前板上固件的串口/ROS 健康观察，不代表 200Hz latest-target 高频 profile 已完成上板验收。
 默认门槛为 `PERF_EXPECTED_RATE_HZ=20`、`lost=0`、`duplicate=0`、
 `seq_delta_min/max=1/1`、`p99_gap_s<=0.10`、`max_gap_s<=0.25`；需要时可用同名
-环境变量覆盖。
+环境变量覆盖。`tools/run-com-perf.sh` 本身也会执行健康门槛，失败轮次会在 watcher
+日志中记录为 `smoke=fail`。
 
 烧录并启动 bridge 后，可以用 SWD 粗测本地 tick 档位：
 
