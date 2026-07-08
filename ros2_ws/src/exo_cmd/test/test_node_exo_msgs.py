@@ -375,6 +375,34 @@ def test_sampled_tracking_only_tracks_every_nth_command():
         assert node._tracker.reconciles()
 
 
+def test_sampled_tracking_send_window_is_bounded(monkeypatch):
+    """Sampled mode keeps only the recent send window for long high-rate runs."""
+    sent_cmds = []
+    warn_logs = []
+    with make_node(tracking_mode='sampled', sample_window=3,
+                   link_health_period_s=0.0, summary_period_s=0.0) as node:
+        node._pub.publish = capture_publish_into(sent_cmds)
+        for _ in range(5):
+            node._on_timer()
+
+        assert [m.header.seq for m in sent_cmds] == [0, 1, 2, 3, 4]
+        assert set(node._sampled_sends) == {2, 3, 4}
+        assert list(node._sampled_order) == [2, 3, 4]
+
+        with monkeypatch.context() as patch:
+            patch.setattr(node.get_logger(), 'warn', warn_logs.append)
+            node._on_status(make_status(seq=1, payload=1))
+
+        assert warn_logs == ['sampled status seq=1 not in recent send window=3']
+        assert node._tracker.counters()['sent'] == 0
+
+        node._on_status(make_status(seq=4, payload=4))
+        c = node._tracker.counters()
+        assert c['sent'] == 1
+        assert c['matched'] == 1
+        assert c['inflight'] == 0
+
+
 def test_startup_grace_ignores_warmup_seq_counters():
     """Startup grace publishes warmup commands without polluting LinkHealth."""
     sent_cmds = []
