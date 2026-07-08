@@ -9,6 +9,7 @@ REPORT="$OUTDIR/$TAG.md"
 COM_LOGDIR="$ROOT/log/com-perf"
 SIZE_LOGDIR="$ROOT/log/firmware-size-matrix"
 STACK_LOGDIR="$ROOT/log/firmware-stack-sweep"
+WATCH_LOGDIR="$ROOT/log/overnight-com-watch"
 
 mkdir -p "$OUTDIR"
 
@@ -46,6 +47,20 @@ first_table_rows() {
   else
     echo "-"
   fi
+}
+
+markdown_table_from_prefix() {
+  local file="$1"
+  local prefix="$2"
+  if [ ! -f "$file" ]; then
+    echo "-"
+    return 0
+  fi
+  awk -v prefix="$prefix" '
+    index($0, prefix) == 1 {in_table = 1}
+    in_table && /^\|/ {print; next}
+    in_table && !/^\|/ {exit}
+  ' "$file"
 }
 
 probe_stlink() {
@@ -125,6 +140,7 @@ latest_cmd="$(latest_file "$COM_LOGDIR" '*.cmd.log')"
 latest_wire="$(latest_file "$COM_LOGDIR" '*.wire.log')"
 latest_size_md="$(latest_file "$SIZE_LOGDIR" '*.md')"
 latest_stack_md="$(latest_file "$STACK_LOGDIR" '*.md')"
+latest_watch_summary="$(latest_file "$WATCH_LOGDIR" '*.summary.md')"
 
 sampler_summary=""
 if [ -f "$latest_sampler" ]; then
@@ -219,6 +235,7 @@ serial_users="$(serial_lsof)"
   echo "- wire stats：$(relpath "$latest_wire")"
   echo "- size matrix：$(relpath "$latest_size_md")"
   echo "- stack sweep：$(relpath "$latest_stack_md")"
+  echo "- overnight summary：$(relpath "$latest_watch_summary")"
   echo
   echo "## 最新通信指标"
   echo
@@ -226,6 +243,12 @@ serial_users="$(serial_lsof)"
   echo "- sampler：${sampler_summary:-unknown}"
   echo "- LinkHealth：${link_summary:-unknown}"
   echo "- wire：${wire_metrics:-unknown}"
+  echo
+  echo "## overnight no-flash 趋势"
+  echo
+  echo "来源：$(relpath "$latest_watch_summary")"
+  echo
+  markdown_table_from_prefix "$latest_watch_summary" '| Tag |'
   echo
   echo "## 已知关键样本"
   echo
