@@ -248,6 +248,17 @@ BUILD_FIRMWARE=0 FLASH_FIRMWARE=0 \
 tools/run-com-perf.sh no_flash_taskset_cpu2
 ```
 
+也可以用 sweep 脚本一次比较 baseline 和多个绑核候选。它只跑 no-flash，不会
+build、flash 或 reset：
+
+```bash
+TASKSET_CPUS="2 3" RUNS=2 \
+tools/run-pc-scheduler-sweep.sh pc_sched_$(date +%Y%m%d_%H%M)
+```
+
+结果会写到 `log/pc-scheduler-sweep/<tag>.metrics.md/.csv`，原始通信日志仍在
+`log/com-perf/`。
+
 要按阶梯一次跑完整验证矩阵，用：
 
 ```bash

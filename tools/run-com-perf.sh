@@ -52,6 +52,7 @@ WIRE_STATS_SKIP_SECONDS="${WIRE_STATS_SKIP_SECONDS:-$STARTUP_GRACE_S}"
 FLASH_TIMEOUT_SECONDS="${FLASH_TIMEOUT_SECONDS:-90}"
 RESET_TIMEOUT_SECONDS="${RESET_TIMEOUT_SECONDS:-15}"
 STLINK_PREFLIGHT="${STLINK_PREFLIGHT:-1}"
+REQUIRE_CORE_METRICS="${REQUIRE_CORE_METRICS:-1}"
 
 case "$QOS_RELIABILITY" in
   reliable) EXO_QOS_BEST_EFFORT=OFF ;;
@@ -197,7 +198,7 @@ set -u
 : >"$GRAPH_LOG"
 graph_snapshot "after_bridge"
 
-setsid ros2 launch com_bringup pc_cmd.launch.py \
+pc_launch_args=(
   cmd_rate_hz:="$CMD_RATE_HZ" \
   cmd_catchup_max:="$CMD_CATCHUP_MAX" \
   qos_depth:="$QOS_DEPTH" \
@@ -211,10 +212,16 @@ setsid ros2 launch com_bringup pc_cmd.launch.py \
   summary_period_s:="$SUMMARY_PERIOD_S" \
   startup_grace_s:="$STARTUP_GRACE_S" \
   executor_threads:="$EXECUTOR_THREADS" \
-  launch_prefix:="$PC_LAUNCH_PREFIX" \
   log_matched_events:="$LOG_MATCHED_EVENTS" \
   rtt_warn_log_period_s:="$RTT_WARN_LOG_PERIOD_S" \
-  log_level:=info >"$CMD_LOG" 2>&1 &
+  log_level:=info
+)
+if [ -n "$PC_LAUNCH_PREFIX" ]; then
+  pc_launch_args+=(launch_prefix:="$PC_LAUNCH_PREFIX")
+fi
+
+setsid ros2 launch com_bringup pc_cmd.launch.py \
+  "${pc_launch_args[@]}" >"$CMD_LOG" 2>&1 &
 CMD_PID=$!
 
 sleep "$WARMUP_SECONDS"
@@ -268,6 +275,7 @@ if [ -n "$status_hz" ]; then
   estimated_rx_hz="$(awk -v r="$status_hz" -v n="$STATUS_EVERY_N" 'BEGIN { printf "%.2f", r * n }')"
 fi
 sampler_summary="$(grep 'status_sampler:' "$SAMPLER_LOG" | tail -1 || true)"
+sampler_count="$(extract_metric "$sampler_summary" count)"
 sampler_hz="$(extract_metric "$sampler_summary" rate_hz)"
 sampler_max_gap_s="$(extract_metric "$sampler_summary" max_gap_s)"
 sampler_p95_gap_s="$(extract_metric "$sampler_summary" p95_gap_s)"
@@ -325,6 +333,7 @@ cat "$GRAPH_LOG"
 echo "[com-perf] status_hz=${status_hz:-NA}"
 echo "[com-perf] estimated_mcu_target_rx_hz=${estimated_rx_hz:-NA}"
 echo "[com-perf] hz_stats=${hz_stats:-NA}"
+echo "[com-perf] sampler_count=${sampler_count:-NA}"
 echo "[com-perf] sampler_hz=${sampler_hz:-NA}"
 echo "[com-perf] sampler_target_rx_hz=${sampler_target_rx_hz:-NA}"
 echo "[com-perf] sampler_max_gap_s=${sampler_max_gap_s:-NA}"
@@ -351,3 +360,18 @@ echo "[com-perf] last_summary=${summary:-NA}"
 echo "[com-perf] sampler_summary=${sampler_summary:-NA}"
 echo "[com-perf] hz_tail:"
 tail -n 12 "$HZ_LOG"
+
+validation_failed=0
+if [ "$REQUIRE_CORE_METRICS" = "1" ]; then
+  if [ -z "$summary" ]; then
+    echo "[com-perf] ERROR: missing link-health summary; PC command node may not have started" >&2
+    validation_failed=1
+  fi
+  if [ -z "$sampler_count" ] || [ "$sampler_count" -le 0 ] 2>/dev/null; then
+    echo "[com-perf] ERROR: sampler received no status messages" >&2
+    validation_failed=1
+  fi
+fi
+if [ "$validation_failed" -ne 0 ]; then
+  exit 1
+fi
