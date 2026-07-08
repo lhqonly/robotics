@@ -31,6 +31,7 @@ LATEST_RUN_SECONDS="${LATEST_RUN_SECONDS:-65}"
 LATEST_WARMUP_SECONDS="${LATEST_WARMUP_SECONDS:-5}"
 LATEST_HZ_SECONDS="${LATEST_HZ_SECONDS:-50}"
 LATEST_STATUS_EVERY_N="${LATEST_STATUS_EVERY_N:-40}"
+STAIRCASE_BAUDS="${STAIRCASE_BAUDS:-921600}"
 
 SMOKE_RUN_SECONDS="${SMOKE_RUN_SECONDS:-18}"
 SMOKE_WARMUP_SECONDS="${SMOKE_WARMUP_SECONDS:-5}"
@@ -204,9 +205,11 @@ run_baseline_flash_stage() {
 
 run_latest_flash_stage() {
   local hz="$1"
-  run_stage "latest_${hz}hz_200hz_be_n${LATEST_STATUS_EVERY_N}" \
+  local baud="$2"
+  run_stage "latest_${hz}hz_${baud}baud_200hz_be_n${LATEST_STATUS_EVERY_N}" \
     BUILD_FIRMWARE="$BUILD_FIRMWARE" \
     FLASH_FIRMWARE="$FLASH_FIRMWARE" \
+    BAUD="$baud" \
     CONTROL_LOOP_HZ="$hz" \
     CMD_RATE_HZ=200 \
     CMD_CATCHUP_MAX=1 \
@@ -236,13 +239,15 @@ run_no_flash_smoke() {
 }
 
 record "staircase tag_prefix=$TAG_PREFIX logdir=$LOGDIR"
-record "mode build_firmware=$BUILD_FIRMWARE flash_firmware=$FLASH_FIRMWARE dry_run=$DRY_RUN"
+record "mode build_firmware=$BUILD_FIRMWARE flash_firmware=$FLASH_FIRMWARE dry_run=$DRY_RUN staircase_bauds=$STAIRCASE_BAUDS"
 
 failures=0
 if check_stlink_ready; then
   run_baseline_flash_stage || failures=$((failures + 1))
   for hz in 1000 2000 5000 10000; do
-    run_latest_flash_stage "$hz" || failures=$((failures + 1))
+    for baud in $STAIRCASE_BAUDS; do
+      run_latest_flash_stage "$hz" "$baud" || failures=$((failures + 1))
+    done
   done
 else
   failures=$((failures + 1))

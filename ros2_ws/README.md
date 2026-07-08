@@ -222,6 +222,14 @@ tools/run-com-staircase.sh staircase_$(date +%Y%m%d_%H%M)
 DRY_RUN=1 tools/run-com-staircase.sh dryrun
 ```
 
+要同时比较不同波特率，设置 `STAIRCASE_BAUDS`。这会为每个 1/2/5/10kHz
+latest-target 阶段分别编译/烧录对应 `EXO_UART_BAUD` 的固件，并用同样 baud 启动
+bridge：
+
+```bash
+STAIRCASE_BAUDS="921600 2000000" tools/run-com-staircase.sh baud_sweep
+```
+
 阶梯跑完后，可以把 summary 转成表格或 CSV：
 
 ```bash
