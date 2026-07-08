@@ -86,6 +86,22 @@ serial_presence() {
   echo
 }
 
+usb_snapshot() {
+  if command -v lsusb >/dev/null; then
+    lsusb 2>&1 || true
+  else
+    echo "lsusb not found"
+  fi
+}
+
+serial_lsof() {
+  if command -v lsof >/dev/null; then
+    lsof /dev/ttyUSB0 /dev/ttyACM0 2>/dev/null || echo "no ttyUSB0/ttyACM0 lsof users"
+  else
+    echo "lsof not found"
+  fi
+}
+
 git_branch="$(git -C "$ROOT" branch --show-current 2>/dev/null || echo unknown)"
 git_rev="$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 git_status="$(git -C "$ROOT" status --short 2>/dev/null || true)"
@@ -152,6 +168,8 @@ fi
 
 stlink_probe="$(probe_stlink)"
 serial_status="$(serial_presence)"
+usb_status="$(usb_snapshot)"
+serial_users="$(serial_lsof)"
 
 {
   echo "# 通信验证交接报告"
@@ -160,6 +178,14 @@ serial_status="$(serial_presence)"
   echo "- 仓库版本：branch=$git_branch rev=$git_rev"
   echo "- 工作区状态：$git_status"
   echo "- 串口设备：$serial_status"
+  echo
+  echo "## USB/串口占用"
+  echo
+  echo '```text'
+  printf '%s\n' "$usb_status"
+  echo
+  printf '%s\n' "$serial_users"
+  echo '```'
   echo
   echo "## ST-LINK/SWD"
   echo
