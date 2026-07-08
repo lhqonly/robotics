@@ -12,16 +12,19 @@
 #define DWT_CPU_HZ   72000000ULL   /* F103 SYSCLK = 72MHz(main.c Clock_Init 钉死) */
 #define NS_PER_SEC   1000000000ULL
 
-/* ===== 64 位回绕扩展状态(全部 .bss 静态,无动态分配) ===== */
-/* g_dwt_cyccnt_hi:CYCCNT 已回绕的次数(= 64 位 cycle 计数的高 32 位)。
- *   仅由 tick 钩子(单写者)写;dwt_now_ns 读。volatile 防优化,跨上下文(ISR/任务)可见。 */
-static volatile uint32_t g_dwt_cyccnt_hi = 0u;
-
-/* g_dwt_last_cyccnt:上一个 tick 采样到的 CYCCNT 低 32 位。
- *   tick 钩子用它检测「本次 tick < 上次 tick ⇒ 回绕」;
- *   dwt_now_ns 也读它,作为「自上次 tick 以来是否已回绕」的读取点补偿基准
- *   (见 dwt_now_ns 内的滞后窗口补偿)。tick 钩子是唯一写者。 */
-static volatile uint32_t g_dwt_last_cyccnt = 0u;
+/* ===== 64 位回绕扩展状态(全部 .bss 静态,无动态分配) =====
+ *
+ * tick hook 是单写者,但读者可能来自任务或 ISR。为避免读到「hi 已更新、last
+ * 仍是旧值」这种半更新组合,这里不用会自旋等待写者的 seqlock,而用双缓冲快照:
+ *   1. writer 从当前 generation 指向的 active slot 读稳定快照;
+ *   2. writer 把新 (hi,last) 写入 inactive slot;
+ *   3. writer 最后用 32-bit generation 一次发布新 slot。
+ *
+ * 若高优先级 ISR 抢占 writer,它仍会读旧 generation 对应的完整 active slot,不会
+ * 读到正在写的 inactive slot,也不会自旋等待被自己抢占的 writer。 */
+static volatile uint32_t g_dwt_snapshot_hi[2] = {0u, 0u};
+static volatile uint32_t g_dwt_snapshot_last[2] = {0u, 0u};
+static volatile uint32_t g_dwt_snapshot_gen = 0u;
 
 /* 是否已成功初始化(CYCCNT 在计数)。未初始化时 dwt_now_ns 返回 0(不假装有时间)。 */
 static volatile int g_dwt_ready = 0;
@@ -42,8 +45,12 @@ int dwt_init(void)
     (void)DWT->CYCCNT;
     uint32_t b = DWT->CYCCNT;
 
-    g_dwt_cyccnt_hi   = 0u;
-    g_dwt_last_cyccnt = DWT->CYCCNT;
+    uint32_t now = DWT->CYCCNT;
+    g_dwt_snapshot_hi[0] = 0u;
+    g_dwt_snapshot_hi[1] = 0u;
+    g_dwt_snapshot_last[0] = now;
+    g_dwt_snapshot_last[1] = now;
+    g_dwt_snapshot_gen = 0u;
 
     if (b != a) {
         g_dwt_ready = 1;
@@ -57,7 +64,7 @@ int dwt_init(void)
 void dwt_tick_update(void)
 {
     /* 由 vApplicationTickHook 每 1ms 调一次。tick 钩子在 SysTick ISR 上下文运行,是
-     * g_dwt_cyccnt_hi / g_dwt_last_cyccnt 的**唯一写者**——单写者免锁。
+     * DWT 扩展快照的**唯一写者**。
      *
      * 回绕检测:1ms 内 CYCCNT 至多走 72000 cycle,绝无可能回绕(回绕需 2^32≈4.29e9 cycle)。
      * 故相邻两 tick 间「本次 < 上次」当且仅当恰好跨过一次 32 位回绕 → 高位 +1。
@@ -65,17 +72,21 @@ void dwt_tick_update(void)
     if (!g_dwt_ready) {
         return;
     }
-    /* 写入顺序(关键,dwt_now_ns 的读取点补偿依赖它):先把回绕计入 hi,再更新
-     * 基准 last_cyccnt。这样在 ISR 执行到「hi 已 ++、last 未更新」的中间瞬间,
-     * (hi, last) 短暂处于「hi 是回绕后的新值、last 仍是回绕前的旧大值」组合——
-     * dwt_now_ns 若此刻读到它,会在「low(回绕后小值) < last(旧大值)」上再补一次 +1,
-     * 造成 hi 多加一圈、stamp 大跳变。本顺序配合 dwt_now_ns 的 hi1==hi2 重读循环
-     * (重读会发现 hi 已变、重来)消除该跳变;详细论证见 dwt_now_ns 注释 ④。 */
+    uint32_t gen = g_dwt_snapshot_gen;
+    uint32_t active = gen & 1u;
+    uint32_t hi = g_dwt_snapshot_hi[active];
+    uint32_t last = g_dwt_snapshot_last[active];
     uint32_t now = DWT->CYCCNT;
-    if (now < g_dwt_last_cyccnt) {
-        g_dwt_cyccnt_hi++;       /* 跨过一次 32 位回绕,先记 hi */
+    if (now < last) {
+        hi++;       /* 跨过一次 32 位回绕 */
     }
-    g_dwt_last_cyccnt = now;     /* 再更新基准 */
+
+    uint32_t next_gen = gen + 1u;
+    uint32_t inactive = next_gen & 1u;
+    g_dwt_snapshot_hi[inactive] = hi;
+    g_dwt_snapshot_last[inactive] = now;
+    __DMB();                    /* publish data before generation */
+    g_dwt_snapshot_gen = next_gen;
 }
 
 uint64_t dwt_now_ns(void)
@@ -84,44 +95,38 @@ uint64_t dwt_now_ns(void)
         return 0u;   /* 未初始化/CYCCNT 不可用:返回 0,不假装有时间(暴露) */
     }
 
-    /* 无锁三读 + 读取点滞后补偿。读三个共享量:hi(tick 钩子维护的回绕计数)、
+    /* 双缓冲快照 + 读取点滞后补偿。读三个量:hi(tick 钩子维护的回绕计数)、
      * last(tick 钩子上次采样的 CYCCNT)、low(当前硬件 CYCCNT)。tick 钩子(SysTick ISR)
-     * 是 (hi, last) 的唯一写者,可在任意指令边界抢占本函数。
+     * 是 (hi,last) 快照的唯一写者,可在任意指令边界抢占本函数。
      *
      * 两类要防的失效:
-     *  (a) 撕裂:读 hi 与读 low 之间发生 tick 更新,组合出 hi/low 不一致的值;
+     *  (a) 撕裂:读 hi/last 与读 low 之间发生 tick 更新,组合出不一致的值;
      *  (b) 滞后窗口倒退(本次修复的 High):CYCCNT 硬件已回绕、但下一个 tick 还没把 hi+1
      *      的 <1ms 窗口内,直接 (hi<<32)|low 会用「旧 hi + 回绕后小 low」→ 比上次调用
      *      (旧 hi + 回绕前大 low)小约 2^32 cycle(~59.65s)→ stamp 倒退,违反 V5 严格单调。
      *
-     * 读取序列(顺序固定):hi1 → last → low → hi2,要求 hi1==hi2 否则重读。
-     *
-     * 【load-bearing 前提(gill+Codex 重审,务必落档)】上面"hi1!=hi2 重读"能拦住一切
-     * 改 hi 的 tick 抢占——这只在【读者不能抢占 SysTick tick 钩子】时成立。tick 钩子在
-     * BASEPRI=5 临界区内更新 (hi,last),写序固定「先 hi++(仅回绕)、后 last=now」。若本函数
-     * 被一个优先级数值 <5 的裸 ISR 调用,它能抢占到「hi 已++、last 未更新」瞬态:读到
-     * hi1==hi2(新)但 last 旧大 → low<last 误补一圈 → +2^32 跳变后倒退。**故 dwt_now_ns
-     * 只能从 prio>=configMAX_SYSCALL_INTERRUPT_PRIORITY(=5)的上下文调用**(契约见 dwt_time.h)。
-     * 当前满足:唯一调用点在 micro-ROS 任务上下文,USART/DMA 中断=prio6>=5 被屏蔽。
-     * 原子性来自该屏蔽级、非代码自证。
-     * TODO(加固,非阻断):把 (hi,last) 改 seqlock(偶/奇序号)或 64 位基准单次原子发布,
-     * 使读者无论优先级都不读半更新态,消除对中断优先级配置的隐式依赖。 */
-    uint32_t hi1, last, low, hi2;
+     * 读取序列(顺序固定):gen1 → active snapshot → low → gen2,要求 gen1==gen2
+     * 否则重读。writer 永远先写 inactive slot,最后发布 gen,所以读者即使抢占 writer
+     * 也只会看到旧完整快照或新完整快照,不会看到半更新态。 */
+    uint32_t gen1, gen2, slot, hi, last, low;
     do {
-        hi1  = g_dwt_cyccnt_hi;    /* 1. 先读回绕计数 */
-        last = g_dwt_last_cyccnt;  /* 2. 读 tick 基准(补偿用) */
-        low  = DWT->CYCCNT;        /* 3. 读硬件低位 */
-        hi2  = g_dwt_cyccnt_hi;    /* 4. 重读回绕计数 */
-    } while (hi1 != hi2);
+        gen1 = g_dwt_snapshot_gen;
+        slot = gen1 & 1u;
+        hi = g_dwt_snapshot_hi[slot];
+        last = g_dwt_snapshot_last[slot];
+        low = DWT->CYCCNT;
+        __DMB();                  /* read data before confirming generation */
+        gen2 = g_dwt_snapshot_gen;
+    } while (gen1 != gen2);
 
-    /* 滞后窗口补偿:hi1==hi2 成立后,(hi1, last) 对应的是「截至某个 tick 的状态」。
+    /* 滞后窗口补偿:gen1==gen2 成立后,(hi, last) 对应的是「截至某个 tick 的状态」。
      * 若 low < last,说明自那个 tick 采样后 CYCCNT 已越过一次 32 位回绕(low 归小)、
      * 而该回绕尚未被任何 tick 计入 hi → 本地补一圈。前提「两 tick 间最多回绕一次」
      * (1ms << 59.65s)保证最多补 1,不会漏补也不会多补。 */
     if (low < last) {
-        hi1++;
+        hi++;
     }
-    uint64_t cycles64 = ((uint64_t)hi1 << 32) | (uint64_t)low;
+    uint64_t cycles64 = ((uint64_t)hi << 32) | (uint64_t)low;
 
     /* 折纳秒:ns = cycles * 1e9 / 72e6。64 位中间量防溢出。
      * 注:cycles64 * 1e9 在极端大 cycles 下可能溢出 64 位(cycles > 1.8e10 即约 256s 后),
@@ -151,42 +156,23 @@ uint64_t dwt_now_ns(void)
  *    保证补偿量恒为 +1。
  *
  * ③ 并发正确性论证(ISR 在任意点抢占都不产生倒退/跳变,交 gill 重审):
- *    设定:tick 钩子是 (hi,last) 唯一写者,写顺序固定为「先 hi++(仅回绕时)、后 last=now」;
- *    读者序列固定为 hi1 → last → low → hi2,hi1!=hi2 则整体重读。
+ *    设定:tick 钩子是快照唯一写者。writer 从当前 generation 指向的 active slot
+ *    读取 (hi,last),计算新值,写入 inactive slot,最后发布 generation+1。读者序列固定为
+ *    gen1 → snapshot[gen1&1] → low → gen2,gen1!=gen2 则整体重读。
  *
- *    先看 tick 钩子的一次执行对 (hi,last) 的影响,分两类:
- *      - 非回绕 tick:只写 last(now>=旧 last),hi 不变。last 单调增向 now 靠拢。
- *      - 回绕 tick:hi++ 然后 last 被写成回绕后的小值 now。两步之间存在「hi 已新、last 仍旧大」
- *        的瞬态。
+ *    (i) 读者抢占 writer 写 inactive slot 期间:published generation 尚未变化,读者仍从
+ *        old active slot 读取完整旧快照。writer 的半更新数据位于 inactive slot,不可见。
  *
- *    对读者,把「重读循环采纳的那一遍」记为有效读,该遍内 hi 自始至终 == hi1(=hi2)。
- *    要证:补偿后的 cyc = ((hi1 + [low<last]) << 32) | low 不小于上一次调用的结果,且无 +2^32 跳变。
+ *    (ii) writer 在读者读取期间完成发布:读者末尾 gen2 != gen1,丢弃本遍并重读。
  *
- *    (i) 有效读期间无 tick 抢占:则 (hi1,last,low) 是某一时刻的真实快照。
- *        若期间未回绕 → low>=last,不补偿,cyc 正确。
- *        若 hi1 对应的最后一次 tick 之后 CYCCNT 已回绕 → low<last → 补 +1,恰好补上「硬件已绕、
- *        hi 未记」的那一圈 → cyc 等于真实 64 位 cycle。两种都精确,无偏小、无倒退。
+ *    (iii) 读者在 writer 发布后运行:gen 指向新 active slot,读到完整新快照。
  *
- *    (ii) 有效读期间发生了 tick 抢占:抢占改了 hi 或 last,可能撕裂 (hi1,last,low) 的自洽性。
- *        关键不变量:任何改变 hi 的 tick(回绕 tick)都会令 hi2 != hi1 → 该遍被丢弃重读。
- *        所以被采纳的有效读里,期间发生的 tick 只可能是「非回绕 tick(仅更新 last,不动 hi)」,
- *        且 hi1 自始 == 那遍里 g_dwt_cyccnt_hi 的全程值。于是读到的 last 必是某个「非回绕 tick
- *        写下的、与 hi1 同属一段未回绕区间内」的 CYCCNT 采样(旧 last 或抢占后的新 last 皆然)。
- *        判据 low<last 的语义因此化简为:「从该 last 基准时刻起、到读 low 的时刻,CYCCNT 是否越过
- *        一次回绕」——
- *          · 若期间硬件已回绕(low 归到比 last 小)→ 该回绕尚未被任何 tick 计入(否则 hi 会变、
- *            被 hi1!=hi2 拦掉)→ 补 +1 恰好补上,精确;
- *          · 若期间未回绕 → low>=last → 不补偿,精确。
- *        无论读到旧/新 last，判据都精确反映「自该基准以来是否回绕一次」，撕裂的 last 不诱发错补。
- *        唯一危险组合「last 是回绕 tick 写下的旧大值瞬态(hi 已 ++、last 未更新)」必伴随 hi 变化，
- *        被 hi1!=hi2 拦掉，不进入采纳遍。✓(此即 dwt_tick_update 必须「先 hi++、后写 last」的原因)
+ *    因此采纳遍必定使用一份完整 (hi,last) 快照。若当前 low < last,只表示自该完整
+ *    tick 快照后硬件 CYCCNT 已回绕、但尚未被后续 tick 发布进 hi,本地补 +1 恰好补上。
+ *    若 low >= last,未跨回绕,不补偿。前提「1ms << 59.65s」保证两 tick 间最多补一圈。
  *
- *    (iii) 跨调用单调:相邻两次 dwt_now_ns 调用,真实 64 位 cycle 只增;(i)(ii) 已证每次调用都
- *        返回「精确真值」或不补偿的精确真值(均等于真值,无 ±2^32 偏差)→ 后一次 >= 前一次。
- *        即:不再有「旧 hi+小 low」的滞后倒退,也不会因撕裂多补一圈而跳变 +59.65s。
- *
- *    结论:ISR 在读取序列任意指令边界抢占,采纳的结果要么精确、要么被重读循环丢弃,
- *    严格单调不倒退、无大跳变。无需关中断(单写者 + 重读 + 单向补偿)。
+ *    结论:读者不再依赖“不能抢占 SysTick hook”的外部优先级契约;即使高优先级 ISR
+ *    抢占 writer,也只会读旧完整快照或新完整快照,不会读到 hi/last 半更新组合。
  *
  * ④ Gill 验收建议(对应 10 卡 V5):
  *    - 长跑:连续发包,echo 的 stamp_mono_ns 严格单调递增。
