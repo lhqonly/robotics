@@ -73,7 +73,7 @@ def generate_launch_description():
             description='Hard echo deadline in milliseconds before LOST.'),
         DeclareLaunchArgument(
             'sweep_period_s',
-            default_value='0.005',
+            default_value='0.02',
             description='Deadline sweep period in seconds.'),
         DeclareLaunchArgument(
             'executor_threads',
