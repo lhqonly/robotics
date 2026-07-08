@@ -86,6 +86,24 @@ markdown_table_from_prefix() {
   ' "$file"
 }
 
+markdown_table_from_text() {
+  local prefix="$1"
+  awk -v prefix="$prefix" '
+    index($0, prefix) == 1 {in_table = 1}
+    in_table && /^\|/ {print; next}
+    in_table && !/^\|/ {exit}
+  '
+}
+
+markdown_section_body_from_text() {
+  local header="$1"
+  awk -v header="$header" '
+    $0 == header {in_section = 1; next}
+    in_section && /^## / {exit}
+    in_section {print}
+  '
+}
+
 firmware_ram_categories() {
   if [ ! -f "$FIRMWARE_ELF" ]; then
     echo "-"
@@ -257,10 +275,19 @@ latest_stack_md="$(latest_file "$STACK_LOGDIR" '*.md')"
 latest_spin_timeout_md="$(latest_file "$SPIN_TIMEOUT_LOGDIR" '*.md')"
 latest_linker_reserve_md="$(latest_file "$LINKER_RESERVE_LOGDIR" '*.md')"
 latest_watch_summary="$(latest_file "$WATCH_LOGDIR" '*.summary.md')"
+latest_watch_log=""
+if [ -n "$latest_watch_summary" ]; then
+  latest_watch_log="${latest_watch_summary%.summary.md}.log"
+fi
 latest_scheduler_metrics="$(latest_file "$SCHED_LOGDIR" '*.metrics.md')"
 ram_categories="$(firmware_ram_categories)"
 ram_category_symbols="$(firmware_ram_category_symbols)"
 microros_config="$(microros_config_summary)"
+overnight_live_summary=""
+if [ -n "$latest_watch_log" ] && [ -f "$latest_watch_log" ] &&
+    [ -x "$ROOT/tools/summarize-overnight-com-watch.sh" ]; then
+  overnight_live_summary="$(cd "$ROOT" && tools/summarize-overnight-com-watch.sh "$latest_watch_log" 2>/dev/null || true)"
+fi
 latest_is_scheduler_experiment=0
 case "${latest_tag:-}" in
   scheduler_*|pc_sched_*|latest_gate_*)
@@ -451,9 +478,19 @@ serial_users="$(serial_lsof)"
   fi
   echo "## overnight no-flash 趋势"
   echo
-  echo "来源：$(relpath "$latest_watch_summary")"
+  echo "来源：$(relpath "$latest_watch_log")"
   echo
-  markdown_table_from_prefix "$latest_watch_summary" '| Tag |'
+  if [ -n "$overnight_live_summary" ]; then
+    echo "### Verdict Summary"
+    echo
+    printf '%s\n' "$overnight_live_summary" |
+      markdown_section_body_from_text "## Verdict Summary"
+    echo
+    printf '%s\n' "$overnight_live_summary" |
+      markdown_table_from_text '| Tag |'
+  else
+    markdown_table_from_prefix "$latest_watch_summary" '| Tag |'
+  fi
   echo
   echo "## PC 主机调度 sweep"
   echo
