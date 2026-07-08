@@ -33,6 +33,7 @@ LATEST_HZ_SECONDS="${LATEST_HZ_SECONDS:-50}"
 LATEST_STATUS_EVERY_N="${LATEST_STATUS_EVERY_N:-40}"
 STAIRCASE_BAUDS="${STAIRCASE_BAUDS:-921600}"
 STAIRCASE_UART_READ_POLL_YIELDS="${STAIRCASE_UART_READ_POLL_YIELDS:-0}"
+STAIRCASE_EXECUTOR_SPIN_TIMEOUT_US="${STAIRCASE_EXECUTOR_SPIN_TIMEOUT_US:-1000}"
 
 SMOKE_RUN_SECONDS="${SMOKE_RUN_SECONDS:-18}"
 SMOKE_WARMUP_SECONDS="${SMOKE_WARMUP_SECONDS:-5}"
@@ -208,12 +209,14 @@ run_latest_flash_stage() {
   local hz="$1"
   local baud="$2"
   local poll_yields="$3"
-  run_stage "latest_${hz}hz_${baud}baud_poll${poll_yields}_200hz_be_n${LATEST_STATUS_EVERY_N}" \
+  local spin_timeout_us="$4"
+  run_stage "latest_${hz}hz_${baud}baud_poll${poll_yields}_spin${spin_timeout_us}us_200hz_be_n${LATEST_STATUS_EVERY_N}" \
     BUILD_FIRMWARE="$BUILD_FIRMWARE" \
     FLASH_FIRMWARE="$FLASH_FIRMWARE" \
     BAUD="$baud" \
     CONTROL_LOOP_HZ="$hz" \
     UART_READ_POLL_YIELDS="$poll_yields" \
+    EXECUTOR_SPIN_TIMEOUT_US="$spin_timeout_us" \
     CMD_RATE_HZ=200 \
     CMD_CATCHUP_MAX=1 \
     QOS_RELIABILITY=best_effort \
@@ -242,7 +245,7 @@ run_no_flash_smoke() {
 }
 
 record "staircase tag_prefix=$TAG_PREFIX logdir=$LOGDIR"
-record "mode build_firmware=$BUILD_FIRMWARE flash_firmware=$FLASH_FIRMWARE dry_run=$DRY_RUN staircase_bauds=$STAIRCASE_BAUDS staircase_uart_read_poll_yields=$STAIRCASE_UART_READ_POLL_YIELDS"
+record "mode build_firmware=$BUILD_FIRMWARE flash_firmware=$FLASH_FIRMWARE dry_run=$DRY_RUN staircase_bauds=$STAIRCASE_BAUDS staircase_uart_read_poll_yields=$STAIRCASE_UART_READ_POLL_YIELDS staircase_executor_spin_timeout_us=$STAIRCASE_EXECUTOR_SPIN_TIMEOUT_US"
 
 failures=0
 if check_stlink_ready; then
@@ -250,7 +253,9 @@ if check_stlink_ready; then
   for hz in 1000 2000 5000 10000; do
     for baud in $STAIRCASE_BAUDS; do
       for poll_yields in $STAIRCASE_UART_READ_POLL_YIELDS; do
-        run_latest_flash_stage "$hz" "$baud" "$poll_yields" || failures=$((failures + 1))
+        for spin_timeout_us in $STAIRCASE_EXECUTOR_SPIN_TIMEOUT_US; do
+          run_latest_flash_stage "$hz" "$baud" "$poll_yields" "$spin_timeout_us" || failures=$((failures + 1))
+        done
       done
     done
   done

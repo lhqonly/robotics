@@ -24,11 +24,11 @@ fi
 
 write_headers() {
   cat >"$CSV" <<'EOF'
-profile,verdict,reason,control_loop_hz,qos,status_every_n,flash_bytes,flash_margin_bytes,ram_static_bytes,ram_static_margin_bytes,data_bytes,bss_bytes,microros_stack_bytes,control_stack_bytes,led_stack_bytes,idle_stack_bytes
+profile,verdict,reason,control_loop_hz,qos,status_every_n,executor_spin_timeout_us,flash_bytes,flash_margin_bytes,ram_static_bytes,ram_static_margin_bytes,data_bytes,bss_bytes,microros_stack_bytes,control_stack_bytes,led_stack_bytes,idle_stack_bytes
 EOF
   cat >"$MD" <<'EOF'
-| Profile | verdict | reason | loop Hz | QoS | status every | Flash B | Flash margin B | static RAM B | RAM margin B | data B | bss B | micro-ROS stack B | control stack B | led stack B | idle stack B |
-|---|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Profile | verdict | reason | loop Hz | QoS | status every | spin us | Flash B | Flash margin B | static RAM B | RAM margin B | data B | bss B | micro-ROS stack B | control stack B | led stack B | idle stack B |
+|---|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 EOF
 }
 
@@ -106,6 +106,7 @@ run_profile() {
   local loop_hz="$2"
   local qos="$3"
   local status_every="$4"
+  local spin_timeout_us="${5:-1000}"
   local qos_best_effort="OFF"
   local build_dir="$BUILD_ROOT/$profile"
   local report="$OUTDIR/$TAG.$profile.report.log"
@@ -128,13 +129,14 @@ run_profile() {
     rm -rf "$build_dir"
   fi
 
-  echo "[size-matrix] build profile=$profile loop_hz=$loop_hz qos=$qos status_every=$status_every"
+  echo "[size-matrix] build profile=$profile loop_hz=$loop_hz qos=$qos status_every=$status_every spin_timeout_us=$spin_timeout_us"
   cmake -S "$SRC" -B "$build_dir" \
     -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN_FILE" \
     -DCMAKE_BUILD_TYPE=MinSizeRel \
     -DEXO_CONTROL_LOOP_HZ="$loop_hz" \
     -DEXO_QOS_BEST_EFFORT="$qos_best_effort" \
     -DEXO_STATUS_EVERY_N="$status_every" \
+    -DEXO_EXECUTOR_SPIN_TIMEOUT_US="$spin_timeout_us" \
     >"$OUTDIR/$TAG.$profile.cmake.log" 2>&1
   cmake --build "$build_dir" "${cmake_build_args[@]}" \
     >"$OUTDIR/$TAG.$profile.build.log" 2>&1
@@ -154,13 +156,15 @@ run_profile() {
   verdict="${verdict_csv%%,*}"
   reason="${verdict_csv#*,}"
 
-  printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
+  printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
     "$profile" "$verdict" "$reason" "$loop_hz" "$qos" "$status_every" \
+    "$spin_timeout_us" \
     "$flash_bytes" "$flash_margin" "$ram_static_bytes" "$ram_static_margin" \
     "$data_bytes" "$bss_bytes" \
     "$microros_stack" "$control_stack" "$led_stack" "$idle_stack" >>"$CSV"
-  printf '| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n' \
+  printf '| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n' \
     "$profile" "$verdict" "$reason" "$loop_hz" "$qos" "$status_every" \
+    "$spin_timeout_us" \
     "$flash_bytes" "$flash_margin" "$ram_static_bytes" "$ram_static_margin" \
     "$data_bytes" "$bss_bytes" \
     "$microros_stack" "$control_stack" "$led_stack" "$idle_stack" >>"$MD"

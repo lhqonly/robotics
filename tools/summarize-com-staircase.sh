@@ -49,16 +49,27 @@ awk -v format="$FORMAT" '
     out["loop_hz"] = "NA"
     out["baud"] = "NA"
     out["poll_yields"] = "NA"
+    out["spin_timeout_us"] = "NA"
     out["pc_cmd_hz"] = "NA"
     out["qos"] = "NA"
     out["status_every_n"] = "NA"
 
     count = split(stage, parts, "_")
-    if (count >= 7 && parts[1] == "latest") {
+    if (count >= 8 && parts[1] == "latest" && parts[5] ~ /^spin/) {
       out["loop_hz"] = hz_value(parts[2])
       sub(/baud$/, "", parts[3])
       out["baud"] = parts[3]
       out["poll_yields"] = strip_prefix_number(parts[4], "poll")
+      out["spin_timeout_us"] = strip_prefix_number(parts[5], "spin")
+      out["pc_cmd_hz"] = hz_value(parts[6])
+      out["qos"] = (parts[7] == "be") ? "best_effort" : parts[7]
+      out["status_every_n"] = strip_prefix_number(parts[8], "n")
+    } else if (count >= 7 && parts[1] == "latest") {
+      out["loop_hz"] = hz_value(parts[2])
+      sub(/baud$/, "", parts[3])
+      out["baud"] = parts[3]
+      out["poll_yields"] = strip_prefix_number(parts[4], "poll")
+      out["spin_timeout_us"] = 1000
       out["pc_cmd_hz"] = hz_value(parts[5])
       out["qos"] = (parts[6] == "be") ? "best_effort" : parts[6]
       out["status_every_n"] = strip_prefix_number(parts[7], "n")
@@ -68,6 +79,7 @@ awk -v format="$FORMAT" '
       out["qos"] = parts[4]
       out["status_every_n"] = 1
       out["poll_yields"] = 0
+      out["spin_timeout_us"] = 1000
     }
   }
 
@@ -147,10 +159,10 @@ awk -v format="$FORMAT" '
 
   BEGIN {
     if (format == "csv") {
-      print "stage,verdict,reason,loop_hz,baud,uart_read_poll_yields,pc_cmd_hz,qos,status_every_n,status_hz,sampler_hz,target_rx_hz,p95_gap_s,p99_gap_s,max_gap_s,zero_gap_count,seq_rate_hz,seq_delta_avg,seq_delta_min,seq_delta_max,pc_target_rate_hz,pc_target_window_hz,wire_kbit_s,wire_baud_util_pct,tx_kbit_s,rx_kbit_s,lost,duplicate,inflight"
+      print "stage,verdict,reason,loop_hz,baud,uart_read_poll_yields,executor_spin_timeout_us,pc_cmd_hz,qos,status_every_n,status_hz,sampler_hz,target_rx_hz,p95_gap_s,p99_gap_s,max_gap_s,zero_gap_count,seq_rate_hz,seq_delta_avg,seq_delta_min,seq_delta_max,pc_target_rate_hz,pc_target_window_hz,wire_kbit_s,wire_baud_util_pct,tx_kbit_s,rx_kbit_s,lost,duplicate,inflight"
     } else {
-      print "| Stage | verdict | reason | loop Hz | baud | poll yields | PC Hz | QoS | status N | status Hz | sampler Hz | target rx Hz | p95 gap s | p99 gap s | max gap s | zero gaps | seq Hz | seq delta avg/min/max | PC target Hz | wire kbit/s | baud util % | lost | duplicate | inflight |"
-      print "|---|---|---|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"
+      print "| Stage | verdict | reason | loop Hz | baud | poll yields | spin us | PC Hz | QoS | status N | status Hz | sampler Hz | target rx Hz | p95 gap s | p99 gap s | max gap s | zero gaps | seq Hz | seq delta avg/min/max | PC target Hz | wire kbit/s | baud util % | lost | duplicate | inflight |"
+      print "|---|---|---|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"
     }
   }
 
@@ -185,17 +197,17 @@ awk -v format="$FORMAT" '
     reason = substr(verdict_csv, index(verdict_csv, ",") + 1)
 
     if (format == "csv") {
-      printf "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n",
+      printf "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n",
         stage, verdict, reason, meta["loop_hz"], meta["baud"], meta["poll_yields"],
-        meta["pc_cmd_hz"], meta["qos"], meta["status_every_n"],
+        meta["spin_timeout_us"], meta["pc_cmd_hz"], meta["qos"], meta["status_every_n"],
         status_hz, sampler_hz, target_rx_hz, p95_gap_s, p99_gap_s,
         max_gap_s, zero_gap_count, seq_rate_hz, seq_delta_avg, seq_delta_min,
         seq_delta_max, pc_target_rate_hz, pc_target_window_hz, wire_kbit_s,
         wire_baud_util_pct, tx_kbit_s, rx_kbit_s, lost, duplicate, inflight
     } else {
-      printf "| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s/%s/%s | %s / %s | %s | %s | %s | %s | %s |\n",
+      printf "| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s/%s/%s | %s / %s | %s | %s | %s | %s | %s |\n",
         stage, verdict, reason, meta["loop_hz"], meta["baud"], meta["poll_yields"],
-        meta["pc_cmd_hz"], meta["qos"], meta["status_every_n"],
+        meta["spin_timeout_us"], meta["pc_cmd_hz"], meta["qos"], meta["status_every_n"],
         status_hz, sampler_hz, target_rx_hz, p95_gap_s, p99_gap_s,
         max_gap_s, zero_gap_count, seq_rate_hz, seq_delta_avg, seq_delta_min,
         seq_delta_max, pc_target_rate_hz, pc_target_window_hz, wire_kbit_s,

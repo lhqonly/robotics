@@ -152,6 +152,17 @@ cmake -S firmware/f103-microros -B firmware/f103-microros/build \
 这个选项只改变固件读串口等待策略；需要烧录后用 `tools/run-com-perf.sh` 看
 sampler gap/RTT，不能只凭静态 size 判断收益。
 
+MCU micro-ROS executor 默认 `spin_some` 最多等 1000us。要实验性验证更短等待
+能否降低串口响应长尾，可以编译候选 profile：
+
+```bash
+cmake -S firmware/f103-microros -B firmware/f103-microros/build \
+  -DEXO_EXECUTOR_SPIN_TIMEOUT_US=200
+```
+
+这个选项只改变 executor 等待上限；agent 掉线检测已经按 FreeRTOS tick 计时，不依赖
+spin 循环次数。收益仍要烧录后看 sampler gap/RTT。
+
 真实控制链路压测时，可以让 MCU 仍接收每条 PC 目标，但降低状态回传频率。
 例如 PC 200Hz 下发、MCU 每 20 条或 40 条回一次状态，状态 topic 约为 10Hz 或 5Hz：
 
@@ -267,6 +278,14 @@ tools/run-com-staircase.sh poll_sweep
 STAIRCASE_BAUDS="921600 2000000" \
 STAIRCASE_UART_READ_POLL_YIELDS="0 4" \
 tools/run-com-staircase.sh baud_poll_sweep
+```
+
+要把 executor `spin_some` 等待上限也纳入阶梯，设置
+`STAIRCASE_EXECUTOR_SPIN_TIMEOUT_US`：
+
+```bash
+STAIRCASE_EXECUTOR_SPIN_TIMEOUT_US="1000 500 200 100" \
+tools/run-com-staircase.sh spin_timeout_sweep
 ```
 
 阶梯跑完后，可以把 summary 转成表格或 CSV：

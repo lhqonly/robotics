@@ -66,8 +66,16 @@
 #  define EXO_STATUS_EVERY_N 1u
 #endif
 
+#ifndef EXO_EXECUTOR_SPIN_TIMEOUT_US
+#  define EXO_EXECUTOR_SPIN_TIMEOUT_US 1000u
+#endif
+
 #if EXO_STATUS_EVERY_N < 1u
 #  error "EXO_STATUS_EVERY_N must be >= 1"
+#endif
+
+#if EXO_EXECUTOR_SPIN_TIMEOUT_US < 1u
+#  error "EXO_EXECUTOR_SPIN_TIMEOUT_US must be >= 1"
 #endif
 
 /* ===== MCU 本地控制基线 =====
@@ -369,14 +377,17 @@ void microros_app_task(void *arg)
 
         /* 3. spin:周期性处理 executor(收 cmd → 触发回调 → 回填 publish)。
          *    每轮 spin_some 处理已到数据,期间定期 ping 检测 agent 是否掉线。 */
-        uint32_t miss = 0;
+        TickType_t last_ping = xTaskGetTickCount();
         for (;;) {
-            /* spin_some 超时 1ms:配合 PC 200Hz/MCU 1kHz 基线,降低串口响应等待。 */
-            (void)rclc_executor_spin_some(&g_executor, RCL_MS_TO_NS(1));
+            /* spin_some 超时默认 1000us,可编译期下调到 500/200/100us 做延迟阶梯。
+             * ping 用 FreeRTOS tick 计时,不再假设"1000 次循环约等于 1s"。 */
+            (void)rclc_executor_spin_some(
+                &g_executor,
+                ((uint64_t)EXO_EXECUTOR_SPIN_TIMEOUT_US) * 1000ull);
 
             /* 每 ~1s ping 一次 agent;连续多次失败判定掉线,跳出去重连。 */
-            if (++miss >= 1000u) {     /* 1000 × ~1ms ≈ 1s */
-                miss = 0;
+            if ((xTaskGetTickCount() - last_ping) >= pdMS_TO_TICKS(1000)) {
+                last_ping = xTaskGetTickCount();
                 if (rmw_uros_ping_agent(50, 2) != RMW_RET_OK) {
                     break;            /* agent 掉线 → 清理重连 */
                 }
