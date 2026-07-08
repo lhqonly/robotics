@@ -180,6 +180,11 @@ static volatile uint32_t g_crc_mismatch_count __attribute__((used)) = 0u;
 /* 软失败:不死,返回让外层重连(用于 spin/建链这类可重试路径)。 */
 #define RCSOFT(fn) ((fn) == RCL_RET_OK)
 
+static void ignore_rcl_ret(rcl_ret_t rc)
+{
+    (void)rc;
+}
+
 static void fail_stop(void)
 {
     /* 初始化级硬错:停住。LED 可继续被其它机制翻转与否不重要,关键是 client 不上线
@@ -231,7 +236,7 @@ static void cmd_heartbeat_callback(const void *msgin)
      * 压测/真实控制可设为 5/10:每条命令仍更新 latest target,但只按比例回状态,
      * 避免 PC 200Hz 目标下发被同频状态回传拖住串口 reliable stream。 */
     if ((g_cmd_rx_count % EXO_STATUS_EVERY_N) == 0u) {
-        (void)rcl_publish(&g_pub_status, &g_msg_status, NULL);
+        ignore_rcl_ret(rcl_publish(&g_pub_status, &g_msg_status, NULL));
     }
 }
 
@@ -317,11 +322,11 @@ static bool microros_entities_init(void)
 static void microros_entities_fini(void)
 {
     /* 逆序销毁。fini 失败不致命(本就在清理重连路径),忽略返回值。 */
-    rcl_publisher_fini(&g_pub_status, &g_node);
-    rcl_subscription_fini(&g_sub_cmd, &g_node);
-    rclc_executor_fini(&g_executor);
-    rcl_node_fini(&g_node);
-    rclc_support_fini(&g_support);
+    ignore_rcl_ret(rcl_publisher_fini(&g_pub_status, &g_node));
+    ignore_rcl_ret(rcl_subscription_fini(&g_sub_cmd, &g_node));
+    ignore_rcl_ret(rclc_executor_fini(&g_executor));
+    ignore_rcl_ret(rcl_node_fini(&g_node));
+    ignore_rcl_ret(rclc_support_fini(&g_support));
 }
 
 /* ===== micro-ROS 应用任务主体 ===== */

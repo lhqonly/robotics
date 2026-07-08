@@ -46,6 +46,7 @@
 
 #include <errno.h>
 #include <stddef.h>
+#include <stdint.h>
 
 /* ===== 有界 _sbrk(覆盖 nosys 的无界版本)—— 永久保留的健壮性改进 =====
  * nosys.specs 的 _sbrk 不做任何边界检查:newlib heap 从 `end` 一路上涨,耗尽时越过 RAM 顶
@@ -60,7 +61,8 @@ void *_sbrk(ptrdiff_t incr)
 {
     static char *heap_end = 0;
     char *prev;
-    char *limit = (char *)&_estack - NEWLIB_HEAP_MSP_RESERVE;
+    uintptr_t stack_top = (uintptr_t)&_estack;
+    char *limit = (char *)(stack_top - NEWLIB_HEAP_MSP_RESERVE);
     if (heap_end == 0) {
         heap_end = &end;
     }
