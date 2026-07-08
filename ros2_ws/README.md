@@ -311,6 +311,13 @@ tools/overnight-com-watch.sh overnight_$(date +%Y%m%d_%H%M)
 日志会写到 `log/overnight-com-watch/<tag>.log`，每轮通信指标仍写入
 `log/com-perf/`，每轮交接报告写入 `log/handoff/`。
 
+要把某次 overnight watcher 的所有轮次汇总成表：
+
+```bash
+tools/summarize-overnight-com-watch.sh log/overnight-com-watch/<tag>.log
+FORMAT=csv tools/summarize-overnight-com-watch.sh log/overnight-com-watch/<tag>.log
+```
+
 烧录并启动 bridge 后，可以用 SWD 粗测本地 tick 档位：
 
 ```bash
