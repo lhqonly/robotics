@@ -103,6 +103,26 @@ firmware_ram_categories() {
     '
 }
 
+firmware_ram_category_symbols() {
+  if [ ! -f "$FIRMWARE_ELF" ]; then
+    echo "-"
+    return 0
+  fi
+  if [ ! -x "$ROOT/tools/firmware-size-report.sh" ]; then
+    echo "-"
+    return 0
+  fi
+
+  local size_report
+  size_report="$(CATEGORY_LIMIT=5 "$ROOT/tools/firmware-size-report.sh" "$FIRMWARE_ELF" 2>/dev/null || true)"
+  printf '%s\n' "$size_report" |
+    awk '
+      /^largest_ram_symbols_by_category:/ {in_section = 1; print; next}
+      /^largest_ram_symbols:/ {exit}
+      in_section {print}
+    '
+}
+
 probe_stlink() {
   if ! command -v st-info >/dev/null; then
     echo "status=unknown reason=st-info-not-found"
@@ -190,6 +210,7 @@ latest_linker_reserve_md="$(latest_file "$LINKER_RESERVE_LOGDIR" '*.md')"
 latest_watch_summary="$(latest_file "$WATCH_LOGDIR" '*.summary.md')"
 latest_scheduler_metrics="$(latest_file "$SCHED_LOGDIR" '*.metrics.md')"
 ram_categories="$(firmware_ram_categories)"
+ram_category_symbols="$(firmware_ram_category_symbols)"
 latest_is_scheduler_experiment=0
 case "${latest_tag:-}" in
   scheduler_*|pc_sched_*|latest_gate_*)
@@ -435,6 +456,12 @@ serial_users="$(serial_lsof)"
   echo
   echo '```text'
   printf '%s\n' "$ram_categories"
+  echo '```'
+  echo
+  echo "### 当前 ELF RAM 分类大项"
+  echo
+  echo '```text'
+  printf '%s\n' "$ram_category_symbols"
   echo '```'
   echo
   echo "## micro-ROS 栈候选"

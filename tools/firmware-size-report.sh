@@ -4,6 +4,7 @@ set -euo pipefail
 
 ELF="${1:-firmware/f103-microros/build/f103-microros.elf}"
 LIMIT="${LIMIT:-20}"
+CATEGORY_LIMIT="${CATEGORY_LIMIT:-8}"
 
 if ! command -v arm-none-eabi-size >/dev/null; then
   echo "ERROR: arm-none-eabi-size not found" >&2
@@ -138,6 +139,66 @@ arm-none-eabi-nm -S --size-sort "$ELF" |
         $4, strtonum("0x" $2), strtonum("0x" $2) / 4, $1
     }
   '
+
+echo
+echo "largest_ram_symbols_by_category:"
+for category in \
+  rosidl_type_metadata \
+  microros_custom_pools \
+  task_stacks \
+  uart_buffers \
+  newlib_state \
+  app_ros_state; do
+  echo "[$category]"
+  arm-none-eabi-nm -S --size-sort "$ELF" |
+    awk -v wanted="$category" '
+      function classify(name,   is_rosidl, is_pool, is_uart, is_newlib, is_app_ros) {
+        is_rosidl = name ~ /toplevel_type_raw_source/ ||
+          name ~ /type_description/ ||
+          name ~ /typesupport/ ||
+          name ~ /message_member/ ||
+          name ~ /__FIELDS$/ ||
+          name ~ /FIELD_NAME/ ||
+          name ~ /TYPE_NAME/ ||
+          name ~ /REFERENCED_TYPE_DESCRIPTIONS/
+        is_pool = name ~ /custom_sessions/ ||
+          name ~ /custom_nodes/ ||
+          name ~ /custom_publishers/ ||
+          name ~ /custom_subscriptions/ ||
+          name ~ /custom_static_buffers/ ||
+          name ~ /custom_init_options/
+        is_uart = name ~ /rx_dma_buf/ ||
+          name ~ /tx_dma_buf/ ||
+          name ~ /^app_ring/
+        is_newlib = name ~ /^__sf$/ ||
+          name ~ /^__malloc_/ ||
+          name ~ /^_impure_ptr$/ ||
+          name ~ /^impure_data$/
+        is_app_ros = name ~ /^g_msg_/ ||
+          name ~ /^g_executor$/ ||
+          name ~ /^g_pub_/ ||
+          name ~ /^g_sub_/ ||
+          name ~ /^g_node$/ ||
+          name ~ /^g_support$/ ||
+          name ~ /^g_allocator$/ ||
+          name ~ /^g_control_/ ||
+          name ~ /^g_crc_/
+
+        if (name ~ /_task_stack$/) return "task_stacks"
+        if (is_rosidl) return "rosidl_type_metadata"
+        if (is_pool) return "microros_custom_pools"
+        if (is_uart) return "uart_buffers"
+        if (is_newlib) return "newlib_state"
+        if (is_app_ros) return "app_ros_state"
+        return "other_named_ram"
+      }
+
+      $3 ~ /^[BbDd]$/ && classify($4) == wanted {
+        printf "%8d %-2s 0x%s %s\n", strtonum("0x" $2), $3, $1, $4
+      }
+    ' |
+    tail -n "$CATEGORY_LIMIT"
+done
 
 echo
 echo "largest_ram_symbols:"
