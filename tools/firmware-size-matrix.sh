@@ -24,11 +24,11 @@ fi
 
 write_headers() {
   cat >"$CSV" <<'EOF'
-profile,verdict,reason,control_loop_hz,qos,status_every_n,executor_spin_timeout_us,flash_bytes,flash_margin_bytes,ram_static_bytes,ram_static_margin_bytes,data_bytes,bss_bytes,microros_stack_bytes,control_stack_bytes,led_stack_bytes,idle_stack_bytes
+profile,verdict,reason,control_loop_hz,control_tick_source,qos,status_every_n,executor_spin_timeout_us,flash_bytes,flash_margin_bytes,ram_static_bytes,ram_static_margin_bytes,data_bytes,bss_bytes,microros_stack_bytes,control_stack_bytes,led_stack_bytes,idle_stack_bytes
 EOF
   cat >"$MD" <<'EOF'
-| Profile | verdict | reason | loop Hz | QoS | status every | spin us | Flash B | Flash margin B | static RAM B | RAM margin B | data B | bss B | micro-ROS stack B | control stack B | led stack B | idle stack B |
-|---|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Profile | verdict | reason | loop Hz | tick source | QoS | status every | spin us | Flash B | Flash margin B | static RAM B | RAM margin B | data B | bss B | micro-ROS stack B | control stack B | led stack B | idle stack B |
+|---|---|---|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 EOF
 }
 
@@ -113,6 +113,7 @@ run_profile() {
   local flash_bytes ram_static_bytes data_bytes bss_bytes
   local flash_margin ram_static_margin verdict_csv verdict reason
   local microros_stack control_stack led_stack idle_stack
+  local control_tick_source="freertos_task"
 
   case "$qos" in
     reliable) qos_best_effort="OFF" ;;
@@ -122,6 +123,9 @@ run_profile() {
       exit 1
       ;;
   esac
+  if [ "$loop_hz" -gt 1000 ]; then
+    control_tick_source="tim2_isr"
+  fi
 
   if [ -f "$build_dir/CMakeCache.txt" ] &&
       ! grep -q 'arm-none-eabi-gcc-ar' "$build_dir/CMakeCache.txt"; then
@@ -156,15 +160,15 @@ run_profile() {
   verdict="${verdict_csv%%,*}"
   reason="${verdict_csv#*,}"
 
-  printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
-    "$profile" "$verdict" "$reason" "$loop_hz" "$qos" "$status_every" \
-    "$spin_timeout_us" \
+  printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
+    "$profile" "$verdict" "$reason" "$loop_hz" "$control_tick_source" \
+    "$qos" "$status_every" "$spin_timeout_us" \
     "$flash_bytes" "$flash_margin" "$ram_static_bytes" "$ram_static_margin" \
     "$data_bytes" "$bss_bytes" \
     "$microros_stack" "$control_stack" "$led_stack" "$idle_stack" >>"$CSV"
-  printf '| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n' \
-    "$profile" "$verdict" "$reason" "$loop_hz" "$qos" "$status_every" \
-    "$spin_timeout_us" \
+  printf '| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n' \
+    "$profile" "$verdict" "$reason" "$loop_hz" "$control_tick_source" \
+    "$qos" "$status_every" "$spin_timeout_us" \
     "$flash_bytes" "$flash_margin" "$ram_static_bytes" "$ram_static_margin" \
     "$data_bytes" "$bss_bytes" \
     "$microros_stack" "$control_stack" "$led_stack" "$idle_stack" >>"$MD"
