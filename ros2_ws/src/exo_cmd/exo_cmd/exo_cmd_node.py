@@ -172,6 +172,7 @@ class ExoCmdNode(Node):
             # §7.2 constraint rtt_warn_ms < rtt_deadline_ms violated: fail loud.
             self.get_logger().fatal('invalid link-health params: %s' % exc)
             raise
+        self._start_s = self._now()
         self._wire_seq = start_seq
         self._wire_send_count = 0
         self._sampled_sends = {}
@@ -297,11 +298,11 @@ class ExoCmdNode(Node):
         if self._tracking_mode == 'sampled':
             seq = self._wire_seq
             self._wire_seq = (self._wire_seq + 1) % (2 ** 32)
-            self._wire_send_count += 1
             self._remember_sampled_send(seq, now_s)
             events = []
         else:
             seq, events = self._tracker.on_send(now_s)
+        self._wire_send_count += 1
         msg = ExoCmd()
         msg.header.seq = seq
         msg.header.stamp_mono_ns = now_ns
@@ -368,10 +369,14 @@ class ExoCmdNode(Node):
         # instant, or a concurrent rx echo could make the logged line self-
         # contradictory (e.g. reconciles=True printed against stale counters).
         s = self._tracker.snapshot()
+        elapsed_s = max(self._now() - self._start_s, 1e-9)
+        wire_rate_hz = self._wire_send_count / elapsed_s
         line = ('link-health summary: sent=%d matched=%d lost=%d '
-                'duplicate=%d inflight=%d stale_duplicate=%d'
+                'duplicate=%d inflight=%d stale_duplicate=%d '
+                'wire_sent=%d wire_rate_hz=%.3f'
                 % (s['sent'], s['matched'], s['lost'], s['duplicate'],
-                   s['inflight'], s['stale_duplicate']))
+                   s['inflight'], s['stale_duplicate'],
+                   self._wire_send_count, wire_rate_hz))
         if s['reconciles']:
             self.get_logger().info(line)
         else:

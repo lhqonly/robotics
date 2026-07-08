@@ -185,12 +185,16 @@ if [ -n "$status_hz" ]; then
 fi
 
 summary="$(grep 'link-health summary' "$CMD_LOG" | tail -1 || true)"
+wire_sent="$(printf '%s\n' "$summary" | grep -o 'wire_sent=[0-9]*' | tail -1 | cut -d= -f2 || true)"
+wire_rate_hz="$(printf '%s\n' "$summary" | grep -o 'wire_rate_hz=[0-9.]*' | tail -1 | cut -d= -f2 || true)"
 
 echo "[com-perf] graph:"
 cat "$GRAPH_LOG"
 echo "[com-perf] status_hz=${status_hz:-NA}"
 echo "[com-perf] estimated_mcu_target_rx_hz=${estimated_rx_hz:-NA}"
 echo "[com-perf] hz_stats=${hz_stats:-NA}"
+echo "[com-perf] pc_wire_sent=${wire_sent:-NA}"
+echo "[com-perf] pc_wire_rate_hz=${wire_rate_hz:-NA}"
 echo "[com-perf] last_summary=${summary:-NA}"
 echo "[com-perf] hz_tail:"
 tail -n 12 "$HZ_LOG"
