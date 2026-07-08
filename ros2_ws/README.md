@@ -240,6 +240,13 @@ FORMAT=csv tools/summarize-com-staircase.sh log/com-staircase/<tag>.summary.log
 如果某个阶段用 `MICROROS_AGENT_VERBOSITY=6` 跑过，表格里还会带
 `wire_kbit_s` 和 `wire_baud_util_pct`，方便把通信频率、丢包和串口占用放在一起看。
 
+单独跑过多个 `tools/run-com-perf.sh <tag>` 后，也可以直接横向比较这些 tag：
+
+```bash
+tools/summarize-com-perf.sh no_flash_smoke noflash_200hz_reliable_v6
+FORMAT=csv tools/summarize-com-perf.sh no_flash_smoke noflash_200hz_reliable_v6
+```
+
 要生成一份当前通信验证交接报告（不会烧录、不会启动 ROS 节点，只读取已有日志并探测
 ST-LINK/串口状态）：
 
