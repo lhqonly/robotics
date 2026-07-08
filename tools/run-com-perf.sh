@@ -43,6 +43,7 @@ FLASH_FIRMWARE="${FLASH_FIRMWARE:-1}"
 KEEP_BRIDGE="${KEEP_BRIDGE:-0}"
 MICROROS_AGENT_VERBOSITY="${MICROROS_AGENT_VERBOSITY:-1}"
 FLASH_TIMEOUT_SECONDS="${FLASH_TIMEOUT_SECONDS:-90}"
+STLINK_PREFLIGHT="${STLINK_PREFLIGHT:-1}"
 
 case "$QOS_RELIABILITY" in
   reliable) EXO_QOS_BEST_EFFORT=OFF ;;
@@ -75,6 +76,24 @@ graph_snapshot() {
   } >>"$GRAPH_LOG" 2>&1
 }
 
+check_stlink_ready() {
+  local out
+  if ! command -v st-info >/dev/null; then
+    echo "[com-perf] WARN: st-info not found; skipping ST-LINK preflight" >&2
+    return 0
+  fi
+  if ! out="$(timeout "$FLASH_TIMEOUT_SECONDS" st-info --probe 2>&1)"; then
+    echo "$out" >&2
+    echo "ERROR: ST-LINK preflight failed; check USB/SWD before flashing" >&2
+    return 1
+  fi
+  if printf '%s\n' "$out" | grep -Eq 'dev-type:[[:space:]]+unknown|chipid:[[:space:]]+0x000'; then
+    echo "$out" >&2
+    echo "ERROR: ST-LINK is visible but target probe is invalid; check SWD/reset/USBIP before flashing" >&2
+    return 1
+  fi
+}
+
 if [ ! -e "$DEV" ]; then
   echo "ERROR: serial device does not exist: $DEV" >&2
   exit 1
@@ -83,6 +102,7 @@ fi
 echo "[com-perf] tag=$TAG"
 echo "[com-perf] firmware: qos_best_effort=$EXO_QOS_BEST_EFFORT baud=$BAUD control_loop_hz=$CONTROL_LOOP_HZ status_every_n=$STATUS_EVERY_N"
 echo "[com-perf] pc: cmd_rate_hz=$CMD_RATE_HZ cmd_catchup_max=$CMD_CATCHUP_MAX qos_depth=$QOS_DEPTH qos_reliability=$QOS_RELIABILITY tracking_mode=$TRACKING_MODE rtt_warn_ms=$RTT_WARN_MS rtt_deadline_ms=$RTT_DEADLINE_MS sweep_period_s=$SWEEP_PERIOD_S summary_period_s=$SUMMARY_PERIOD_S startup_grace_s=$STARTUP_GRACE_S executor_threads=$EXECUTOR_THREADS log_matched_events=$LOG_MATCHED_EVENTS rtt_warn_log_period_s=$RTT_WARN_LOG_PERIOD_S"
+echo "[com-perf] flash: flash_firmware=$FLASH_FIRMWARE stlink_preflight=$STLINK_PREFLIGHT flash_timeout_s=$FLASH_TIMEOUT_SECONDS"
 echo "[com-perf] logs: $LOGDIR/$TAG.*.log"
 
 flash_firmware() {
@@ -99,6 +119,10 @@ flash_firmware() {
   timeout "$FLASH_TIMEOUT_SECONDS" \
     st-flash --connect-under-reset write "$bin" 0x08000000
 }
+
+if [ "$FLASH_FIRMWARE" = "1" ] && [ "$STLINK_PREFLIGHT" = "1" ]; then
+  check_stlink_ready
+fi
 
 if [ "$BUILD_FIRMWARE" = "1" ]; then
   cmake -S "$ROOT/firmware/f103-microros" -B "$ROOT/firmware/f103-microros/build" \
