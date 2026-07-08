@@ -121,6 +121,10 @@ int clock_gettime(clockid_t clk_id, struct timespec *tp)
 #  error "EXO_CONTROL_LOOP_HZ must be >= 1"
 #endif
 
+#if EXO_CONTROL_LOOP_HZ <= 1000u && ((1000u % EXO_CONTROL_LOOP_HZ) != 0u)
+#  error "EXO_CONTROL_LOOP_HZ <= 1000 must divide the 1kHz FreeRTOS tick"
+#endif
+
 #if EXO_CONTROL_LOOP_HZ > 1000u && ((1000000u % EXO_CONTROL_LOOP_HZ) != 0u)
 #  error "EXO_CONTROL_LOOP_HZ > 1000 must divide the 1MHz TIM2 control tick"
 #endif

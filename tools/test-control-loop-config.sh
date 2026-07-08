@@ -69,6 +69,9 @@ assert_contains "$MAIN" 'xTaskCreateStatic(com_control_task, "ctrl"' \
 assert_contains "$MAIN" "ControlTimer_Init();" \
   "TIM2 timer is used for >1kHz"
 assert_contains "$MAIN" \
+  "#if EXO_CONTROL_LOOP_HZ <= 1000u && ((1000u % EXO_CONTROL_LOOP_HZ) != 0u)" \
+  "FreeRTOS 1kHz divisibility guard"
+assert_contains "$MAIN" \
   "#if EXO_CONTROL_LOOP_HZ > 1000u && ((1000000u % EXO_CONTROL_LOOP_HZ) != 0u)" \
   "TIM2 1MHz divisibility guard"
 assert_contains "$MAIN" "TIM2->PSC = 71u;" \
@@ -93,6 +96,10 @@ assert_contains "$APP" "com_control_update_target(m->header.seq, m->payload);" \
   "ROS command callback updates latest target"
 
 for hz in 1000 2000 5000 10000; do
+  if [ "$hz" -le 1000 ] && [ $((1000 % hz)) -ne 0 ]; then
+    echo "FAIL: staircase frequency $hz does not divide the 1kHz FreeRTOS tick" >&2
+    exit 1
+  fi
   if [ "$hz" -gt 1000 ] && [ $((1000000 % hz)) -ne 0 ]; then
     echo "FAIL: staircase frequency $hz does not divide the 1MHz TIM2 tick" >&2
     exit 1
