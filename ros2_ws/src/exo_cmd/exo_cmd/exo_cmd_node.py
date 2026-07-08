@@ -72,6 +72,11 @@ class ExoCmdNode(Node):
         # Period of the /com/tp_link_health publisher (§7.7, ~1 Hz). Decoupled from
         # summary_period_s. 0 disables the diagnostic topic.
         self.declare_parameter('link_health_period_s', 1.0)
+        # Per-message logs are expensive on the communication hot path. Keep the
+        # structured counters/topic, but make normal matched echoes DEBUG by
+        # default and throttle soft RTT warnings.
+        self.declare_parameter('log_matched_events', False)
+        self.declare_parameter('rtt_warn_log_period_s', 1.0)
         # Application-level CRC self-check (Q4 / §7.9). Default OFF: cmd.crc is
         # published as 0 and incoming status.crc is NOT checked. When True, the
         # publisher fills header.crc and the subscriber verifies it -- a mismatch
@@ -110,6 +115,10 @@ class ExoCmdNode(Node):
         sweep_period_s = self.get_parameter('sweep_period_s').value
         summary_period_s = self.get_parameter('summary_period_s').value
         link_health_period_s = self.get_parameter('link_health_period_s').value
+        self._log_matched_events = bool(
+            self.get_parameter('log_matched_events').value)
+        self._rtt_warn_log_period_s = float(
+            self.get_parameter('rtt_warn_log_period_s').value)
         settled_window = self.get_parameter('settled_window').value
         self._crc_enabled = bool(self.get_parameter('crc_enabled').value)
         # CRC-mismatch tally (§7.9) lives in the tracker now (Low-3), so the
@@ -177,6 +186,8 @@ class ExoCmdNode(Node):
         self._wire_send_count = 0
         self._last_summary_s = self._start_s
         self._last_summary_wire_count = 0
+        self._last_rtt_warn_log_s = 0.0
+        self._rtt_warn_suppressed = 0
         self._sampled_sends = {}
         self._sampled_order = deque()
         self._sampled_seen = set()
@@ -229,9 +240,11 @@ class ExoCmdNode(Node):
                self._sample_window))
         self.get_logger().info(
             'crc_enabled=%s (application self-check, non-blocking; §7.9), '
-            'link_health %s @ %.2f Hz'
+            'link_health %s @ %.2f Hz, log_matched_events=%s '
+            'rtt_warn_log_period_s=%.3f'
             % (self._crc_enabled, TOPIC_LINK_HEALTH,
-               (1.0 / link_health_period_s) if link_health_period_s else 0.0))
+               (1.0 / link_health_period_s) if link_health_period_s else 0.0,
+               self._log_matched_events, self._rtt_warn_log_period_s))
         # Surface the resolved nonce prominently (§7.6): the echoed values that
         # come back equal to this prove THIS run's causality.
         self.get_logger().info(
@@ -272,14 +285,28 @@ class ExoCmdNode(Node):
         log = self.get_logger()
         for ev in events:
             level = ev.level
+            msg = ev.msg
+            if ev.kind == 'matched' and not self._log_matched_events:
+                level = 'DEBUG'
+            if ev.kind == 'warn_rtt' and self._rtt_warn_log_period_s > 0.0:
+                now_s = self._now()
+                elapsed_s = now_s - self._last_rtt_warn_log_s
+                if elapsed_s < self._rtt_warn_log_period_s:
+                    self._rtt_warn_suppressed += 1
+                    continue
+                if self._rtt_warn_suppressed:
+                    msg = '%s (suppressed %d similar RTT warnings)' % (
+                        msg, self._rtt_warn_suppressed)
+                    self._rtt_warn_suppressed = 0
+                self._last_rtt_warn_log_s = now_s
             if level == 'ERROR':
-                log.error(ev.msg)
+                log.error(msg)
             elif level == 'WARN':
-                log.warn(ev.msg)
+                log.warn(msg)
             elif level == 'DEBUG':
-                log.debug(ev.msg)
+                log.debug(msg)
             else:
-                log.info(ev.msg)
+                log.info(msg)
 
     def _remember_sampled_send(self, seq: int, now_s: float) -> None:
         """Remember recent wire sends so sampled statuses can compute RTT."""

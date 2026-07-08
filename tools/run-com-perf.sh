@@ -29,6 +29,8 @@ RTT_WARN_MS="${RTT_WARN_MS:-10.0}"
 RTT_DEADLINE_MS="${RTT_DEADLINE_MS:-100.0}"
 SWEEP_PERIOD_S="${SWEEP_PERIOD_S:-0.02}"
 EXECUTOR_THREADS="${EXECUTOR_THREADS:-0}"
+LOG_MATCHED_EVENTS="${LOG_MATCHED_EVENTS:-false}"
+RTT_WARN_LOG_PERIOD_S="${RTT_WARN_LOG_PERIOD_S:-1.0}"
 CONTROL_LOOP_HZ="${CONTROL_LOOP_HZ:-1000}"
 RUN_SECONDS="${RUN_SECONDS:-18}"
 WARMUP_SECONDS="${WARMUP_SECONDS:-5}"
@@ -69,7 +71,7 @@ fi
 
 echo "[com-perf] tag=$TAG"
 echo "[com-perf] firmware: qos_best_effort=$EXO_QOS_BEST_EFFORT baud=$BAUD control_loop_hz=$CONTROL_LOOP_HZ status_every_n=$STATUS_EVERY_N"
-echo "[com-perf] pc: cmd_rate_hz=$CMD_RATE_HZ qos_depth=$QOS_DEPTH qos_reliability=$QOS_RELIABILITY tracking_mode=$TRACKING_MODE rtt_warn_ms=$RTT_WARN_MS rtt_deadline_ms=$RTT_DEADLINE_MS executor_threads=$EXECUTOR_THREADS"
+echo "[com-perf] pc: cmd_rate_hz=$CMD_RATE_HZ qos_depth=$QOS_DEPTH qos_reliability=$QOS_RELIABILITY tracking_mode=$TRACKING_MODE rtt_warn_ms=$RTT_WARN_MS rtt_deadline_ms=$RTT_DEADLINE_MS executor_threads=$EXECUTOR_THREADS log_matched_events=$LOG_MATCHED_EVENTS rtt_warn_log_period_s=$RTT_WARN_LOG_PERIOD_S"
 echo "[com-perf] logs: $LOGDIR/$TAG.*.log"
 
 flash_firmware() {
@@ -140,6 +142,8 @@ setsid ros2 launch com_bringup pc_cmd.launch.py \
   rtt_deadline_ms:="$RTT_DEADLINE_MS" \
   sweep_period_s:="$SWEEP_PERIOD_S" \
   executor_threads:="$EXECUTOR_THREADS" \
+  log_matched_events:="$LOG_MATCHED_EVENTS" \
+  rtt_warn_log_period_s:="$RTT_WARN_LOG_PERIOD_S" \
   log_level:=info >"$CMD_LOG" 2>&1 &
 CMD_PID=$!
 

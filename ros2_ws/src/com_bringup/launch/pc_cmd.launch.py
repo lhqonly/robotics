@@ -33,6 +33,8 @@ def generate_launch_description():
     rtt_deadline_ms = LaunchConfiguration('rtt_deadline_ms')
     sweep_period_s = LaunchConfiguration('sweep_period_s')
     executor_threads = LaunchConfiguration('executor_threads')
+    log_matched_events = LaunchConfiguration('log_matched_events')
+    rtt_warn_log_period_s = LaunchConfiguration('rtt_warn_log_period_s')
 
     return LaunchDescription([
         DeclareLaunchArgument(
@@ -79,6 +81,14 @@ def generate_launch_description():
             'executor_threads',
             default_value='0',
             description='MultiThreadedExecutor threads. 0 lets rclpy auto-pick.'),
+        DeclareLaunchArgument(
+            'log_matched_events',
+            default_value='false',
+            description='Print every matched echo at INFO. False keeps it DEBUG.'),
+        DeclareLaunchArgument(
+            'rtt_warn_log_period_s',
+            default_value='1.0',
+            description='Throttle soft RTT warning logs; 0 disables throttling.'),
 
         Node(
             package='exo_cmd',
@@ -97,6 +107,10 @@ def generate_launch_description():
                 'rtt_deadline_ms': ParameterValue(rtt_deadline_ms, value_type=float),
                 'executor_threads': ParameterValue(
                     executor_threads, value_type=int),
+                'log_matched_events': ParameterValue(
+                    log_matched_events, value_type=bool),
+                'rtt_warn_log_period_s': ParameterValue(
+                    rtt_warn_log_period_s, value_type=float),
             }],
             arguments=['--ros-args', '--log-level', log_level],
         ),
