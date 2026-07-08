@@ -76,6 +76,7 @@ class ExoCmdNode(Node):
         # structured counters/topic, but make normal matched echoes DEBUG by
         # default and throttle soft RTT warnings.
         self.declare_parameter('log_matched_events', False)
+        self.declare_parameter('log_sent_commands', False)
         self.declare_parameter('rtt_warn_log_period_s', 1.0)
         # Optional startup grace for hardware runs: publish commands immediately
         # so DDS/XRCE discovery and the MCU path warm up, but do not feed those
@@ -129,6 +130,8 @@ class ExoCmdNode(Node):
         link_health_period_s = self.get_parameter('link_health_period_s').value
         self._log_matched_events = bool(
             self.get_parameter('log_matched_events').value)
+        self._log_sent_commands = bool(
+            self.get_parameter('log_sent_commands').value)
         self._rtt_warn_log_period_s = float(
             self.get_parameter('rtt_warn_log_period_s').value)
         self._startup_grace_s = float(
@@ -268,11 +271,12 @@ class ExoCmdNode(Node):
         self.get_logger().info(
             'crc_enabled=%s (application self-check, non-blocking; §7.9), '
             'link_health %s @ %.2f Hz, log_matched_events=%s '
-            'rtt_warn_log_period_s=%.3f startup_grace_s=%.3f'
+            'log_sent_commands=%s rtt_warn_log_period_s=%.3f '
+            'startup_grace_s=%.3f'
             % (self._crc_enabled, TOPIC_LINK_HEALTH,
                (1.0 / link_health_period_s) if link_health_period_s else 0.0,
-               self._log_matched_events, self._rtt_warn_log_period_s,
-               self._startup_grace_s))
+               self._log_matched_events, self._log_sent_commands,
+               self._rtt_warn_log_period_s, self._startup_grace_s))
         # Surface the resolved nonce prominently (§7.6): the echoed values that
         # come back equal to this prove THIS run's causality.
         self.get_logger().info(
@@ -470,7 +474,8 @@ class ExoCmdNode(Node):
         msg.header.crc = (compute_crc(seq, now_ns, msg.payload)
                           if self._crc_enabled else 0)
         self._pub.publish(msg)
-        self.get_logger().debug('sent cmd_heartbeat seq=%d' % seq)
+        if self._log_sent_commands:
+            self.get_logger().debug('sent cmd_heartbeat seq=%d' % seq)
         # events here are only the (rare) cap-eviction LOST warnings.
         self._emit(events)
 

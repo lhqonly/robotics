@@ -443,3 +443,22 @@ def test_command_publish_reuses_message_instance_but_snapshots_values():
         assert len(set(published_ids)) == 1
         assert [m.header.seq for m in sent_cmds] == [0, 1, 2]
         assert [m.payload for m in sent_cmds] == [0, 1, 2]
+
+
+def test_sent_command_debug_log_is_opt_in(monkeypatch):
+    """Per-command sent logs stay off the hot path unless explicitly enabled."""
+    default_logs = []
+    with make_node(link_health_period_s=0.0, summary_period_s=0.0) as node:
+        with monkeypatch.context() as patch:
+            patch.setattr(node.get_logger(), 'debug', default_logs.append)
+            node._on_timer()
+
+    enabled_logs = []
+    with make_node(log_sent_commands=True, link_health_period_s=0.0,
+                   summary_period_s=0.0) as node:
+        with monkeypatch.context() as patch:
+            patch.setattr(node.get_logger(), 'debug', enabled_logs.append)
+            node._on_timer()
+
+    assert default_logs == []
+    assert enabled_logs == ['sent cmd_heartbeat seq=0']

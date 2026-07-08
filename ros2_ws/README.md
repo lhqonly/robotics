@@ -220,6 +220,8 @@ ros2 launch com_bringup pc_latest_target.launch.py
 
 它默认等价于 `cmd_rate_hz=200`、`cmd_catchup_max=1`、`qos_depth=1`、
 `qos_reliability=best_effort`、`tracking_mode=sampled`、`status_every_n=40`。
+逐条发送日志默认关闭，避免 200Hz/1000Hz 热路径里为 debug 文本产生额外分配；
+排障时可临时追加 `log_sent_commands:=true`。
 MCU 固件也必须用匹配 profile（`EXO_QOS_BEST_EFFORT=ON`、
 `EXO_STATUS_EVERY_N=40`），否则 DDS QoS 或监控语义会不匹配。
 

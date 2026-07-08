@@ -37,6 +37,7 @@ def generate_launch_description():
     startup_grace_s = LaunchConfiguration('startup_grace_s')
     executor_threads = LaunchConfiguration('executor_threads')
     log_matched_events = LaunchConfiguration('log_matched_events')
+    log_sent_commands = LaunchConfiguration('log_sent_commands')
     rtt_warn_log_period_s = LaunchConfiguration('rtt_warn_log_period_s')
     launch_prefix = LaunchConfiguration('launch_prefix')
 
@@ -104,6 +105,10 @@ def generate_launch_description():
             default_value='false',
             description='Print every matched echo at INFO. False keeps it DEBUG.'),
         DeclareLaunchArgument(
+            'log_sent_commands',
+            default_value='false',
+            description='Print every sent command at DEBUG for troubleshooting.'),
+        DeclareLaunchArgument(
             'rtt_warn_log_period_s',
             default_value='1.0',
             description='Throttle soft RTT warning logs; 0 disables throttling.'),
@@ -140,6 +145,8 @@ def generate_launch_description():
                     executor_threads, value_type=int),
                 'log_matched_events': ParameterValue(
                     log_matched_events, value_type=bool),
+                'log_sent_commands': ParameterValue(
+                    log_sent_commands, value_type=bool),
                 'rtt_warn_log_period_s': ParameterValue(
                     rtt_warn_log_period_s, value_type=float),
             }],
