@@ -11,6 +11,8 @@ set -euo pipefail
 
 ELF="${1:-firmware/f103-microros/build/f103-microros.elf}"
 PORT="${2:-4242}"
+STLINK_PREFLIGHT="${STLINK_PREFLIGHT:-1}"
+STLINK_TIMEOUT_SECONDS="${STLINK_TIMEOUT_SECONDS:-30}"
 
 if ! command -v arm-none-eabi-nm >/dev/null; then
   echo "ERROR: arm-none-eabi-nm not found" >&2
@@ -24,10 +26,28 @@ if ! command -v st-util >/dev/null; then
   echo "ERROR: st-util not found" >&2
   exit 1
 fi
+if [ "$STLINK_PREFLIGHT" = "1" ] && ! command -v st-info >/dev/null; then
+  echo "ERROR: st-info not found" >&2
+  exit 1
+fi
 if [ ! -f "$ELF" ]; then
   echo "ERROR: ELF not found: $ELF" >&2
   exit 1
 fi
+
+check_stlink_ready() {
+  local out
+  if ! out="$(timeout "$STLINK_TIMEOUT_SECONDS" st-info --probe 2>&1)"; then
+    echo "$out" >&2
+    echo "ERROR: ST-LINK preflight failed; cannot measure stack watermarks" >&2
+    return 1
+  fi
+  if printf '%s\n' "$out" | grep -Eq 'dev-type:[[:space:]]+unknown|chipid:[[:space:]]+0x000'; then
+    echo "$out" >&2
+    echo "ERROR: ST-LINK is visible but target probe is invalid; cannot measure stack watermarks" >&2
+    return 1
+  fi
+}
 
 STACK_SYMBOLS=(
   microros_task_stack
@@ -35,6 +55,10 @@ STACK_SYMBOLS=(
   led_task_stack
   idle_task_stack
 )
+
+if [ "$STLINK_PREFLIGHT" = "1" ]; then
+  check_stlink_ready
+fi
 
 OWN_STUTIL=0
 if ! ss -ltn "sport = :$PORT" | grep -q ":$PORT"; then
@@ -88,7 +112,7 @@ for sym in "${STACK_SYMBOLS[@]}"; do
   end=$((addr + size))
   out="/tmp/measure-stack-hwm.${sym}.bin"
 
-  gdb-multiarch -q "$ELF" \
+  timeout "$STLINK_TIMEOUT_SECONDS" gdb-multiarch -q "$ELF" \
     -ex 'set pagination off' \
     -ex "target extended-remote :$PORT" \
     -ex "dump binary memory $out 0x$(printf '%x' "$addr") 0x$(printf '%x' "$end")" \
