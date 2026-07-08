@@ -427,6 +427,19 @@ tools/agent-wire-stats.sh log/com-perf/wirestats_debug.bridge.log
 帧长和线速占用，用来判断 baudrate/消息瘦身/状态降频是否值得做；链路正确性仍以
 `status_sampler` 和 LinkHealth 为准。
 
+有了 `.wire.log` 后，可以先做线速外推，粗看某个目标 profile 是否可能打满串口：
+
+```bash
+tools/com-wire-budget.py \
+  --wire-log log/com-perf/<tag>.wire.log \
+  --cmd-hz 200 \
+  --status-every-n 40 \
+  --baud 921600
+```
+
+这个工具用已测 XRCE 串口字节数做线性估算，只用于排序实验优先级；真实验收仍以
+上板 `run-com-perf.sh` / staircase 实测为准。
+
 终端 3：查看通信结果。
 
 ```bash
