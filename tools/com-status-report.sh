@@ -11,6 +11,7 @@ SIZE_LOGDIR="$ROOT/log/firmware-size-matrix"
 STACK_LOGDIR="$ROOT/log/firmware-stack-sweep"
 SPIN_TIMEOUT_LOGDIR="$ROOT/log/firmware-spin-timeout-sweep"
 WATCH_LOGDIR="$ROOT/log/overnight-com-watch"
+SCHED_LOGDIR="$ROOT/log/pc-scheduler-sweep"
 
 mkdir -p "$OUTDIR"
 
@@ -164,6 +165,7 @@ latest_size_md="$(latest_file "$SIZE_LOGDIR" '*.md')"
 latest_stack_md="$(latest_file "$STACK_LOGDIR" '*.md')"
 latest_spin_timeout_md="$(latest_file "$SPIN_TIMEOUT_LOGDIR" '*.md')"
 latest_watch_summary="$(latest_file "$WATCH_LOGDIR" '*.summary.md')"
+latest_scheduler_metrics="$(latest_file "$SCHED_LOGDIR" '*.metrics.md')"
 
 sampler_summary=""
 if [ -f "$latest_sampler" ]; then
@@ -285,6 +287,7 @@ serial_users="$(serial_lsof)"
   echo "- stack sweep：$(relpath "$latest_stack_md")"
   echo "- spin timeout sweep：$(relpath "$latest_spin_timeout_md")"
   echo "- overnight summary：$(relpath "$latest_watch_summary")"
+  echo "- PC scheduler sweep：$(relpath "$latest_scheduler_metrics")"
   echo
   echo "## 最新通信指标"
   echo
@@ -316,6 +319,12 @@ serial_users="$(serial_lsof)"
   echo "来源：$(relpath "$latest_watch_summary")"
   echo
   markdown_table_from_prefix "$latest_watch_summary" '| Tag |'
+  echo
+  echo "## PC 主机调度 sweep"
+  echo
+  echo "来源：$(relpath "$latest_scheduler_metrics")"
+  echo
+  markdown_table_from_prefix "$latest_scheduler_metrics" '| Tag |'
   echo
   echo "## 已知关键样本"
   echo
