@@ -371,8 +371,8 @@ if [ -n "$wire_budget_source" ] && [ -f "$wire_budget_source" ] &&
     --wire-log "$wire_budget_source_rel" \
     --baseline-cmd-hz "$wire_budget_baseline_cmd_hz" \
     --baseline-status-hz "$wire_budget_baseline_status_hz" \
-    --cmd-hz 200,1000 \
-    --status-every-n 1,10,40 \
+    --cmd-hz 200,500,1000 \
+    --status-every-n 1,10,20,40 \
     --baud 921600,2000000 \
     --max-baud-util-pct 30 \
     --show-wire-time 2>/dev/null || true)"

@@ -628,8 +628,8 @@ tools/com-wire-budget.py \
 ```bash
 tools/com-wire-budget.py \
   --wire-log log/com-perf/<tag>.wire.log \
-  --cmd-hz 200,1000 \
-  --status-every-n 1,10,40 \
+  --cmd-hz 200,500,1000 \
+  --status-every 1,10,20,40 \
   --baud 921600,2000000 \
   --max-baud-util-pct 30 \
   --show-wire-time
