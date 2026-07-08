@@ -272,6 +272,11 @@ STATUS_EVERY_N=40 tools/run-com-perf.sh config_preview
 1.0s，远大于当前 `rtt_deadline_ms=120ms`；需要更长 sampled 匹配窗口时可覆盖
 `SAMPLE_WINDOW=<n>`。
 
+注意：`tracking_mode=sampled` 下，LinkHealth 的 `lost=0` 只表示已经收到的
+sampled status 能和最近发送窗口匹配；未回来的降频状态不会像 full-echo 那样自动
+计为 lost。状态漏样/跳号要看 `status_sampler` 的 `seq_delta_avg/min/max`、
+`sampler_target_rx_hz` 和 gap 指标。
+
 ```bash
 LOG_SENT_COMMANDS=true BUILD_FIRMWARE=0 FLASH_FIRMWARE=0 \
 tools/run-com-perf.sh debug_sent_commands
