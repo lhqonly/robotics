@@ -300,6 +300,17 @@ tools/com-status-report.sh morning_$(date +%Y%m%d_%H%M)
 报告会写到 `log/handoff/<tag>.md`，里面汇总当前 git 版本、最近提交、SWD 状态、
 串口设备、最近 no-flash 指标、静态内存矩阵、栈候选和未解决项。
 
+如果要无人值守地持续观察一晚，可用 overnight watcher。它只跑 no-flash smoke
+和 handoff 报告，不 build、不 flash、不 reset：
+
+```bash
+END_AT="tomorrow 09:00" INTERVAL_SECONDS=1800 \
+tools/overnight-com-watch.sh overnight_$(date +%Y%m%d_%H%M)
+```
+
+日志会写到 `log/overnight-com-watch/<tag>.log`，每轮通信指标仍写入
+`log/com-perf/`，每轮交接报告写入 `log/handoff/`。
+
 烧录并启动 bridge 后，可以用 SWD 粗测本地 tick 档位：
 
 ```bash

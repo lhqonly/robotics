@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# Periodically run no-flash communication smoke tests and handoff reports.
+#
+# This is intended for unattended hardware nights when SWD may be blocked but
+# the serial/micro-ROS link can still be monitored. It never builds or flashes.
+set -uo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TAG_PREFIX="${1:-overnight_$(date +%Y%m%d_%H%M)}"
+LOGDIR="${LOGDIR:-$ROOT/log/overnight-com-watch}"
+INTERVAL_SECONDS="${INTERVAL_SECONDS:-1800}"
+END_AT="${END_AT:-tomorrow 09:00}"
+RUN_SECONDS="${RUN_SECONDS:-18}"
+WARMUP_SECONDS="${WARMUP_SECONDS:-5}"
+HZ_SECONDS="${HZ_SECONDS:-10}"
+
+mkdir -p "$LOGDIR"
+LOG="$LOGDIR/$TAG_PREFIX.log"
+
+log() {
+  printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S %Z')" "$*" | tee -a "$LOG"
+}
+
+end_epoch="$(date -d "$END_AT" +%s 2>/dev/null || true)"
+if [ -z "$end_epoch" ]; then
+  echo "ERROR: cannot parse END_AT='$END_AT'" >&2
+  exit 1
+fi
+
+log "start tag_prefix=$TAG_PREFIX end_at=$END_AT interval_s=$INTERVAL_SECONDS"
+iteration=0
+while [ "$(date +%s)" -lt "$end_epoch" ]; do
+  iteration=$((iteration + 1))
+  tag="${TAG_PREFIX}_$(printf '%03d' "$iteration")"
+  log "iteration=$iteration smoke tag=$tag"
+
+  if BUILD_FIRMWARE=0 FLASH_FIRMWARE=0 RESET_TARGET=0 \
+      RUN_SECONDS="$RUN_SECONDS" \
+      WARMUP_SECONDS="$WARMUP_SECONDS" \
+      HZ_SECONDS="$HZ_SECONDS" \
+      "$ROOT/tools/run-com-perf.sh" "$tag" >>"$LOG" 2>&1; then
+    log "iteration=$iteration smoke=ok"
+  else
+    log "iteration=$iteration smoke=fail status=$?"
+  fi
+
+  if "$ROOT/tools/com-status-report.sh" "$tag" >>"$LOG" 2>&1; then
+    log "iteration=$iteration report=ok"
+  else
+    log "iteration=$iteration report=fail status=$?"
+  fi
+
+  now="$(date +%s)"
+  next=$((now + INTERVAL_SECONDS))
+  if [ "$next" -gt "$end_epoch" ]; then
+    break
+  fi
+  log "sleep_s=$INTERVAL_SECONDS"
+  sleep "$INTERVAL_SECONDS"
+done
+
+final_tag="${TAG_PREFIX}_final"
+log "final_report tag=$final_tag"
+"$ROOT/tools/com-status-report.sh" "$final_tag" >>"$LOG" 2>&1 || true
+log "done log=$LOG"
