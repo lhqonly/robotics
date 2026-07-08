@@ -25,11 +25,11 @@ fi
 
 write_headers() {
   cat >"$CSV" <<'EOF'
-profile,verdict,reason,control_loop_hz,control_tick_source,control_timer_irq_priority,qos,status_every_n,executor_spin_timeout_us,flash_bytes,flash_margin_bytes,ram_static_bytes,ram_static_margin_bytes,data_bytes,bss_bytes,microros_stack_bytes,control_stack_bytes,led_stack_bytes,idle_stack_bytes
+profile,verdict,reason,control_loop_hz,control_tick_source,control_timer_irq_priority,qos,status_every_n,executor_spin_timeout_us,flash_bytes,flash_margin_bytes,ram_static_bytes,ram_static_margin_bytes,data_bytes,bss_bytes,microros_stack_bytes,control_stack_bytes,led_stack_bytes,idle_stack_bytes,ram_task_stacks_bytes,ram_linker_heap_stack_bytes,ram_rosidl_type_metadata_bytes,ram_microros_custom_pools_bytes,ram_uart_buffers_bytes,ram_newlib_state_bytes,ram_app_ros_state_bytes,ram_other_named_bytes
 EOF
   cat >"$MD" <<'EOF'
-| Profile | verdict | reason | loop Hz | tick source | timer IRQ prio | QoS | status every | spin us | Flash B | Flash margin B | static RAM B | RAM margin B | data B | bss B | micro-ROS stack B | control stack B | led stack B | idle stack B |
-|---|---|---|---:|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Profile | verdict | reason | loop Hz | tick source | timer IRQ prio | QoS | status every | spin us | Flash B | Flash margin B | static RAM B | RAM margin B | data B | bss B | micro-ROS stack B | control stack B | led stack B | idle stack B | task stacks B | linker reserve B | rosidl type metadata B | micro-ROS pools B | UART buffers B | newlib state B | app ROS state B | other named RAM B |
+|---|---|---|---:|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 EOF
 }
 
@@ -102,6 +102,33 @@ stack_bytes_from_report() {
   ' "$report"
 }
 
+category_bytes_from_report() {
+  local report="$1"
+  local category="$2"
+  awk -v category="$category" '
+    $1 == category {
+      for (i = 1; i <= NF; i++) {
+        if ($i == "bytes=") {
+          print $(i + 1)
+          found = 1
+          exit
+        }
+        split($i, kv, "=")
+        if (kv[1] == "bytes" && kv[2] != "") {
+          print kv[2]
+          found = 1
+          exit
+        }
+      }
+    }
+    END {
+      if (!found) {
+        print 0
+      }
+    }
+  ' "$report"
+}
+
 run_profile() {
   local profile="$1"
   local loop_hz="$2"
@@ -114,6 +141,9 @@ run_profile() {
   local flash_bytes ram_static_bytes data_bytes bss_bytes
   local flash_margin ram_static_margin verdict_csv verdict reason
   local microros_stack control_stack led_stack idle_stack
+  local ram_task_stacks ram_linker_heap_stack ram_rosidl_type_metadata
+  local ram_microros_custom_pools ram_uart_buffers ram_newlib_state
+  local ram_app_ros_state ram_other_named
   local control_tick_source="freertos_task"
 
   case "$qos" in
@@ -156,24 +186,41 @@ run_profile() {
   control_stack="$(stack_bytes_from_report "$report" control_task_stack)"
   led_stack="$(stack_bytes_from_report "$report" led_task_stack)"
   idle_stack="$(stack_bytes_from_report "$report" idle_task_stack)"
+  ram_task_stacks="$(category_bytes_from_report "$report" task_stacks)"
+  ram_linker_heap_stack="$(
+    category_bytes_from_report "$report" linker_user_heap_stack)"
+  ram_rosidl_type_metadata="$(
+    category_bytes_from_report "$report" rosidl_type_metadata)"
+  ram_microros_custom_pools="$(
+    category_bytes_from_report "$report" microros_custom_pools)"
+  ram_uart_buffers="$(category_bytes_from_report "$report" uart_buffers)"
+  ram_newlib_state="$(category_bytes_from_report "$report" newlib_state)"
+  ram_app_ros_state="$(category_bytes_from_report "$report" app_ros_state)"
+  ram_other_named="$(category_bytes_from_report "$report" other_named_ram)"
   flash_margin=$((FLASH_BYTES - flash_bytes))
   ram_static_margin=$((SRAM_BYTES - ram_static_bytes))
   verdict_csv="$(static_budget_verdict "$flash_bytes" "$ram_static_bytes")"
   verdict="${verdict_csv%%,*}"
   reason="${verdict_csv#*,}"
 
-  printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
+  printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
     "$profile" "$verdict" "$reason" "$loop_hz" "$control_tick_source" \
     "$CONTROL_TIMER_IRQ_PRIORITY" "$qos" "$status_every" "$spin_timeout_us" \
     "$flash_bytes" "$flash_margin" "$ram_static_bytes" "$ram_static_margin" \
     "$data_bytes" "$bss_bytes" \
-    "$microros_stack" "$control_stack" "$led_stack" "$idle_stack" >>"$CSV"
-  printf '| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n' \
+    "$microros_stack" "$control_stack" "$led_stack" "$idle_stack" \
+    "$ram_task_stacks" "$ram_linker_heap_stack" "$ram_rosidl_type_metadata" \
+    "$ram_microros_custom_pools" "$ram_uart_buffers" "$ram_newlib_state" \
+    "$ram_app_ros_state" "$ram_other_named" >>"$CSV"
+  printf '| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n' \
     "$profile" "$verdict" "$reason" "$loop_hz" "$control_tick_source" \
     "$CONTROL_TIMER_IRQ_PRIORITY" "$qos" "$status_every" "$spin_timeout_us" \
     "$flash_bytes" "$flash_margin" "$ram_static_bytes" "$ram_static_margin" \
     "$data_bytes" "$bss_bytes" \
-    "$microros_stack" "$control_stack" "$led_stack" "$idle_stack" >>"$MD"
+    "$microros_stack" "$control_stack" "$led_stack" "$idle_stack" \
+    "$ram_task_stacks" "$ram_linker_heap_stack" "$ram_rosidl_type_metadata" \
+    "$ram_microros_custom_pools" "$ram_uart_buffers" "$ram_newlib_state" \
+    "$ram_app_ros_state" "$ram_other_named" >>"$MD"
 }
 
 write_headers
