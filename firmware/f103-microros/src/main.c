@@ -433,6 +433,7 @@ size_t uart_ll_read(uint8_t *out, size_t max, int timeout_ms)
             }
             return got;
         }
+#if EXO_UART_READ_POLL_YIELDS > 0u
         for (uint32_t i = 0u; i < EXO_UART_READ_POLL_YIELDS; i++) {
             taskYIELD();
             if (app_ring_get(&c) == 0) {
@@ -443,6 +444,7 @@ size_t uart_ll_read(uint8_t *out, size_t max, int timeout_ms)
                 return got;
             }
         }
+#endif
         vTaskDelay(pdMS_TO_TICKS(1));
     }
     return got;   /* 超时,got==0 */
