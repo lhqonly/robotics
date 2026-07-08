@@ -109,6 +109,10 @@ int clock_gettime(clockid_t clk_id, struct timespec *tp)
 #endif
 #define USART1_BRR_VALUE    ((uint32_t)((72000000u + (EXO_UART_BAUD / 2u)) / EXO_UART_BAUD))
 
+#ifndef EXO_UART_READ_POLL_YIELDS
+#  define EXO_UART_READ_POLL_YIELDS 0u
+#endif
+
 #ifndef EXO_CONTROL_LOOP_HZ
 #  define EXO_CONTROL_LOOP_HZ 1000u
 #endif
@@ -397,7 +401,9 @@ size_t uart_ll_read(uint8_t *out, size_t max, int timeout_ms)
         return got;   /* 已有数据 / 不等待 → 立即返回(XRCE 轮询常态) */
     }
 
-    /* 当前为空且要求等待:在 timeout_ms 内轮询(1ms 粒度,降低 200Hz 基线 RTT)。 */
+    /* 当前为空且要求等待:在 timeout_ms 内轮询。默认保持 1 tick 睡眠粒度;
+     * EXO_UART_READ_POLL_YIELDS>0 时,睡眠前先让出同优先级调度若干次并重试,
+     * 用于后续验证能否压低串口 RX 到 executor 的 1ms 量化长尾。 */
     TickType_t start    = xTaskGetTickCount();
     TickType_t deadline = pdMS_TO_TICKS((uint32_t)timeout_ms);
     while ((xTaskGetTickCount() - start) < deadline) {
@@ -408,6 +414,16 @@ size_t uart_ll_read(uint8_t *out, size_t max, int timeout_ms)
                 out[got++] = c;
             }
             return got;
+        }
+        for (uint32_t i = 0u; i < EXO_UART_READ_POLL_YIELDS; i++) {
+            taskYIELD();
+            if (app_ring_get(&c) == 0) {
+                out[got++] = c;
+                while (got < max && app_ring_get(&c) == 0) {
+                    out[got++] = c;
+                }
+                return got;
+            }
         }
         vTaskDelay(pdMS_TO_TICKS(1));
     }

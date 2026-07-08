@@ -141,6 +141,17 @@ cmake -S firmware/f103-microros -B firmware/f103-microros/build \
   -DEXO_CONTROL_LOOP_HZ=10000
 ```
 
+固件 UART transport 默认没数据时按 1 个 FreeRTOS tick 睡眠。要实验性验证“睡眠前
+先 `taskYIELD()` 快速轮询几次”能否压低 RX 长尾，可以编译候选 profile：
+
+```bash
+cmake -S firmware/f103-microros -B firmware/f103-microros/build \
+  -DEXO_UART_READ_POLL_YIELDS=4
+```
+
+这个选项只改变固件读串口等待策略；需要烧录后用 `tools/run-com-perf.sh` 看
+sampler gap/RTT，不能只凭静态 size 判断收益。
+
 真实控制链路压测时，可以让 MCU 仍接收每条 PC 目标，但降低状态回传频率。
 例如 PC 200Hz 下发、MCU 每 20 条或 40 条回一次状态，状态 topic 约为 10Hz 或 5Hz：
 

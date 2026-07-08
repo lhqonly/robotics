@@ -30,6 +30,7 @@ set(EXO_MICROROS_TASK_STACK_WORDS "768" CACHE STRING "micro-ROS task stack words
 set(EXO_CONTROL_TASK_STACK_WORDS "128" CACHE STRING "1kHz control task stack words")
 set(EXO_LED_TASK_STACK_WORDS "64" CACHE STRING "LED heartbeat task stack words")
 set(EXO_MINIMAL_STACK_WORDS "96" CACHE STRING "FreeRTOS idle/minimal stack words")
+set(EXO_UART_READ_POLL_YIELDS "0" CACHE STRING "taskYIELD polls before 1-tick UART read sleep")
 
 # ---- 路径 ----
 set(TP        ${CMAKE_SOURCE_DIR}/ThirdParty)
@@ -54,6 +55,7 @@ add_compile_definitions(EXO_MICROROS_TASK_STACK_WORDS=${EXO_MICROROS_TASK_STACK_
 add_compile_definitions(EXO_CONTROL_TASK_STACK_WORDS=${EXO_CONTROL_TASK_STACK_WORDS})
 add_compile_definitions(EXO_LED_TASK_STACK_WORDS=${EXO_LED_TASK_STACK_WORDS})
 add_compile_definitions(EXO_MINIMAL_STACK_WORDS=${EXO_MINIMAL_STACK_WORDS})
+add_compile_definitions(EXO_UART_READ_POLL_YIELDS=${EXO_UART_READ_POLL_YIELDS})
 
 # ---- micro-ROS 静态库(T5)----
 # [MICROROS-INCLUDE] / [MICROROS-LIB]:libmicroros.a + 其 include/ 由主 agent 用
