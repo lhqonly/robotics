@@ -42,6 +42,8 @@ assert_contains "$report" "generated_stream_history=in:2/out:2" \
   "generated stream history"
 assert_contains "$report" "## overnight no-flash 趋势" \
   "overnight section"
+assert_contains "$report" "## staircase 阶梯汇总" \
+  "staircase section"
 assert_contains "$report" "## 未解决项" \
   "unresolved section"
 

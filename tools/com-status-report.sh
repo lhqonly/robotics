@@ -13,6 +13,7 @@ SPIN_TIMEOUT_LOGDIR="$ROOT/log/firmware-spin-timeout-sweep"
 LINKER_RESERVE_LOGDIR="$ROOT/log/firmware-linker-reserve-sweep"
 WATCH_LOGDIR="$ROOT/log/overnight-com-watch"
 SCHED_LOGDIR="$ROOT/log/pc-scheduler-sweep"
+STAIRCASE_LOGDIR="$ROOT/log/com-staircase"
 FIRMWARE_ELF="$ROOT/firmware/f103-microros/build/f103-microros.elf"
 MICROROS_META="$ROOT/firmware/f103-microros/colcon.meta"
 MICROROS_UXR_CONFIG="$ROOT/firmware/f103-microros/ThirdParty/microros/include/uxr/client/config.h"
@@ -285,6 +286,8 @@ if [ -n "$latest_watch_summary" ]; then
   latest_watch_log="${latest_watch_summary%.summary.md}.log"
 fi
 latest_scheduler_metrics="$(latest_file "$SCHED_LOGDIR" '*.metrics.md')"
+latest_staircase_metrics="$(latest_file "$STAIRCASE_LOGDIR" '*.metrics.md')"
+latest_staircase_summary="$(latest_file "$STAIRCASE_LOGDIR" '*.summary.log')"
 ram_categories="$(firmware_ram_categories)"
 ram_category_symbols="$(firmware_ram_category_symbols)"
 microros_config="$(microros_config_summary)"
@@ -456,6 +459,8 @@ serial_users="$(serial_lsof)"
   echo "- linker reserve sweep：$(relpath "$latest_linker_reserve_md")"
   echo "- overnight summary：$(relpath "$latest_watch_summary")"
   echo "- PC scheduler sweep：$(relpath "$latest_scheduler_metrics")"
+  echo "- staircase metrics：$(relpath "$latest_staircase_metrics")"
+  echo "- staircase summary：$(relpath "$latest_staircase_summary")"
   echo
   echo "## 最新通信指标"
   echo
@@ -512,6 +517,14 @@ serial_users="$(serial_lsof)"
     echo
     printf '%s\n' "$scheduler_comparison_md"
   fi
+  echo
+  echo "## staircase 阶梯汇总"
+  echo
+  echo "来源：$(relpath "$latest_staircase_metrics")"
+  echo
+  markdown_table_from_prefix "$latest_staircase_metrics" '| Stage |'
+  echo
+  echo "说明：完整上板 staircase 需要 SWD 恢复；若当前表格只有 fallback/no-flash 或为空，表示还没有完成 1/2/5/10kHz 真机矩阵。"
   echo
   echo "## 已知关键样本"
   echo
