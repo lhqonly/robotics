@@ -77,6 +77,12 @@ class ExoCmdNode(Node):
         # default and throttle soft RTT warnings.
         self.declare_parameter('log_matched_events', False)
         self.declare_parameter('rtt_warn_log_period_s', 1.0)
+        # Optional startup grace for hardware runs: publish commands immediately
+        # so DDS/XRCE discovery and the MCU path warm up, but do not feed those
+        # startup seqs into LinkHealth counters. This keeps self-test summaries
+        # focused on steady-state link quality instead of first-frame discovery
+        # tails.
+        self.declare_parameter('startup_grace_s', 0.0)
         # Application-level CRC self-check (Q4 / §7.9). Default OFF: cmd.crc is
         # published as 0 and incoming status.crc is NOT checked. When True, the
         # publisher fills header.crc and the subscriber verifies it -- a mismatch
@@ -119,6 +125,8 @@ class ExoCmdNode(Node):
             self.get_parameter('log_matched_events').value)
         self._rtt_warn_log_period_s = float(
             self.get_parameter('rtt_warn_log_period_s').value)
+        self._startup_grace_s = float(
+            self.get_parameter('startup_grace_s').value)
         settled_window = self.get_parameter('settled_window').value
         self._crc_enabled = bool(self.get_parameter('crc_enabled').value)
         # CRC-mismatch tally (§7.9) lives in the tracker now (Low-3), so the
@@ -169,18 +177,13 @@ class ExoCmdNode(Node):
             raise ValueError('start_value must be >=0 or -1, got %d'
                              % start_value)
 
-        try:
-            self._tracker = LinkHealthTracker(
-                rtt_warn_ms=rtt_warn_ms,
-                rtt_deadline_ms=rtt_deadline_ms,
-                max_inflight=max_inflight,
-                settled_window=settled_window,
-                start_seq=start_seq,
-            )
-        except ValueError as exc:
-            # §7.2 constraint rtt_warn_ms < rtt_deadline_ms violated: fail loud.
-            self.get_logger().fatal('invalid link-health params: %s' % exc)
-            raise
+        self._tracker_kwargs = {
+            'rtt_warn_ms': rtt_warn_ms,
+            'rtt_deadline_ms': rtt_deadline_ms,
+            'max_inflight': max_inflight,
+            'settled_window': settled_window,
+        }
+        self._tracker = self._new_tracker(start_seq)
         self._start_s = self._now()
         self._wire_seq = start_seq
         self._wire_send_count = 0
@@ -193,6 +196,8 @@ class ExoCmdNode(Node):
         self._sampled_sends = {}
         self._sampled_order = deque()
         self._sampled_seen = set()
+        self._startup_grace_active = self._startup_grace_s > 0.0
+        self._startup_grace_seqs = set()
 
         # Callback groups (task ⑤): rx (echo subscription) gets its OWN group so
         # on_status -- which timestamps the safety-critical RTT -- can run
@@ -243,10 +248,11 @@ class ExoCmdNode(Node):
         self.get_logger().info(
             'crc_enabled=%s (application self-check, non-blocking; §7.9), '
             'link_health %s @ %.2f Hz, log_matched_events=%s '
-            'rtt_warn_log_period_s=%.3f'
+            'rtt_warn_log_period_s=%.3f startup_grace_s=%.3f'
             % (self._crc_enabled, TOPIC_LINK_HEALTH,
                (1.0 / link_health_period_s) if link_health_period_s else 0.0,
-               self._log_matched_events, self._rtt_warn_log_period_s))
+               self._log_matched_events, self._rtt_warn_log_period_s,
+               self._startup_grace_s))
         # Surface the resolved nonce prominently (§7.6): the echoed values that
         # come back equal to this prove THIS run's causality.
         self.get_logger().info(
@@ -280,6 +286,45 @@ class ExoCmdNode(Node):
     def _now(self) -> float:
         """Monotonic seconds (for the tracker / sweep / RTT)."""
         return time.monotonic()
+
+    def _new_tracker(self, start_seq: int) -> LinkHealthTracker:
+        """Build a tracker; fail loud if threshold params are invalid."""
+        try:
+            return LinkHealthTracker(
+                start_seq=start_seq, **self._tracker_kwargs)
+        except ValueError as exc:
+            # §7.2 constraint rtt_warn_ms < rtt_deadline_ms violated: fail loud.
+            self.get_logger().fatal('invalid link-health params: %s' % exc)
+            raise
+
+    def _finish_startup_grace(self, now_s: float) -> None:
+        """Start steady-state LinkHealth accounting at the current wire seq."""
+        if not self._startup_grace_active:
+            return
+        self._startup_grace_active = False
+        self._tracker = self._new_tracker(self._wire_seq)
+        self._sampled_sends.clear()
+        self._sampled_order.clear()
+        self._sampled_seen.clear()
+        self._wire_send_count = 0
+        self._last_summary_wire_count = 0
+        self._last_summary_sent_count = 0
+        self._last_summary_matched_count = 0
+        self._start_s = now_s
+        self._last_summary_s = now_s
+        self.get_logger().info(
+            'startup grace ended after %.3fs; link-health counters start at '
+            'seq=%d'
+            % (self._startup_grace_s, self._wire_seq))
+
+    def _within_startup_grace(self, now_s: float) -> bool:
+        """Return True while startup commands should be ignored by diagnostics."""
+        if not self._startup_grace_active:
+            return False
+        if now_s - self._start_s >= self._startup_grace_s:
+            self._finish_startup_grace(now_s)
+            return False
+        return True
 
     # ----- event surfacing ---------------------------------------------------
     def _emit(self, events) -> None:
@@ -326,7 +371,12 @@ class ExoCmdNode(Node):
         # seconds form passed to on_send is derived from it so RTT pairs cleanly.
         now_ns = self._now_ns()
         now_s = now_ns / 1e9
-        if self._tracking_mode == 'sampled':
+        if self._within_startup_grace(now_s):
+            seq = self._wire_seq
+            self._wire_seq = (self._wire_seq + 1) % (2 ** 32)
+            self._startup_grace_seqs.add(seq)
+            events = []
+        elif self._tracking_mode == 'sampled':
             seq = self._wire_seq
             self._wire_seq = (self._wire_seq + 1) % (2 ** 32)
             self._remember_sampled_send(seq, now_s)
@@ -366,14 +416,19 @@ class ExoCmdNode(Node):
                     'crc_mismatch_count=%d)'
                     % (msg.header.seq, msg.header.crc, expected,
                        self._tracker.crc_mismatch_count))
+        now = self._now()
+        if msg.header.seq in self._startup_grace_seqs:
+            self._startup_grace_seqs.discard(msg.header.seq)
+            return
+        if self._within_startup_grace(now):
+            return
         if self._tracking_mode == 'sampled':
-            events = self._on_sampled_status(msg)
+            events = self._on_sampled_status(msg, now)
         else:
-            events = self._tracker.on_echo(msg.header.seq, self._now())
+            events = self._tracker.on_echo(msg.header.seq, now)
         self._emit(events)
 
-    def _on_sampled_status(self, msg: ExoStatus):
-        now = self._now()
+    def _on_sampled_status(self, msg: ExoStatus, now: float):
         seq = msg.header.seq
         t_send = self._sampled_sends.get(seq)
         if t_send is None:

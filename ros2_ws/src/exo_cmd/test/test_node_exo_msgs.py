@@ -349,3 +349,41 @@ def test_sampled_tracking_only_tracks_every_nth_command():
         assert c['lost'] == 0
         assert c['inflight'] == 0
         assert node._tracker.reconciles()
+
+
+def test_startup_grace_ignores_warmup_seq_counters():
+    """Startup grace publishes warmup commands without polluting LinkHealth."""
+    sent_cmds = []
+    with make_node(startup_grace_s=0.5, link_health_period_s=0.0,
+                   summary_period_s=0.0) as node:
+        node._pub.publish = sent_cmds.append
+
+        node._on_timer()
+        assert sent_cmds[-1].header.seq == 0
+        assert node._tracker.counters()['sent'] == 0
+
+        # Force the next timer call past grace. It resets LinkHealth to start at
+        # the current wire seq, then tracks seq=1 as the first steady-state send.
+        node._start_s -= 1.0
+        node._on_timer()
+        assert sent_cmds[-1].header.seq == 1
+        c = node._tracker.counters()
+        assert c['sent'] == 1
+        assert c['inflight'] == 1
+
+        # A late echo from the grace window is discarded, not reported as a
+        # duplicate/unmatched event and not counted as a match.
+        node._on_status(make_status(seq=0, payload=0))
+        c = node._tracker.counters()
+        assert c['matched'] == 0
+        assert c['duplicate'] == 0
+        assert c['lost'] == 0
+
+        node._on_status(make_status(seq=1, payload=1))
+        c = node._tracker.counters()
+        assert c['sent'] == 1
+        assert c['matched'] == 1
+        assert c['lost'] == 0
+        assert c['duplicate'] == 0
+        assert c['inflight'] == 0
+        assert node._tracker.reconciles()
