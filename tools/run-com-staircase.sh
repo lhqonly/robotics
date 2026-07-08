@@ -41,6 +41,74 @@ record() {
   printf '%s\n' "$*" | tee -a "$SUMMARY"
 }
 
+extract_com_perf_metric() {
+  local log="$1"
+  local key="$2"
+  grep -F "[com-perf] $key=" "$log" 2>/dev/null |
+    tail -1 |
+    sed -E "s/^.*\\[com-perf\\] $key=//"
+}
+
+extract_summary_counter() {
+  local line="$1"
+  local key="$2"
+  printf '%s\n' "$line" |
+    grep -o "${key}=[0-9]*" |
+    tail -1 |
+    cut -d= -f2
+}
+
+value_or_na() {
+  local value="$1"
+  if [ -n "$value" ]; then
+    printf '%s' "$value"
+  else
+    printf 'NA'
+  fi
+}
+
+record_stage_metrics() {
+  local tag="$1"
+  local stage_log="$2"
+  local status_hz sampler_hz sampler_target_rx_hz
+  local sampler_max_gap_s sampler_p95_gap_s sampler_p99_gap_s
+  local sampler_seq_rate_hz sampler_seq_delta_avg
+  local sampler_seq_delta_min sampler_seq_delta_max
+  local pc_target_rate_hz pc_target_window_hz last_summary
+  local lost duplicate inflight
+
+  if [ ! -f "$stage_log" ]; then
+    record "METRICS $tag missing_log=$stage_log"
+    return
+  fi
+
+  status_hz="$(extract_com_perf_metric "$stage_log" status_hz)"
+  sampler_hz="$(extract_com_perf_metric "$stage_log" sampler_hz)"
+  sampler_target_rx_hz="$(
+    extract_com_perf_metric "$stage_log" sampler_target_rx_hz)"
+  sampler_max_gap_s="$(extract_com_perf_metric "$stage_log" sampler_max_gap_s)"
+  sampler_p95_gap_s="$(extract_com_perf_metric "$stage_log" sampler_p95_gap_s)"
+  sampler_p99_gap_s="$(extract_com_perf_metric "$stage_log" sampler_p99_gap_s)"
+  sampler_seq_rate_hz="$(
+    extract_com_perf_metric "$stage_log" sampler_seq_rate_hz)"
+  sampler_seq_delta_avg="$(
+    extract_com_perf_metric "$stage_log" sampler_seq_delta_avg)"
+  sampler_seq_delta_min="$(
+    extract_com_perf_metric "$stage_log" sampler_seq_delta_min)"
+  sampler_seq_delta_max="$(
+    extract_com_perf_metric "$stage_log" sampler_seq_delta_max)"
+  pc_target_rate_hz="$(extract_com_perf_metric "$stage_log" pc_target_rate_hz)"
+  pc_target_window_hz="$(
+    extract_com_perf_metric "$stage_log" pc_target_window_hz)"
+  last_summary="$(grep -F '[com-perf] last_summary=' "$stage_log" |
+    tail -1 || true)"
+  lost="$(extract_summary_counter "$last_summary" lost)"
+  duplicate="$(extract_summary_counter "$last_summary" duplicate)"
+  inflight="$(extract_summary_counter "$last_summary" inflight)"
+
+  record "METRICS $tag status_hz=$(value_or_na "$status_hz") sampler_hz=$(value_or_na "$sampler_hz") sampler_target_rx_hz=$(value_or_na "$sampler_target_rx_hz") sampler_p95_gap_s=$(value_or_na "$sampler_p95_gap_s") sampler_p99_gap_s=$(value_or_na "$sampler_p99_gap_s") sampler_max_gap_s=$(value_or_na "$sampler_max_gap_s") sampler_seq_rate_hz=$(value_or_na "$sampler_seq_rate_hz") seq_delta_avg=$(value_or_na "$sampler_seq_delta_avg") seq_delta_min=$(value_or_na "$sampler_seq_delta_min") seq_delta_max=$(value_or_na "$sampler_seq_delta_max") pc_target_rate_hz=$(value_or_na "$pc_target_rate_hz") pc_target_window_hz=$(value_or_na "$pc_target_window_hz") lost=$(value_or_na "$lost") duplicate=$(value_or_na "$duplicate") inflight=$(value_or_na "$inflight")"
+}
+
 check_stlink_ready() {
   local out
   if [ "$DRY_RUN" = "1" ]; then
@@ -86,6 +154,7 @@ run_stage() {
     2>&1 | tee "$stage_log"
   status=${PIPESTATUS[0]}
   set -e
+  record_stage_metrics "$tag" "$stage_log"
 
   if [ "$status" -eq 0 ]; then
     record "OK $tag log=$stage_log"
