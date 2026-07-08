@@ -179,6 +179,26 @@ wire_metrics=""
 if [ -f "$latest_wire" ]; then
   wire_metrics="$(grep '^METRICS ' "$latest_wire" | tail -1 || true)"
 fi
+wire_budget_source="$latest_wire"
+if [ -z "$wire_budget_source" ]; then
+  wire_budget_source="$latest_any_wire"
+fi
+wire_budget_921600=""
+wire_budget_2000000=""
+if [ -n "$wire_budget_source" ] && [ -f "$wire_budget_source" ] &&
+    [ -x "$ROOT/tools/com-wire-budget.py" ]; then
+  wire_budget_source_rel="${wire_budget_source#$ROOT/}"
+  wire_budget_921600="$(cd "$ROOT" && tools/com-wire-budget.py \
+    --wire-log "$wire_budget_source_rel" \
+    --cmd-hz 200 \
+    --status-every-n 40 \
+    --baud 921600 2>/dev/null || true)"
+  wire_budget_2000000="$(cd "$ROOT" && tools/com-wire-budget.py \
+    --wire-log "$wire_budget_source_rel" \
+    --cmd-hz 200 \
+    --status-every-n 40 \
+    --baud 2000000 2>/dev/null || true)"
+fi
 
 recovery_sampler="$COM_LOGDIR/noflash_recovery_20hz_after_200hz.sampler.log"
 recovery_hz="$COM_LOGDIR/noflash_recovery_20hz_after_200hz.hz.log"
@@ -267,6 +287,23 @@ serial_users="$(serial_lsof)"
   echo "- LinkHealth：${link_summary:-unknown}"
   echo "- same-tag wire：${wire_metrics:-unknown}"
   echo
+  echo "## 线速预算外推"
+  echo
+  echo "来源：$(relpath "$wire_budget_source")"
+  echo
+  if [ -n "$wire_budget_921600" ]; then
+    printf '%s\n' "$wire_budget_921600"
+    echo
+  else
+    echo "- missing wire budget: no usable .wire.log"
+    echo
+  fi
+  if [ -n "$wire_budget_2000000" ]; then
+    echo "### 2Mbps 对照"
+    echo
+    printf '%s\n' "$wire_budget_2000000"
+    echo
+  fi
   echo "## overnight no-flash 趋势"
   echo
   echo "来源：$(relpath "$latest_watch_summary")"
