@@ -179,6 +179,14 @@ ros2 launch com_bringup pc_cmd.launch.py \
 tools/measure-control-loop.sh 5 firmware/f103-microros/build/f103-microros.elf
 ```
 
+也可以读取 FreeRTOS 静态栈高水位，辅助判断 RAM 优化是否安全：
+
+```bash
+tools/measure-stack-hwm.sh firmware/f103-microros/build/f103-microros.elf
+```
+
+这个脚本通过 GDB 读 RAM，会短暂停核；不要和 `ros2 topic hz` 这类实时测量同时跑。
+
 终端 3：查看通信结果。
 
 ```bash

@@ -432,11 +432,10 @@ static void LedTask(void *arg)
  *   起测,现已基于 gdb 栈水位和硬件验收收敛到 1024 words。
  * 控制任务栈:128 words(=512B),<=1kHz latest-target 消费骨架。
  * LED 任务栈:64 words(=256B),只翻 GPIO + delay,够用。 */
-#define MICROROS_TASK_STACK_WORDS  1024u   /* 4KB。gdb 实测 rcl_init+create_session 全程栈最深仅用 ~235 words
-                                            * (早期 2048-word 栈 HWM 余 1813),4KB 仍保留约 3KB 栈余量;
-                                            * 省下 2KB SRAM 给 newlib heap / micro-ROS 运行余量。
-                                            * (注:建链 hang 与栈无关,真因是 best_effort 流配置见 colcon.meta;
-                                            *  此前 10KB→6KB 的栈调整是误判方向,栈从来不是瓶颈。) */
+#define MICROROS_TASK_STACK_WORDS  768u    /* 3KB。2026-07-08 真机 HWM:
+                                            * total=1024 words, used≈484, free≈540。
+                                            * 降到 768 后仍按该样本保留约 284 words(>1KB)
+                                            * 余量,同时省 1KB SRAM。 */
 #define CONTROL_TASK_STACK_WORDS   128u    /* = 512B,1kHz local control baseline */
 #define LED_TASK_STACK_WORDS       64u     /* = 256B */
 
