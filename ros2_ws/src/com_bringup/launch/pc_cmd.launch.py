@@ -24,6 +24,7 @@ from launch_ros.parameter_descriptions import ParameterValue
 def generate_launch_description():
     log_level = LaunchConfiguration('log_level')
     cmd_rate_hz = LaunchConfiguration('cmd_rate_hz')
+    cmd_catchup_max = LaunchConfiguration('cmd_catchup_max')
     qos_depth = LaunchConfiguration('qos_depth')
     qos_reliability = LaunchConfiguration('qos_reliability')
     tracking_mode = LaunchConfiguration('tracking_mode')
@@ -47,6 +48,10 @@ def generate_launch_description():
             'cmd_rate_hz',
             default_value='20.0',
             description='PC command publish rate in Hz.'),
+        DeclareLaunchArgument(
+            'cmd_catchup_max',
+            default_value='0',
+            description='Max extra commands to publish when the timer is late.'),
         DeclareLaunchArgument(
             'qos_depth',
             default_value='2',
@@ -109,6 +114,8 @@ def generate_launch_description():
             output='screen',
             parameters=[{
                 'cmd_rate_hz': ParameterValue(cmd_rate_hz, value_type=float),
+                'cmd_catchup_max': ParameterValue(
+                    cmd_catchup_max, value_type=int),
                 'qos_depth': ParameterValue(qos_depth, value_type=int),
                 'qos_reliability': qos_reliability,
                 'tracking_mode': tracking_mode,

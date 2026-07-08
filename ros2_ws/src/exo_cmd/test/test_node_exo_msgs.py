@@ -387,3 +387,19 @@ def test_startup_grace_ignores_warmup_seq_counters():
         assert c['duplicate'] == 0
         assert c['inflight'] == 0
         assert node._tracker.reconciles()
+
+
+def test_cmd_catchup_publishes_one_extra_when_late():
+    """cmd_catchup_max=1 publishes at most two commands for a late timer."""
+    sent_cmds = []
+    with make_node(cmd_catchup_max=1, link_health_period_s=0.0,
+                   summary_period_s=0.0) as node:
+        node._pub.publish = sent_cmds.append
+        node._next_cmd_due_s = node._now() - node._heartbeat_period_s * 1.1
+
+        node._on_timer()
+
+        assert [m.header.seq for m in sent_cmds] == [0, 1]
+        assert node._wire_send_count == 2
+        assert node._tracker.counters()['sent'] == 2
+        assert node._tracker.counters()['inflight'] == 2

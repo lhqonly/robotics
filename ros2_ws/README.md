@@ -119,7 +119,7 @@ ros2 launch com_bringup pc_cmd.launch.py cmd_rate_hz:=200 qos_depth:=1
 ```bash
 # PC 侧
 ros2 launch com_bringup pc_cmd.launch.py \
-  cmd_rate_hz:=200 qos_depth:=1 qos_reliability:=best_effort
+  cmd_rate_hz:=200 cmd_catchup_max:=1 qos_depth:=1 qos_reliability:=best_effort
 
 # 固件侧重新 configure/build 时使用
 cmake -S firmware/f103-microros -B firmware/f103-microros/build \
@@ -182,6 +182,7 @@ ros2 launch com_bringup pc_cmd.launch.py \
 
 ```bash
 CMD_RATE_HZ=200 \
+CMD_CATCHUP_MAX=1 \
 QOS_RELIABILITY=best_effort \
 QOS_DEPTH=1 \
 TRACKING_MODE=sampled \

@@ -105,6 +105,12 @@ class ExoCmdNode(Node):
         # Command publish rate. Default keeps the historical self-test behavior;
         # pc_cmd.launch.py overrides this for the real-hardware baseline.
         self.declare_parameter('cmd_rate_hz', 10.0)
+        # Optional phase catch-up for high-rate latest-target runs. If a timer
+        # callback arrives late, publish up to N extra commands in the same
+        # callback to keep the long-term wire rate near cmd_rate_hz. Default off:
+        # strict full-echo diagnostics should not hide scheduler stalls with
+        # bursts.
+        self.declare_parameter('cmd_catchup_max', 0)
         # Keep-last depth. Default remains 10 for compatibility; high-rate
         # control runs can use depth=1 to avoid stale command queueing.
         self.declare_parameter('qos_depth', 10)
@@ -136,6 +142,8 @@ class ExoCmdNode(Node):
         self.executor_threads = self.get_parameter('executor_threads').value
         start_value = self.get_parameter('start_value').value
         cmd_rate_hz = float(self.get_parameter('cmd_rate_hz').value)
+        self._cmd_catchup_max = int(
+            self.get_parameter('cmd_catchup_max').value)
         qos_depth = int(self.get_parameter('qos_depth').value)
         qos_reliability = self.get_parameter('qos_reliability').value
         self._tracking_mode = (
@@ -155,6 +163,8 @@ class ExoCmdNode(Node):
             raise ValueError('status_every_n must be >= 1')
         if self._sample_window < 1:
             raise ValueError('sample_window must be >= 1')
+        if self._cmd_catchup_max < 0:
+            raise ValueError('cmd_catchup_max must be >= 0')
 
         self._heartbeat_period_s = 1.0 / cmd_rate_hz
         try:
@@ -185,6 +195,7 @@ class ExoCmdNode(Node):
         }
         self._tracker = self._new_tracker(start_seq)
         self._start_s = self._now()
+        self._next_cmd_due_s = self._start_s + self._heartbeat_period_s
         self._wire_seq = start_seq
         self._wire_send_count = 0
         self._last_summary_s = self._start_s
@@ -241,10 +252,10 @@ class ExoCmdNode(Node):
         self.get_logger().info(
             'executor_threads=%d (0 = auto / os.cpu_count()), '
             'qos_depth=%d qos_reliability=%s tracking_mode=%s '
-            'status_every_n=%d sample_window=%d'
+            'status_every_n=%d sample_window=%d cmd_catchup_max=%d'
             % (self.executor_threads, qos_depth, qos_reliability,
                self._tracking_mode, self._status_every_n,
-               self._sample_window))
+               self._sample_window, self._cmd_catchup_max))
         self.get_logger().info(
             'crc_enabled=%s (application self-check, non-blocking; §7.9), '
             'link_health %s @ %.2f Hz, log_matched_events=%s '
@@ -312,6 +323,7 @@ class ExoCmdNode(Node):
         self._last_summary_matched_count = 0
         self._start_s = now_s
         self._last_summary_s = now_s
+        self._next_cmd_due_s = now_s + self._heartbeat_period_s
         self.get_logger().info(
             'startup grace ended after %.3fs; link-health counters start at '
             'seq=%d'
@@ -364,8 +376,24 @@ class ExoCmdNode(Node):
             self._sampled_sends.pop(old, None)
             self._sampled_seen.discard(old)
 
+    def _due_command_count(self, now_s: float) -> int:
+        """Return how many commands to publish on this timer callback."""
+        if self._cmd_catchup_max == 0:
+            return 1
+        if now_s < self._next_cmd_due_s:
+            return 1
+        periods_due = int(
+            (now_s - self._next_cmd_due_s) / self._heartbeat_period_s) + 1
+        return max(1, min(periods_due, self._cmd_catchup_max + 1))
+
     # ----- timers / callbacks ------------------------------------------------
     def _on_timer(self):
+        count = self._due_command_count(self._now())
+        for _ in range(count):
+            self._publish_command()
+        self._next_cmd_due_s += count * self._heartbeat_period_s
+
+    def _publish_command(self):
         # §7.1: the SAME monotonic instant feeds the tracker (seconds) and the
         # wire stamp (nanoseconds). monotonic_ns() is the single source; the
         # seconds form passed to on_send is derived from it so RTT pairs cleanly.

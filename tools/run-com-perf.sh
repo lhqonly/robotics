@@ -20,6 +20,7 @@ LOGDIR="${LOGDIR:-$ROOT/log/com-perf}"
 DEV="${DEV:-/dev/ttyUSB0}"
 BAUD="${BAUD:-921600}"
 CMD_RATE_HZ="${CMD_RATE_HZ:-20}"
+CMD_CATCHUP_MAX="${CMD_CATCHUP_MAX:-0}"
 QOS_DEPTH="${QOS_DEPTH:-2}"
 QOS_RELIABILITY="${QOS_RELIABILITY:-reliable}"
 TRACKING_MODE="${TRACKING_MODE:-echo}"
@@ -74,7 +75,7 @@ fi
 
 echo "[com-perf] tag=$TAG"
 echo "[com-perf] firmware: qos_best_effort=$EXO_QOS_BEST_EFFORT baud=$BAUD control_loop_hz=$CONTROL_LOOP_HZ status_every_n=$STATUS_EVERY_N"
-echo "[com-perf] pc: cmd_rate_hz=$CMD_RATE_HZ qos_depth=$QOS_DEPTH qos_reliability=$QOS_RELIABILITY tracking_mode=$TRACKING_MODE rtt_warn_ms=$RTT_WARN_MS rtt_deadline_ms=$RTT_DEADLINE_MS sweep_period_s=$SWEEP_PERIOD_S summary_period_s=$SUMMARY_PERIOD_S startup_grace_s=$STARTUP_GRACE_S executor_threads=$EXECUTOR_THREADS log_matched_events=$LOG_MATCHED_EVENTS rtt_warn_log_period_s=$RTT_WARN_LOG_PERIOD_S"
+echo "[com-perf] pc: cmd_rate_hz=$CMD_RATE_HZ cmd_catchup_max=$CMD_CATCHUP_MAX qos_depth=$QOS_DEPTH qos_reliability=$QOS_RELIABILITY tracking_mode=$TRACKING_MODE rtt_warn_ms=$RTT_WARN_MS rtt_deadline_ms=$RTT_DEADLINE_MS sweep_period_s=$SWEEP_PERIOD_S summary_period_s=$SUMMARY_PERIOD_S startup_grace_s=$STARTUP_GRACE_S executor_threads=$EXECUTOR_THREADS log_matched_events=$LOG_MATCHED_EVENTS rtt_warn_log_period_s=$RTT_WARN_LOG_PERIOD_S"
 echo "[com-perf] logs: $LOGDIR/$TAG.*.log"
 
 flash_firmware() {
@@ -136,6 +137,7 @@ graph_snapshot "after_bridge"
 
 setsid ros2 launch com_bringup pc_cmd.launch.py \
   cmd_rate_hz:="$CMD_RATE_HZ" \
+  cmd_catchup_max:="$CMD_CATCHUP_MAX" \
   qos_depth:="$QOS_DEPTH" \
   qos_reliability:="$QOS_RELIABILITY" \
   tracking_mode:="$TRACKING_MODE" \
