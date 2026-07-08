@@ -320,6 +320,15 @@ tools/firmware-stack-sweep.sh current_stack
 输出 `log/firmware-stack-sweep/current_stack.md` 和 `.csv`。这只是静态编译
 候选，不能替代上板后的 `tools/measure-stack-hwm.sh` 水位复测。
 
+固件 DWT timestamp 的双缓冲快照算法可以在 PC 上跑模型测试，不需要连接硬件：
+
+```bash
+tools/test-dwt-snapshot-model.sh
+```
+
+它覆盖 32-bit CYCCNT 回绕、>60s 静默恢复、writer 半更新期间的 reader 抢占和
+generation 变化重读。真实 stamp 单调性仍要等 SWD 恢复后上板跑 >60s 静默恢复对抗。
+
 要估算 micro-ROS Agent debug log 里的串口字节率和波特率占用，需要 bridge 用
 `-v6` 生成 `SerialAgentLinux.cpp send_message/recv_message` 行：
 
