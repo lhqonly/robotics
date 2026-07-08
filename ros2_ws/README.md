@@ -272,6 +272,17 @@ tools/run-pc-scheduler-sweep.sh pc_sched_$(date +%Y%m%d_%H%M)
 结果会写到 `log/pc-scheduler-sweep/<tag>.metrics.md/.csv`，原始通信日志仍在
 `log/com-perf/`。
 
+如果要比较更具体的调度策略，可以用多行 `PC_SCHEDULER_CASES`。每行格式为
+`label|launch_prefix`，空 prefix 用 `label|`：
+
+```bash
+PC_SCHEDULER_CASES=$'default|\ntaskset_cpu2|taskset -c 2\nbatch|chrt -b 0' \
+RUNS=2 tools/run-pc-scheduler-sweep.sh pc_sched_custom_$(date +%Y%m%d_%H%M)
+```
+
+`chrt -b 0` 通常不需要额外权限；`chrt -f/-r` 这类实时调度通常需要 root 或
+`CAP_SYS_NICE`，建议只在明确授权的测试机上使用。
+
 要按阶梯一次跑完整验证矩阵，用：
 
 ```bash

@@ -110,8 +110,24 @@ record "logdir=$LOGDIR com_perf_logdir=$COM_PERF_LOGDIR"
 : >"$LOGDIR/$TAG_PREFIX.tags"
 
 failures=0
-while IFS='|' read -r label prefix; do
-  [ -n "$label" ] || continue
+while IFS= read -r case_line; do
+  [ -n "$case_line" ] || continue
+  case "$case_line" in
+    \#*) continue ;;
+    *'|'*) ;;
+    *)
+      record "FAIL invalid_case='$case_line' expected='label|prefix'"
+      failures=$((failures + 1))
+      continue
+      ;;
+  esac
+  label="${case_line%%|*}"
+  prefix="${case_line#*|}"
+  if [ -z "$label" ]; then
+    record "FAIL invalid_case='$case_line' reason=empty_label"
+    failures=$((failures + 1))
+    continue
+  fi
   for run_index in $(seq 1 "$RUNS"); do
     run_case "$label" "$prefix" "$run_index" || failures=$((failures + 1))
   done
