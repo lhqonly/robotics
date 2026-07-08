@@ -14,6 +14,9 @@ LINKER_RESERVE_LOGDIR="$ROOT/log/firmware-linker-reserve-sweep"
 WATCH_LOGDIR="$ROOT/log/overnight-com-watch"
 SCHED_LOGDIR="$ROOT/log/pc-scheduler-sweep"
 FIRMWARE_ELF="$ROOT/firmware/f103-microros/build/f103-microros.elf"
+MICROROS_META="$ROOT/firmware/f103-microros/colcon.meta"
+MICROROS_UXR_CONFIG="$ROOT/firmware/f103-microros/ThirdParty/microros/include/uxr/client/config.h"
+MICROROS_RMW_CONFIG="$ROOT/firmware/f103-microros/ThirdParty/microros/include/rmw_microxrcedds_c/config.h"
 
 mkdir -p "$OUTDIR"
 
@@ -123,6 +126,52 @@ firmware_ram_category_symbols() {
     '
 }
 
+cmake_arg_value() {
+  local file="$1"
+  local key="$2"
+  if [ ! -f "$file" ]; then
+    return 0
+  fi
+  grep -F -- "-D$key=" "$file" |
+    head -1 |
+    sed -E "s/.*-D${key}=([^\" ]+).*/\\1/"
+}
+
+define_value() {
+  local file="$1"
+  local key="$2"
+  if [ ! -f "$file" ]; then
+    return 0
+  fi
+  awk -v key="$key" '$1 == "#define" && $2 == key && $3 != "" {value = $3} END {print value}' "$file"
+}
+
+microros_config_summary() {
+  local single_ts out_be out_rel in_be in_rel mtu history creation gen_mtu gen_hist_in gen_hist_out
+  single_ts="$(cmake_arg_value "$MICROROS_META" ROSIDL_TYPESUPPORT_SINGLE_TYPESUPPORT)"
+  out_be="$(cmake_arg_value "$MICROROS_META" UCLIENT_MAX_OUTPUT_BEST_EFFORT_STREAMS)"
+  out_rel="$(cmake_arg_value "$MICROROS_META" UCLIENT_MAX_OUTPUT_RELIABLE_STREAMS)"
+  in_be="$(cmake_arg_value "$MICROROS_META" UCLIENT_MAX_INPUT_BEST_EFFORT_STREAMS)"
+  in_rel="$(cmake_arg_value "$MICROROS_META" UCLIENT_MAX_INPUT_RELIABLE_STREAMS)"
+  mtu="$(cmake_arg_value "$MICROROS_META" UCLIENT_CUSTOM_TRANSPORT_MTU)"
+  history="$(cmake_arg_value "$MICROROS_META" RMW_UXRCE_STREAM_HISTORY)"
+  creation="$(cmake_arg_value "$MICROROS_META" RMW_UXRCE_CREATION_MODE)"
+  gen_mtu="$(define_value "$MICROROS_UXR_CONFIG" UXR_CONFIG_CUSTOM_TRANSPORT_MTU)"
+  gen_hist_in="$(define_value "$MICROROS_RMW_CONFIG" RMW_UXRCE_STREAM_HISTORY_INPUT)"
+  gen_hist_out="$(define_value "$MICROROS_RMW_CONFIG" RMW_UXRCE_STREAM_HISTORY_OUTPUT)"
+
+  cat <<EOF
+meta_single_typesupport=${single_ts:-unknown}
+meta_best_effort_streams=out:${out_be:-unknown}/in:${in_be:-unknown}
+meta_reliable_streams=out:${out_rel:-unknown}/in:${in_rel:-unknown}
+meta_custom_transport_mtu=${mtu:-unknown}
+meta_stream_history=${history:-unknown}
+meta_creation_mode=${creation:-unknown}
+generated_custom_transport_mtu=${gen_mtu:-unknown}
+generated_stream_history=in:${gen_hist_in:-unknown}/out:${gen_hist_out:-unknown}
+EOF
+}
+
 probe_stlink() {
   if ! command -v st-info >/dev/null; then
     echo "status=unknown reason=st-info-not-found"
@@ -211,6 +260,7 @@ latest_watch_summary="$(latest_file "$WATCH_LOGDIR" '*.summary.md')"
 latest_scheduler_metrics="$(latest_file "$SCHED_LOGDIR" '*.metrics.md')"
 ram_categories="$(firmware_ram_categories)"
 ram_category_symbols="$(firmware_ram_category_symbols)"
+microros_config="$(microros_config_summary)"
 latest_is_scheduler_experiment=0
 case "${latest_tag:-}" in
   scheduler_*|pc_sched_*|latest_gate_*)
@@ -449,6 +499,16 @@ serial_users="$(serial_lsof)"
   echo '```markdown'
   first_table_rows "$latest_size_md" 12
   echo '```'
+  echo
+  echo "## micro-ROS 配置快照"
+  echo
+  echo "来源：$(relpath "$MICROROS_META")"
+  echo
+  echo '```text'
+  printf '%s\n' "$microros_config"
+  echo '```'
+  echo
+  echo "说明：这些值影响通信效率和 SRAM。当前默认保留 best-effort stream、\`STREAM_HISTORY=2\`、\`CREATION_MODE=bin\`，是为了支持 200Hz latest-target profile 和 vanilla agent 建链；进一步压缩需重建 libmicroros 并重跑兼容性验证。"
   echo
   echo "### 当前 ELF RAM 分类"
   echo
