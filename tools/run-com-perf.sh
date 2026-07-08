@@ -41,9 +41,11 @@ HZ_SECONDS="${HZ_SECONDS:-10}"
 SAMPLER_SPIN_TIMEOUT_S="${SAMPLER_SPIN_TIMEOUT_S:-0.005}"
 BUILD_FIRMWARE="${BUILD_FIRMWARE:-1}"
 FLASH_FIRMWARE="${FLASH_FIRMWARE:-1}"
+RESET_TARGET="${RESET_TARGET:-$FLASH_FIRMWARE}"
 KEEP_BRIDGE="${KEEP_BRIDGE:-0}"
 MICROROS_AGENT_VERBOSITY="${MICROROS_AGENT_VERBOSITY:-1}"
 FLASH_TIMEOUT_SECONDS="${FLASH_TIMEOUT_SECONDS:-90}"
+RESET_TIMEOUT_SECONDS="${RESET_TIMEOUT_SECONDS:-15}"
 STLINK_PREFLIGHT="${STLINK_PREFLIGHT:-1}"
 
 case "$QOS_RELIABILITY" in
@@ -104,7 +106,7 @@ echo "[com-perf] tag=$TAG"
 echo "[com-perf] firmware: qos_best_effort=$EXO_QOS_BEST_EFFORT baud=$BAUD control_loop_hz=$CONTROL_LOOP_HZ status_every_n=$STATUS_EVERY_N"
 echo "[com-perf] pc: cmd_rate_hz=$CMD_RATE_HZ cmd_catchup_max=$CMD_CATCHUP_MAX qos_depth=$QOS_DEPTH qos_reliability=$QOS_RELIABILITY tracking_mode=$TRACKING_MODE rtt_warn_ms=$RTT_WARN_MS rtt_deadline_ms=$RTT_DEADLINE_MS sweep_period_s=$SWEEP_PERIOD_S summary_period_s=$SUMMARY_PERIOD_S startup_grace_s=$STARTUP_GRACE_S executor_threads=$EXECUTOR_THREADS log_matched_events=$LOG_MATCHED_EVENTS rtt_warn_log_period_s=$RTT_WARN_LOG_PERIOD_S"
 echo "[com-perf] sampler: spin_timeout_s=$SAMPLER_SPIN_TIMEOUT_S"
-echo "[com-perf] flash: flash_firmware=$FLASH_FIRMWARE stlink_preflight=$STLINK_PREFLIGHT flash_timeout_s=$FLASH_TIMEOUT_SECONDS"
+echo "[com-perf] flash: flash_firmware=$FLASH_FIRMWARE reset_target=$RESET_TARGET stlink_preflight=$STLINK_PREFLIGHT flash_timeout_s=$FLASH_TIMEOUT_SECONDS reset_timeout_s=$RESET_TIMEOUT_SECONDS"
 echo "[com-perf] logs: $LOGDIR/$TAG.*.log"
 
 flash_firmware() {
@@ -158,9 +160,19 @@ cleanup() {
 trap cleanup EXIT
 
 sleep 4
-openocd -f interface/stlink.cfg -f target/stm32f1x.cfg \
-  -c 'init; reset run; shutdown' >"$OPENOCD_LOG" 2>&1 || true
-sleep 5
+if [ "$RESET_TARGET" = "1" ]; then
+  if [ "$STLINK_PREFLIGHT" = "1" ]; then
+    check_stlink_ready
+  fi
+  timeout "$RESET_TIMEOUT_SECONDS" openocd \
+    -f interface/stlink.cfg -f target/stm32f1x.cfg \
+    -c 'init; reset run; shutdown' >"$OPENOCD_LOG" 2>&1 || {
+      echo "[com-perf] WARN: OpenOCD reset failed or timed out; continuing" >&2
+    }
+  sleep 5
+else
+  echo "[com-perf] reset: skipped reset_target=$RESET_TARGET"
+fi
 
 set +u
 source /opt/ros/jazzy/setup.bash

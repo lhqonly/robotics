@@ -195,6 +195,14 @@ tools/run-com-perf.sh n40_200hz
 ```
 
 脚本默认跑完会停止本次 bridge；如果希望保留 bridge，追加 `KEEP_BRIDGE=1`。
+如果当前固件已在板上，只想复测 PC/ROS 串口通信而不碰 ST-LINK/SWD，可以用：
+
+```bash
+BUILD_FIRMWARE=0 FLASH_FIRMWARE=0 tools/run-com-perf.sh no_flash_smoke
+```
+
+`FLASH_FIRMWARE=0` 时脚本默认也会跳过 OpenOCD reset；确实需要只 reset 不重刷时，
+显式追加 `RESET_TARGET=1`。
 
 烧录并启动 bridge 后，可以用 SWD 粗测本地 tick 档位：
 
