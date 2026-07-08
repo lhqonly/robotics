@@ -11,6 +11,9 @@ MD="$OUTDIR/$TAG.md"
 BUILD_ROOT="${BUILD_ROOT:-$SRC/build-size-matrix}"
 TOOLCHAIN_FILE="${TOOLCHAIN_FILE:-$SRC/toolchain-arm-m3.cmake}"
 JOBS="${JOBS:-}"
+SRAM_BYTES="${SRAM_BYTES:-20480}"
+FLASH_BYTES="${FLASH_BYTES:-131072}"
+RAM_STATIC_WARN_BYTES="${RAM_STATIC_WARN_BYTES:-18432}"
 
 mkdir -p "$OUTDIR" "$BUILD_ROOT"
 
@@ -21,12 +24,38 @@ fi
 
 write_headers() {
   cat >"$CSV" <<'EOF'
-profile,control_loop_hz,qos,status_every_n,flash_bytes,ram_static_bytes,data_bytes,bss_bytes,microros_stack_bytes,control_stack_bytes,led_stack_bytes,idle_stack_bytes
+profile,verdict,reason,control_loop_hz,qos,status_every_n,flash_bytes,flash_margin_bytes,ram_static_bytes,ram_static_margin_bytes,data_bytes,bss_bytes,microros_stack_bytes,control_stack_bytes,led_stack_bytes,idle_stack_bytes
 EOF
   cat >"$MD" <<'EOF'
-| Profile | loop Hz | QoS | status every | Flash B | static RAM B | data B | bss B | micro-ROS stack B | control stack B | led stack B | idle stack B |
-|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Profile | verdict | reason | loop Hz | QoS | status every | Flash B | Flash margin B | static RAM B | RAM margin B | data B | bss B | micro-ROS stack B | control stack B | led stack B | idle stack B |
+|---|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 EOF
+}
+
+static_budget_verdict() {
+  local flash_bytes="$1"
+  local ram_static_bytes="$2"
+  local verdict="PASS"
+  local reason="-"
+
+  if [ "$flash_bytes" -gt "$FLASH_BYTES" ]; then
+    verdict="FAIL"
+    reason="flash_overflow"
+  fi
+  if [ "$ram_static_bytes" -gt "$SRAM_BYTES" ]; then
+    verdict="FAIL"
+    if [ "$reason" = "-" ]; then
+      reason="sram_overflow"
+    else
+      reason="$reason;sram_overflow"
+    fi
+  elif [ "$ram_static_bytes" -gt "$RAM_STATIC_WARN_BYTES" ] &&
+      [ "$verdict" != "FAIL" ]; then
+    verdict="WARN"
+    reason="static_ram_above_warn"
+  fi
+
+  printf '%s,%s' "$verdict" "$reason"
 }
 
 metric_from_report() {
@@ -81,6 +110,7 @@ run_profile() {
   local build_dir="$BUILD_ROOT/$profile"
   local report="$OUTDIR/$TAG.$profile.report.log"
   local flash_bytes ram_static_bytes data_bytes bss_bytes
+  local flash_margin ram_static_margin verdict_csv verdict reason
   local microros_stack control_stack led_stack idle_stack
 
   case "$qos" in
@@ -118,14 +148,21 @@ run_profile() {
   control_stack="$(stack_bytes_from_report "$report" control_task_stack)"
   led_stack="$(stack_bytes_from_report "$report" led_task_stack)"
   idle_stack="$(stack_bytes_from_report "$report" idle_task_stack)"
+  flash_margin=$((FLASH_BYTES - flash_bytes))
+  ram_static_margin=$((SRAM_BYTES - ram_static_bytes))
+  verdict_csv="$(static_budget_verdict "$flash_bytes" "$ram_static_bytes")"
+  verdict="${verdict_csv%%,*}"
+  reason="${verdict_csv#*,}"
 
-  printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
-    "$profile" "$loop_hz" "$qos" "$status_every" \
-    "$flash_bytes" "$ram_static_bytes" "$data_bytes" "$bss_bytes" \
+  printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
+    "$profile" "$verdict" "$reason" "$loop_hz" "$qos" "$status_every" \
+    "$flash_bytes" "$flash_margin" "$ram_static_bytes" "$ram_static_margin" \
+    "$data_bytes" "$bss_bytes" \
     "$microros_stack" "$control_stack" "$led_stack" "$idle_stack" >>"$CSV"
-  printf '| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n' \
-    "$profile" "$loop_hz" "$qos" "$status_every" \
-    "$flash_bytes" "$ram_static_bytes" "$data_bytes" "$bss_bytes" \
+  printf '| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n' \
+    "$profile" "$verdict" "$reason" "$loop_hz" "$qos" "$status_every" \
+    "$flash_bytes" "$flash_margin" "$ram_static_bytes" "$ram_static_margin" \
+    "$data_bytes" "$bss_bytes" \
     "$microros_stack" "$control_stack" "$led_stack" "$idle_stack" >>"$MD"
 }
 

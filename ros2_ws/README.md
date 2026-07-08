@@ -357,7 +357,8 @@ tools/firmware-size-matrix.sh current
 结果会写到 `log/firmware-size-matrix/current.md` 和
 `log/firmware-size-matrix/current.csv`；中间构建目录在
 `firmware/f103-microros/build-size-matrix/`。这只做编译和 size 统计，
-不会烧录、不会碰 ST-LINK/SWD。
+不会烧录、不会碰 ST-LINK/SWD。表格默认按 F103RB `Flash=131072B`、
+`SRAM=20480B`、`RAM_STATIC_WARN_BYTES=18432B` 输出 `verdict/reason` 和余量。
 
 要比较 micro-ROS 任务栈候选大小的静态 RAM 收益，也不需要连接硬件：
 
@@ -367,7 +368,8 @@ tools/firmware-stack-sweep.sh current_stack
 
 默认会在 10kHz/best-effort/status_every_40 profile 下比较 768/704/640 words，
 输出 `log/firmware-stack-sweep/current_stack.md` 和 `.csv`。这只是静态编译
-候选，不能替代上板后的 `tools/measure-stack-hwm.sh` 水位复测。
+候选，不能替代上板后的 `tools/measure-stack-hwm.sh` 水位复测。表格中的
+`PASS_STATIC` 只表示静态 Flash/RAM 在预算内，仍必须复测运行期栈水位。
 
 固件 DWT timestamp 的双缓冲快照算法可以在 PC 上跑模型测试，不需要连接硬件：
 
