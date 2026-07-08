@@ -44,6 +44,8 @@ FLASH_FIRMWARE="${FLASH_FIRMWARE:-1}"
 RESET_TARGET="${RESET_TARGET:-$FLASH_FIRMWARE}"
 KEEP_BRIDGE="${KEEP_BRIDGE:-0}"
 MICROROS_AGENT_VERBOSITY="${MICROROS_AGENT_VERBOSITY:-1}"
+WIRE_STATS="${WIRE_STATS:-auto}"
+WIRE_STATS_SKIP_SECONDS="${WIRE_STATS_SKIP_SECONDS:-$STARTUP_GRACE_S}"
 FLASH_TIMEOUT_SECONDS="${FLASH_TIMEOUT_SECONDS:-90}"
 RESET_TIMEOUT_SECONDS="${RESET_TIMEOUT_SECONDS:-15}"
 STLINK_PREFLIGHT="${STLINK_PREFLIGHT:-1}"
@@ -63,6 +65,7 @@ BRIDGE_LOG="$LOGDIR/$TAG.bridge.log"
 HZ_LOG="$LOGDIR/$TAG.hz.log"
 SAMPLER_LOG="$LOGDIR/$TAG.sampler.log"
 GRAPH_LOG="$LOGDIR/$TAG.graph.log"
+WIRE_LOG="$LOGDIR/$TAG.wire.log"
 OPENOCD_LOG="$LOGDIR/$TAG.openocd.log"
 
 extract_metric() {
@@ -106,6 +109,7 @@ echo "[com-perf] tag=$TAG"
 echo "[com-perf] firmware: qos_best_effort=$EXO_QOS_BEST_EFFORT baud=$BAUD control_loop_hz=$CONTROL_LOOP_HZ status_every_n=$STATUS_EVERY_N"
 echo "[com-perf] pc: cmd_rate_hz=$CMD_RATE_HZ cmd_catchup_max=$CMD_CATCHUP_MAX qos_depth=$QOS_DEPTH qos_reliability=$QOS_RELIABILITY tracking_mode=$TRACKING_MODE rtt_warn_ms=$RTT_WARN_MS rtt_deadline_ms=$RTT_DEADLINE_MS sweep_period_s=$SWEEP_PERIOD_S summary_period_s=$SUMMARY_PERIOD_S startup_grace_s=$STARTUP_GRACE_S executor_threads=$EXECUTOR_THREADS log_matched_events=$LOG_MATCHED_EVENTS rtt_warn_log_period_s=$RTT_WARN_LOG_PERIOD_S"
 echo "[com-perf] sampler: spin_timeout_s=$SAMPLER_SPIN_TIMEOUT_S"
+echo "[com-perf] wire_stats: mode=$WIRE_STATS skip_s=$WIRE_STATS_SKIP_SECONDS agent_verbosity=$MICROROS_AGENT_VERBOSITY"
 echo "[com-perf] flash: flash_firmware=$FLASH_FIRMWARE reset_target=$RESET_TARGET stlink_preflight=$STLINK_PREFLIGHT flash_timeout_s=$FLASH_TIMEOUT_SECONDS reset_timeout_s=$RESET_TIMEOUT_SECONDS"
 echo "[com-perf] logs: $LOGDIR/$TAG.*.log"
 
@@ -275,6 +279,31 @@ sent_window_hz="$(printf '%s\n' "$summary" | grep -o 'sent_window_hz=[0-9.]*' | 
 matched_window_hz="$(printf '%s\n' "$summary" | grep -o 'matched_window_hz=[0-9.]*' | tail -1 | cut -d= -f2 || true)"
 target_window_hz="$(printf '%s\n' "$summary" | grep -o 'target_window_hz=[0-9.]*' | tail -1 | cut -d= -f2 || true)"
 
+wire_metrics=""
+case "$WIRE_STATS" in
+  1|true|yes)
+    if "$ROOT/tools/agent-wire-stats.sh" "$BRIDGE_LOG" "$WIRE_STATS_SKIP_SECONDS" >"$WIRE_LOG" 2>&1; then
+      wire_metrics="$(grep '^METRICS ' "$WIRE_LOG" | tail -1 || true)"
+    else
+      wire_metrics="unavailable"
+    fi
+    ;;
+  auto)
+    if [ "$MICROROS_AGENT_VERBOSITY" -ge 6 ] 2>/dev/null; then
+      if "$ROOT/tools/agent-wire-stats.sh" "$BRIDGE_LOG" "$WIRE_STATS_SKIP_SECONDS" >"$WIRE_LOG" 2>&1; then
+        wire_metrics="$(grep '^METRICS ' "$WIRE_LOG" | tail -1 || true)"
+      else
+        wire_metrics="unavailable"
+      fi
+    fi
+    ;;
+  0|false|no)
+    ;;
+  *)
+    echo "[com-perf] WARN: unknown WIRE_STATS=$WIRE_STATS; expected auto/1/0" >&2
+    ;;
+esac
+
 echo "[com-perf] graph:"
 cat "$GRAPH_LOG"
 echo "[com-perf] status_hz=${status_hz:-NA}"
@@ -297,6 +326,7 @@ echo "[com-perf] pc_wire_window_hz=${wire_window_hz:-NA}"
 echo "[com-perf] pc_sent_window_hz=${sent_window_hz:-NA}"
 echo "[com-perf] pc_matched_window_hz=${matched_window_hz:-NA}"
 echo "[com-perf] pc_target_window_hz=${target_window_hz:-NA}"
+echo "[com-perf] wire_metrics=${wire_metrics:-NA}"
 echo "[com-perf] last_summary=${summary:-NA}"
 echo "[com-perf] sampler_summary=${sampler_summary:-NA}"
 echo "[com-perf] hz_tail:"

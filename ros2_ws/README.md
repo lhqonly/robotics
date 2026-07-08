@@ -260,6 +260,22 @@ tools/firmware-size-matrix.sh current
 `firmware/f103-microros/build-size-matrix/`。这只做编译和 size 统计，
 不会烧录、不会碰 ST-LINK/SWD。
 
+要估算 micro-ROS Agent debug log 里的串口字节率和波特率占用，需要 bridge 用
+`-v6` 生成 `SerialAgentLinux.cpp send_message/recv_message` 行：
+
+```bash
+MICROROS_AGENT_VERBOSITY=6 \
+BUILD_FIRMWARE=0 FLASH_FIRMWARE=0 \
+tools/run-com-perf.sh wirestats_debug
+
+tools/agent-wire-stats.sh log/com-perf/wirestats_debug.bridge.log
+```
+
+`run-com-perf.sh` 在 `MICROROS_AGENT_VERBOSITY>=6` 时会自动生成
+`log/com-perf/<tag>.wire.log`，并打印一行 `wire_metrics=...`。这个指标只看串口
+帧长和线速占用，用来判断 baudrate/消息瘦身/状态降频是否值得做；链路正确性仍以
+`status_sampler` 和 LinkHealth 为准。
+
 终端 3：查看通信结果。
 
 ```bash
