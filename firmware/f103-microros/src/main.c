@@ -117,6 +117,14 @@ int clock_gettime(clockid_t clk_id, struct timespec *tp)
 #  define EXO_CONTROL_LOOP_HZ 1000u
 #endif
 
+#if EXO_CONTROL_LOOP_HZ < 1u
+#  error "EXO_CONTROL_LOOP_HZ must be >= 1"
+#endif
+
+#if EXO_CONTROL_LOOP_HZ > 1000u && ((1000000u % EXO_CONTROL_LOOP_HZ) != 0u)
+#  error "EXO_CONTROL_LOOP_HZ > 1000 must divide the 1MHz TIM2 control tick"
+#endif
+
 #ifndef EXO_CONTROL_TIMER_IRQ_PRIORITY
 #  define EXO_CONTROL_TIMER_IRQ_PRIORITY 4u
 #endif
