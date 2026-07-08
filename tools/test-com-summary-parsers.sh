@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+# Regression tests for communication summary parsers.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TMPDIR="$(mktemp -d)"
+trap 'rm -rf "$TMPDIR"' EXIT
+
+mkdir -p "$TMPDIR/com-perf"
+
+assert_contains() {
+  local haystack="$1"
+  local needle="$2"
+  local label="$3"
+
+  if ! grep -Fq -- "$needle" <<<"$haystack"; then
+    echo "FAIL: $label" >&2
+    echo "missing: $needle" >&2
+    echo "output:" >&2
+    printf '%s\n' "$haystack" >&2
+    exit 1
+  fi
+}
+
+write_perf_logs() {
+  printf '%s\n' 'average rate: 19.997' >"$TMPDIR/com-perf/sample.hz.log"
+  printf '%s\n' \
+    'status_sampler: rate_hz=20.001 seq_rate_hz=20.001 seq_delta_avg=1 seq_delta_min=1 seq_delta_max=1 p95_gap_s=0.051 p99_gap_s=0.056 max_gap_s=0.061 zero_gap_count=0' \
+    >"$TMPDIR/com-perf/sample.sampler.log"
+  printf '%s\n' \
+    '[node_com_cmd] link-health summary: wire_rate_hz=20.001 target_rate_hz=200.000 target_window_hz=200.000 wire_gap_p95_ms=5.1 wire_gap_p99_ms=6.2 wire_gap_max_ms=9.9 lost=0 duplicate=0 inflight=1' \
+    >"$TMPDIR/com-perf/sample.cmd.log"
+  printf '%s\n' \
+    'METRICS total_serial_kbit_s=90.77 baud_util_pct=9.85' \
+    >"$TMPDIR/com-perf/sample.wire.log"
+
+  printf '%s\n' 'average rate: 20.000' >"$TMPDIR/com-perf/legacy.hz.log"
+  printf '%s\n' \
+    'status_sampler: rate_hz=20.000 seq_rate_hz=20.000 seq_delta_avg=1 seq_delta_min=1 seq_delta_max=1 p95_gap_s=0.050 p99_gap_s=0.055 max_gap_s=0.060 zero_gap_count=0' \
+    >"$TMPDIR/com-perf/legacy.sampler.log"
+  printf '%s\n' \
+    '[node_com_cmd] link-health summary: wire_rate_hz=20.000 target_rate_hz=20.000 target_window_hz=20.000 lost=0 duplicate=0 inflight=1' \
+    >"$TMPDIR/com-perf/legacy.cmd.log"
+}
+
+test_com_perf_summary() {
+  local csv md
+
+  csv="$(LOGDIR="$TMPDIR/com-perf" FORMAT=csv "$ROOT/tools/summarize-com-perf.sh" sample legacy)"
+  assert_contains "$csv" \
+    'pc_wire_gap_p95_ms,pc_wire_gap_p99_ms,pc_wire_gap_max_ms' \
+    'com-perf csv header includes PC publish gap fields'
+  assert_contains "$csv" \
+    'sample,19.997,20.001,20.001,1,1,1,0.051,0.056,0.061,0,20.001,200.000,200.000,5.1,6.2,9.9,90.77,9.85,0,0,1' \
+    'com-perf csv parses sample metrics'
+  assert_contains "$csv" \
+    'legacy,20.000,20.000,20.000,1,1,1,0.050,0.055,0.060,0,20.000,20.000,20.000,NA,NA,NA,NA,NA,0,0,1' \
+    'com-perf csv keeps missing new fields as NA'
+
+  md="$(LOGDIR="$TMPDIR/com-perf" "$ROOT/tools/summarize-com-perf.sh" sample)"
+  assert_contains "$md" 'PC gap p95/p99/max ms' \
+    'com-perf markdown header includes PC publish gap fields'
+  assert_contains "$md" '| sample | 19.997 | 20.001 | 20.001 | 1/1/1 | 0.051 | 0.056 | 0.061 | 0 | 20.001 | 200.000 / 200.000 | 5.1/6.2/9.9 | 90.77 | 9.85 | 0 | 0 | 1 |' \
+    'com-perf markdown parses sample metrics'
+}
+
+test_staircase_summary() {
+  local summary csv md
+
+  summary="$TMPDIR/staircase.summary.log"
+  printf '%s\n' \
+    'METRICS latest_10khz_921600baud_poll0_spin100_200hz_be_n40 status_hz=5 sampler_hz=5 sampler_target_rx_hz=200.0 sampler_p95_gap_s=0.051 sampler_p99_gap_s=0.056 sampler_max_gap_s=0.061 sampler_zero_gap_count=0 sampler_seq_rate_hz=5 seq_delta_avg=40 seq_delta_min=40 seq_delta_max=40 pc_target_rate_hz=199.9 pc_target_window_hz=200.1 pc_wire_gap_p95_ms=5.0 pc_wire_gap_p99_ms=6.0 pc_wire_gap_max_ms=8.0 wire_kbit_s=90.77 wire_baud_util_pct=9.85 tx_kbit_s=48 rx_kbit_s=42 lost=0 duplicate=0 inflight=0' \
+    >"$summary"
+
+  csv="$(FORMAT=csv "$ROOT/tools/summarize-com-staircase.sh" "$summary")"
+  assert_contains "$csv" \
+    'pc_wire_gap_p95_ms,pc_wire_gap_p99_ms,pc_wire_gap_max_ms' \
+    'staircase csv header includes PC publish gap fields'
+  assert_contains "$csv" \
+    'latest_10khz_921600baud_poll0_spin100_200hz_be_n40,PASS,-,10000,921600,0,100,200,best_effort,40,5,5,200.0,0.051,0.056,0.061,0,5,40,40,40,199.9,200.1,5.0,6.0,8.0,90.77,9.85,48,42,0,0,0' \
+    'staircase csv parses metadata and metrics'
+
+  md="$("$ROOT/tools/summarize-com-staircase.sh" "$summary")"
+  assert_contains "$md" 'PC gap p95/p99/max ms' \
+    'staircase markdown header includes PC publish gap fields'
+  assert_contains "$md" '| latest_10khz_921600baud_poll0_spin100_200hz_be_n40 | PASS | - | 10000 | 921600 | 0 | 100 | 200 | best_effort | 40 | 5 | 5 | 200.0 | 0.051 | 0.056 | 0.061 | 0 | 5 | 40/40/40 | 199.9 / 200.1 | 5.0/6.0/8.0 | 90.77 | 9.85 | 0 | 0 | 0 |' \
+    'staircase markdown parses metadata and metrics'
+}
+
+test_overnight_summary() {
+  local watch_log csv md
+
+  watch_log="$TMPDIR/overnight.log"
+  printf '%s\n' \
+    '[2026-07-08 23:00:00] start tag_prefix=overnight_test interval_s=1' \
+    '[2026-07-08 23:00:01] iteration=1 smoke tag=sample' \
+    '[2026-07-08 23:00:02] iteration=2 smoke tag=legacy' \
+    '[2026-07-08 23:00:03] done failures=0' \
+    >"$watch_log"
+
+  csv="$(LOGDIR="$TMPDIR/com-perf" FORMAT=csv "$ROOT/tools/summarize-overnight-com-watch.sh" "$watch_log")"
+  assert_contains "$csv" 'sample,PASS,-,19.997,20.001' \
+    'overnight csv delegates sample metrics'
+  assert_contains "$csv" 'legacy,PASS,-,20.000,20.000' \
+    'overnight csv delegates legacy metrics'
+
+  md="$(LOGDIR="$TMPDIR/com-perf" "$ROOT/tools/summarize-overnight-com-watch.sh" "$watch_log")"
+  assert_contains "$md" '- smoke samples: 2' \
+    'overnight markdown counts smoke samples'
+  assert_contains "$md" '| sample | PASS | - | 19.997 | 20.001' \
+    'overnight markdown includes summarized sample row'
+}
+
+write_perf_logs
+test_com_perf_summary
+test_staircase_summary
+test_overnight_summary
+
+echo "PASS: communication summary parser tests"

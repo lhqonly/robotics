@@ -313,6 +313,13 @@ tools/summarize-com-perf.sh no_flash_smoke noflash_200hz_reliable_v6
 FORMAT=csv tools/summarize-com-perf.sh no_flash_smoke noflash_200hz_reliable_v6
 ```
 
+改过汇总字段或日志解析后，可以先跑一个离线 parser smoke test。它只用合成日志，
+不会访问硬件：
+
+```bash
+tools/test-com-summary-parsers.sh
+```
+
 要生成一份当前通信验证交接报告（不会烧录、不会启动 ROS 节点，只读取已有日志并探测
 ST-LINK/串口状态）：
 
