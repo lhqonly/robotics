@@ -325,7 +325,7 @@ def test_link_health_message_matches_tracker_snapshot():
 
 def test_sampled_tracking_only_tracks_every_nth_command():
     """
-    sampled mode publishes every command but only tracks every Nth status sample.
+    Sampled mode publishes every command but only tracks every Nth status sample.
 
     This matches firmware EXO_STATUS_EVERY_N: commands 0..3 update latest target
     but are not expected to echo; command 4 is tracked and can match.

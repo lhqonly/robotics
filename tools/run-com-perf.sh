@@ -53,6 +53,7 @@ mkdir -p "$LOGDIR"
 CMD_LOG="$LOGDIR/$TAG.cmd.log"
 BRIDGE_LOG="$LOGDIR/$TAG.bridge.log"
 HZ_LOG="$LOGDIR/$TAG.hz.log"
+SAMPLER_LOG="$LOGDIR/$TAG.sampler.log"
 GRAPH_LOG="$LOGDIR/$TAG.graph.log"
 OPENOCD_LOG="$LOGDIR/$TAG.openocd.log"
 
@@ -149,7 +150,13 @@ CMD_PID=$!
 
 sleep "$WARMUP_SECONDS"
 graph_snapshot "after_pc_warmup"
+ros2 run exo_cmd status_sampler \
+  --duration-s "$HZ_SECONDS" \
+  --qos-depth "$QOS_DEPTH" \
+  --qos-reliability "$QOS_RELIABILITY" >"$SAMPLER_LOG" 2>&1 &
+SAMPLER_PID=$!
 timeout "$HZ_SECONDS" ros2 topic hz /com/tp_mcu_status >"$HZ_LOG" 2>&1 || true
+wait "$SAMPLER_PID" || true
 
 elapsed=$((WARMUP_SECONDS + HZ_SECONDS))
 if [ "$RUN_SECONDS" -gt "$elapsed" ]; then
@@ -189,6 +196,13 @@ estimated_rx_hz=""
 if [ -n "$status_hz" ]; then
   estimated_rx_hz="$(awk -v r="$status_hz" -v n="$STATUS_EVERY_N" 'BEGIN { printf "%.2f", r * n }')"
 fi
+sampler_summary="$(grep 'status_sampler:' "$SAMPLER_LOG" | tail -1 || true)"
+sampler_hz="$(printf '%s\n' "$sampler_summary" | grep -o 'rate_hz=[0-9.]*' | tail -1 | cut -d= -f2 || true)"
+sampler_max_gap_s="$(printf '%s\n' "$sampler_summary" | grep -o 'max_gap_s=[0-9.]*' | tail -1 | cut -d= -f2 || true)"
+sampler_target_rx_hz=""
+if [ -n "$sampler_hz" ]; then
+  sampler_target_rx_hz="$(awk -v r="$sampler_hz" -v n="$STATUS_EVERY_N" 'BEGIN { printf "%.2f", r * n }')"
+fi
 
 summary="$(grep 'link-health summary' "$CMD_LOG" | tail -1 || true)"
 wire_sent="$(printf '%s\n' "$summary" | grep -o 'wire_sent=[0-9]*' | tail -1 | cut -d= -f2 || true)"
@@ -203,6 +217,9 @@ cat "$GRAPH_LOG"
 echo "[com-perf] status_hz=${status_hz:-NA}"
 echo "[com-perf] estimated_mcu_target_rx_hz=${estimated_rx_hz:-NA}"
 echo "[com-perf] hz_stats=${hz_stats:-NA}"
+echo "[com-perf] sampler_hz=${sampler_hz:-NA}"
+echo "[com-perf] sampler_target_rx_hz=${sampler_target_rx_hz:-NA}"
+echo "[com-perf] sampler_max_gap_s=${sampler_max_gap_s:-NA}"
 echo "[com-perf] pc_wire_sent=${wire_sent:-NA}"
 echo "[com-perf] pc_wire_rate_hz=${wire_rate_hz:-NA}"
 echo "[com-perf] pc_wire_window_hz=${wire_window_hz:-NA}"
@@ -210,5 +227,6 @@ echo "[com-perf] pc_sent_window_hz=${sent_window_hz:-NA}"
 echo "[com-perf] pc_matched_window_hz=${matched_window_hz:-NA}"
 echo "[com-perf] pc_target_window_hz=${target_window_hz:-NA}"
 echo "[com-perf] last_summary=${summary:-NA}"
+echo "[com-perf] sampler_summary=${sampler_summary:-NA}"
 echo "[com-perf] hz_tail:"
 tail -n 12 "$HZ_LOG"
