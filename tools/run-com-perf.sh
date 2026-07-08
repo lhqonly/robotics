@@ -112,6 +112,12 @@ echo "[com-perf] sampler: spin_timeout_s=$SAMPLER_SPIN_TIMEOUT_S"
 echo "[com-perf] wire_stats: mode=$WIRE_STATS skip_s=$WIRE_STATS_SKIP_SECONDS agent_verbosity=$MICROROS_AGENT_VERBOSITY"
 echo "[com-perf] flash: flash_firmware=$FLASH_FIRMWARE reset_target=$RESET_TARGET stlink_preflight=$STLINK_PREFLIGHT flash_timeout_s=$FLASH_TIMEOUT_SECONDS reset_timeout_s=$RESET_TIMEOUT_SECONDS"
 echo "[com-perf] logs: $LOGDIR/$TAG.*.log"
+if [ "$CMD_CATCHUP_MAX" -gt 0 ] &&
+    { [ "$QOS_RELIABILITY" != "best_effort" ] ||
+      [ "$TRACKING_MODE" != "sampled" ] ||
+      [ "$STATUS_EVERY_N" -le 1 ]; }; then
+  echo "[com-perf] WARN: cmd_catchup_max=$CMD_CATCHUP_MAX is intended for latest-target profiles (best_effort + sampled + status_every_n>1); reliable/status_every_1 full-echo can flood status return"
+fi
 
 flash_firmware() {
   local bin="$1"

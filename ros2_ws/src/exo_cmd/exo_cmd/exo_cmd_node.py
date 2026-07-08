@@ -146,6 +146,8 @@ class ExoCmdNode(Node):
             self.get_parameter('cmd_catchup_max').value)
         qos_depth = int(self.get_parameter('qos_depth').value)
         qos_reliability = self.get_parameter('qos_reliability').value
+        qos_reliability_key = (
+            qos_reliability.strip().lower().replace('-', '_'))
         self._tracking_mode = (
             self.get_parameter('tracking_mode').value.strip().lower())
         self._status_every_n = int(self.get_parameter('status_every_n').value)
@@ -172,6 +174,10 @@ class ExoCmdNode(Node):
         except ValueError as exc:
             self.get_logger().fatal('invalid QoS profile: %s' % exc)
             raise
+        catchup_latest_target_safe = (
+            self._cmd_catchup_max == 0 or
+            (qos_reliability_key in ('best_effort', 'besteffort') and
+             self._tracking_mode == 'sampled' and self._status_every_n > 1))
 
         # §7.6 run nonce: -1 -> random 32-bit nonce; >=0 -> literal start; any
         # other negative is illegal (turning -1 into a real nonce is the node's
@@ -276,6 +282,12 @@ class ExoCmdNode(Node):
             'applied QoS pub[%s]: %s' % (TOPIC_HEARTBEAT, qos_summary(self._pub)))
         self.get_logger().info(
             'applied QoS sub[%s]: %s' % (TOPIC_STATUS, qos_summary(self._sub)))
+        if not catchup_latest_target_safe:
+            self.get_logger().warn(
+                'cmd_catchup_max=%d outside latest-target profile; use it only '
+                'with best_effort + sampled + status_every_n>1. It can flood '
+                'reliable/status_every_1 full-echo diagnostics.'
+                % self._cmd_catchup_max)
 
     # ----- observables -------------------------------------------------------
     @property
