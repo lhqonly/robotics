@@ -31,6 +31,7 @@ class StatusStats:
         self.max_gap_s = 0.0
         self.sum_gap_s = 0.0
         self.sum_gap_sq_s = 0.0
+        self.gaps_s = []
         self.first_seq = None
         self.last_seq = None
         self.seq_delta_count = 0
@@ -48,6 +49,7 @@ class StatusStats:
             self.max_gap_s = max(self.max_gap_s, gap_s)
             self.sum_gap_s += gap_s
             self.sum_gap_sq_s += gap_s * gap_s
+            self.gaps_s.append(gap_s)
         if self.last_seq is not None:
             delta = forward_distance(self.last_seq, seq)
             self.seq_delta_count += 1
@@ -65,7 +67,8 @@ class StatusStats:
     def summary(self) -> str:
         if self.count < 2 or self.first_s is None or self.last_s is None:
             return ('status_sampler: count=%d rate_hz=0.000 min_gap_s=0.000 '
-                    'max_gap_s=0.000 std_gap_s=0.000 duration_s=0.000 '
+                    'max_gap_s=0.000 p95_gap_s=0.000 p99_gap_s=0.000 '
+                    'std_gap_s=0.000 duration_s=0.000 '
                     'seq_rate_hz=0.000 seq_delta_avg=0.000 '
                     'seq_delta_min=0 seq_delta_max=0'
                     % self.count)
@@ -75,6 +78,8 @@ class StatusStats:
         mean_gap_s = self.sum_gap_s / samples
         variance = max((self.sum_gap_sq_s / samples) -
                        (mean_gap_s * mean_gap_s), 0.0)
+        p95_gap_s = self._percentile_gap(0.95)
+        p99_gap_s = self._percentile_gap(0.99)
         if self.seq_delta_count and duration_s > 0.0:
             seq_span = forward_distance(self.first_seq, self.last_seq)
             seq_rate_hz = seq_span / duration_s
@@ -87,12 +92,22 @@ class StatusStats:
             seq_delta_min = 0
             seq_delta_max = 0
         return ('status_sampler: count=%d rate_hz=%.3f min_gap_s=%.3f '
-                'max_gap_s=%.3f std_gap_s=%.5f duration_s=%.3f '
+                'max_gap_s=%.3f p95_gap_s=%.3f p99_gap_s=%.3f '
+                'std_gap_s=%.5f duration_s=%.3f '
                 'seq_rate_hz=%.3f seq_delta_avg=%.3f '
                 'seq_delta_min=%d seq_delta_max=%d'
                 % (self.count, rate_hz, self.min_gap_s, self.max_gap_s,
-                   math.sqrt(variance), duration_s, seq_rate_hz,
-                   seq_delta_avg, seq_delta_min, seq_delta_max))
+                   p95_gap_s, p99_gap_s, math.sqrt(variance), duration_s,
+                   seq_rate_hz, seq_delta_avg, seq_delta_min, seq_delta_max))
+
+    def _percentile_gap(self, percentile: float) -> float:
+        """Return nearest-rank percentile over observed receive gaps."""
+        if not self.gaps_s:
+            return 0.0
+        ordered = sorted(self.gaps_s)
+        rank = math.ceil(percentile * len(ordered))
+        index = min(max(rank - 1, 0), len(ordered) - 1)
+        return ordered[index]
 
 
 class StatusSampler(Node):

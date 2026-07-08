@@ -14,6 +14,8 @@ def test_status_stats_reports_rate_and_seq_steps():
 
     assert 'count=3' in summary
     assert 'rate_hz=4.000' in summary
+    assert 'p95_gap_s=0.250' in summary
+    assert 'p99_gap_s=0.250' in summary
     assert 'seq_rate_hz=160.000' in summary
     assert 'seq_delta_avg=40.000' in summary
     assert 'seq_delta_min=40' in summary
@@ -32,6 +34,19 @@ def test_status_stats_seq_steps_are_wrap_safe():
     assert 'seq_delta_avg=30.000' in summary
     assert 'seq_delta_min=30' in summary
     assert 'seq_delta_max=30' in summary
+
+
+def test_status_stats_reports_gap_tail_percentiles():
+    stats = StatusStats()
+
+    for index, now_s in enumerate([1.00, 1.01, 1.02, 1.03, 1.20]):
+        stats.add(now_s, index)
+
+    summary = stats.summary()
+
+    assert 'max_gap_s=0.170' in summary
+    assert 'p95_gap_s=0.170' in summary
+    assert 'p99_gap_s=0.170' in summary
 
 
 def test_status_sampler_spin_timeout_default_is_low_latency():
