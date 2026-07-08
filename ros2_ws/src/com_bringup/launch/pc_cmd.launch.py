@@ -8,7 +8,7 @@ Run:
     ros2 launch com_bringup pc_cmd.launch.py
 
 Performance baseline:
-    ros2 launch com_bringup pc_cmd.launch.py cmd_rate_hz:=20 qos_depth:=1
+    ros2 launch com_bringup pc_cmd.launch.py cmd_rate_hz:=20 qos_depth:=2
 Stress target:
     ros2 launch com_bringup pc_cmd.launch.py cmd_rate_hz:=200 qos_depth:=1
     ros2 launch com_bringup pc_cmd.launch.py cmd_rate_hz:=200 qos_reliability:=best_effort
@@ -49,8 +49,8 @@ def generate_launch_description():
             description='PC command publish rate in Hz.'),
         DeclareLaunchArgument(
             'qos_depth',
-            default_value='1',
-            description='KEEP_LAST depth for high-rate /com/* endpoints.'),
+            default_value='2',
+            description='KEEP_LAST depth for /com/* endpoints.'),
         DeclareLaunchArgument(
             'qos_reliability',
             default_value='reliable',
@@ -85,7 +85,7 @@ def generate_launch_description():
             description='Link-health summary log period in seconds.'),
         DeclareLaunchArgument(
             'startup_grace_s',
-            default_value='0.5',
+            default_value='3.0',
             description=(
                 'Startup seconds to publish commands without counting '
                 'link-health.')),

@@ -98,10 +98,11 @@ source ros2_ws/install/setup.bash
 ros2 launch com_bringup pc_cmd.launch.py
 ```
 
-`pc_cmd.launch.py` 默认按当前已验证稳定基线启动：20 Hz、QoS depth 1、
-`rtt_warn_ms=10`、`rtt_deadline_ms=100`。`rtt_warn_ms` 用来提示“已经有滞后感风险”，
-`rtt_deadline_ms` 用来判定真正超时；如果设成 50ms，当前 reliable/full-echo 链路会把偶发
-50-80ms late echo 计成 lost+duplicate。需要退回历史 10 Hz 时：
+`pc_cmd.launch.py` 默认按当前已验证稳定基线启动：20 Hz、QoS depth 2、
+`rtt_warn_ms=10`、`rtt_deadline_ms=120`、`startup_grace_s=3.0`。`rtt_warn_ms`
+用来提示“已经有滞后感风险”，`rtt_deadline_ms` 用来判定真正超时；
+depth 2 用于 reliable/full-echo 诊断，避免 depth 1 偶发漏掉单个回显。需要退回历史
+10 Hz 时：
 
 ```bash
 ros2 launch com_bringup pc_cmd.launch.py cmd_rate_hz:=10 qos_depth:=10
