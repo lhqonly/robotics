@@ -226,6 +226,12 @@ fi
 pc_wire_gap_p95_ms="$(metric_from_line "$link_summary" wire_gap_p95_ms)"
 pc_wire_gap_p99_ms="$(metric_from_line "$link_summary" wire_gap_p99_ms)"
 pc_wire_gap_max_ms="$(metric_from_line "$link_summary" wire_gap_max_ms)"
+latest_contract=""
+latest_expected_cmd_hz="$(metric_from_line "$link_summary" target_rate_hz)"
+if [ -n "$latest_tag" ] && [ -x "$ROOT/tools/check-com-perf-contract.sh" ]; then
+  latest_contract="$(cd "$ROOT" && EXPECTED_CMD_RATE_HZ="${latest_expected_cmd_hz:-20}" \
+    tools/check-com-perf-contract.sh "$latest_tag" 2>&1 || true)"
+fi
 wire_metrics=""
 if [ -f "$latest_wire" ]; then
   wire_metrics="$(grep '^METRICS ' "$latest_wire" | tail -1 || true)"
@@ -355,6 +361,7 @@ serial_users="$(serial_lsof)"
   echo "- LinkHealth：${link_summary:-unknown}"
   echo "- PC publish gap p95/p99/max ms：${pc_wire_gap_p95_ms:-unknown}/${pc_wire_gap_p99_ms:-unknown}/${pc_wire_gap_max_ms:-unknown}"
   echo "- same-tag wire：${wire_metrics:-unknown}"
+  echo "- perf contract：${latest_contract:-unknown}"
   if [ "$latest_is_scheduler_experiment" -eq 1 ]; then
     echo
     echo "说明：latest tag 是调度/健康门槛实验样本，只代表最后一次运行；PC 调度结论请看下面的 sweep/短测对照表。"
