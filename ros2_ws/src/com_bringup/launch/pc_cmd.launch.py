@@ -34,6 +34,7 @@ def generate_launch_description():
     rtt_deadline_ms = LaunchConfiguration('rtt_deadline_ms')
     sweep_period_s = LaunchConfiguration('sweep_period_s')
     summary_period_s = LaunchConfiguration('summary_period_s')
+    link_health_period_s = LaunchConfiguration('link_health_period_s')
     startup_grace_s = LaunchConfiguration('startup_grace_s')
     executor_threads = LaunchConfiguration('executor_threads')
     log_matched_events = LaunchConfiguration('log_matched_events')
@@ -91,6 +92,10 @@ def generate_launch_description():
             default_value='1.0',
             description='Link-health summary log period in seconds.'),
         DeclareLaunchArgument(
+            'link_health_period_s',
+            default_value='1.0',
+            description='/com/tp_link_health publish period in seconds.'),
+        DeclareLaunchArgument(
             'startup_grace_s',
             default_value='3.0',
             description=(
@@ -137,6 +142,8 @@ def generate_launch_description():
                 'sweep_period_s': ParameterValue(sweep_period_s, value_type=float),
                 'summary_period_s': ParameterValue(
                     summary_period_s, value_type=float),
+                'link_health_period_s': ParameterValue(
+                    link_health_period_s, value_type=float),
                 'startup_grace_s': ParameterValue(
                     startup_grace_s, value_type=float),
                 'rtt_warn_ms': ParameterValue(rtt_warn_ms, value_type=float),
