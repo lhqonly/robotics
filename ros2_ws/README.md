@@ -276,6 +276,10 @@ tools/summarize-com-staircase.sh log/com-staircase/<tag>.summary.log
 FORMAT=csv tools/summarize-com-staircase.sh log/com-staircase/<tag>.summary.log
 ```
 
+表格会从 stage 名拆出 `loop_hz`、`baud`、`uart_read_poll_yields`、
+`pc_cmd_hz`、`qos`、`status_every_n`，方便横向比较 1/2/5/10kHz、
+921600/2Mbps 和 UART polling 候选。
+
 如果某个阶段用 `MICROROS_AGENT_VERBOSITY=6` 跑过，表格里还会带
 `wire_kbit_s` 和 `wire_baud_util_pct`，方便把通信频率、丢包和串口占用放在一起看。
 
