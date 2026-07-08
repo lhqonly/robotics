@@ -519,6 +519,16 @@ tools/measure-stack-hwm.sh firmware/f103-microros/build/f103-microros.elf
 tools/firmware-size-report.sh firmware/f103-microros/build/f103-microros.elf
 ```
 
+要把当前 RAM 分类、栈候选、executor spin timeout 候选和 linker heap/MSP
+候选汇总成一份短报告，可以用：
+
+```bash
+tools/summarize-firmware-memory-plan.sh
+```
+
+这份报告不会连接硬件；其中 `PASS_STATIC` 只代表静态编译和 size 预算通过，
+默认栈/heap/MSP 仍必须等 SWD 恢复后用运行期水位确认。
+
 要比较 1/2/5/10kHz、reliable/best-effort 等固件 profile 的静态
 Flash/RAM，不需要连接硬件，可以跑：
 

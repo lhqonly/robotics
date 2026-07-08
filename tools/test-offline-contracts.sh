@@ -16,6 +16,7 @@ tests=(
   "tools/test-com-docs.sh"
   "tools/test-com-status-report.sh"
   "tools/test-firmware-size-report.sh"
+  "tools/test-firmware-memory-plan.sh"
 )
 
 for test_script in "${tests[@]}"; do
