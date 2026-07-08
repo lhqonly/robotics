@@ -582,11 +582,33 @@ tools/com-wire-budget.py \
   --wire-log log/com-perf/<tag>.wire.log \
   --cmd-hz 200,1000 \
   --status-every-n 1,10,40 \
-  --baud 921600,2000000
+  --baud 921600,2000000 \
+  --max-baud-util-pct 30
 ```
 
+加上 `--max-baud-util-pct 30` 后，表格会多一列 `PASS/OVER_BUDGET`；如果要在脚本
+里把超预算当作失败，再加 `--fail-on-over-budget`。
 这个工具用已测 XRCE 串口字节数做线性估算，只用于排序实验优先级；真实验收仍以
 上板 `run-com-perf.sh` / staircase 实测为准。
+
+要离线复查某个 `run-com-perf.sh` tag 是否满足性能契约，可以用：
+
+```bash
+EXPECTED_CMD_RATE_HZ=20 tools/check-com-perf-contract.sh <tag>
+
+EXPECTED_CMD_RATE_HZ=200 STATUS_EVERY_N=40 \
+tools/check-com-perf-contract.sh <latest_target_tag>
+```
+
+默认契约是 PC 目标发包频率在 90%-110%，PC publish p99 gap 不超过 4 个周期、
+max gap 不超过 10 个周期，`lost/duplicate=0`。对 200Hz 来说，对应 p99 <= 20ms、
+max <= 50ms。改过解析工具后可以离线跑：
+
+```bash
+tools/test-com-wire-budget.sh
+tools/test-com-perf-contract.sh
+tools/test-com-summary-parsers.sh
+```
 
 终端 3：查看通信结果。
 
