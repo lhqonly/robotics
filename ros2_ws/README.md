@@ -239,7 +239,11 @@ BUILD_FIRMWARE=0 FLASH_FIRMWARE=0 tools/run-com-perf.sh no_flash_smoke
 显式追加 `RESET_TARGET=1`。
 默认 echo/status_every_1 基线会执行健康门槛：sampler 频率在目标频率附近、
 status seq 不跳号、`lost=0`、`duplicate=0`、gap 不超过默认阈值，否则脚本退出
-非 0。刻意采集压力失败样本时可关闭门槛：
+非 0。对 sampled/latest-target profile，脚本用 `sampler_target_rx_hz`
+（`sampler_hz * status_every_n`）判断 MCU 目标接收进度是否接近 PC 命令频率；
+此时不要求每个 status 的 seq delta 都等于 1，因为状态本来就是降频采样。
+gap 阈值默认 `auto`：20Hz 基线为 p99<=0.10s/max<=0.25s，高频或
+`status_every_n>1` 为 p99<=0.50s/max<=1.00s。刻意采集压力失败样本时可关闭门槛：
 
 ```bash
 REQUIRE_HEALTH_PASS=0 CMD_RATE_HZ=200 \

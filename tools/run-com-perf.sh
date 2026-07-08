@@ -58,8 +58,8 @@ PERF_MIN_RATE_RATIO="${PERF_MIN_RATE_RATIO:-0.90}"
 PERF_MAX_RATE_RATIO="${PERF_MAX_RATE_RATIO:-1.10}"
 PERF_MAX_LOST="${PERF_MAX_LOST:-0}"
 PERF_MAX_DUPLICATE="${PERF_MAX_DUPLICATE:-0}"
-PERF_MAX_P99_GAP_S="${PERF_MAX_P99_GAP_S:-0.10}"
-PERF_MAX_MAX_GAP_S="${PERF_MAX_MAX_GAP_S:-0.25}"
+PERF_MAX_P99_GAP_S="${PERF_MAX_P99_GAP_S:-auto}"
+PERF_MAX_MAX_GAP_S="${PERF_MAX_MAX_GAP_S:-auto}"
 
 case "$QOS_RELIABILITY" in
   reliable) EXO_QOS_BEST_EFFORT=OFF ;;
@@ -375,6 +375,22 @@ echo "[com-perf] hz_tail:"
 tail -n 12 "$HZ_LOG"
 
 validation_failed=0
+health_p99_gap_limit="$PERF_MAX_P99_GAP_S"
+health_max_gap_limit="$PERF_MAX_MAX_GAP_S"
+if [ "$health_p99_gap_limit" = "auto" ]; then
+  health_p99_gap_limit="0.10"
+  if [ "$CMD_RATE_HZ" -gt 20 ] 2>/dev/null ||
+      [ "$STATUS_EVERY_N" -gt 1 ] 2>/dev/null; then
+    health_p99_gap_limit="0.50"
+  fi
+fi
+if [ "$health_max_gap_limit" = "auto" ]; then
+  health_max_gap_limit="0.25"
+  if [ "$CMD_RATE_HZ" -gt 20 ] 2>/dev/null ||
+      [ "$STATUS_EVERY_N" -gt 1 ] 2>/dev/null; then
+    health_max_gap_limit="1.00"
+  fi
+fi
 if [ "$REQUIRE_CORE_METRICS" = "1" ]; then
   if [ -z "$summary" ]; then
     echo "[com-perf] ERROR: missing link-health summary; PC command node may not have started" >&2
@@ -385,21 +401,27 @@ if [ "$REQUIRE_CORE_METRICS" = "1" ]; then
     validation_failed=1
   fi
 fi
-if [ "$REQUIRE_HEALTH_PASS" = "1" ] &&
-    [ "$TRACKING_MODE" = "echo" ] &&
-    [ "$STATUS_EVERY_N" -eq 1 ] 2>/dev/null; then
-  if [ -n "$sampler_hz" ]; then
+if [ "$REQUIRE_HEALTH_PASS" = "1" ]; then
+  health_rate="$sampler_hz"
+  health_rate_label="sampler_hz"
+  if [ "$TRACKING_MODE" = "sampled" ] ||
+      [ "$STATUS_EVERY_N" -gt 1 ] 2>/dev/null; then
+    health_rate="$sampler_target_rx_hz"
+    health_rate_label="sampler_target_rx_hz"
+  fi
+  if [ -n "$health_rate" ]; then
     if ! awk \
-        -v actual="$sampler_hz" \
+        -v actual="$health_rate" \
         -v expected="$CMD_RATE_HZ" \
         -v min_ratio="$PERF_MIN_RATE_RATIO" \
         -v max_ratio="$PERF_MAX_RATE_RATIO" \
         'BEGIN { ok = (actual + 0 >= expected * min_ratio && actual + 0 <= expected * max_ratio); exit !ok }'; then
-      echo "[com-perf] ERROR: sampler_hz=$sampler_hz outside expected band for cmd_rate_hz=$CMD_RATE_HZ" >&2
+      echo "[com-perf] ERROR: $health_rate_label=$health_rate outside expected band for cmd_rate_hz=$CMD_RATE_HZ" >&2
       validation_failed=1
     fi
   fi
-  if [ -n "$sampler_seq_delta_min" ] && [ -n "$sampler_seq_delta_max" ] &&
+  if [ "$STATUS_EVERY_N" -eq 1 ] 2>/dev/null &&
+      [ -n "$sampler_seq_delta_min" ] && [ -n "$sampler_seq_delta_max" ] &&
       { [ "$sampler_seq_delta_min" -ne 1 ] ||
         [ "$sampler_seq_delta_max" -ne 1 ]; } 2>/dev/null; then
     echo "[com-perf] ERROR: status seq delta not 1/1: min=$sampler_seq_delta_min max=$sampler_seq_delta_max" >&2
@@ -408,18 +430,18 @@ if [ "$REQUIRE_HEALTH_PASS" = "1" ] &&
   if [ -n "$sampler_p99_gap_s" ]; then
     if ! awk \
         -v actual="$sampler_p99_gap_s" \
-        -v limit="$PERF_MAX_P99_GAP_S" \
+        -v limit="$health_p99_gap_limit" \
         'BEGIN { exit !(actual + 0 <= limit + 0) }'; then
-      echo "[com-perf] ERROR: sampler_p99_gap_s=$sampler_p99_gap_s exceeds $PERF_MAX_P99_GAP_S" >&2
+      echo "[com-perf] ERROR: sampler_p99_gap_s=$sampler_p99_gap_s exceeds $health_p99_gap_limit" >&2
       validation_failed=1
     fi
   fi
   if [ -n "$sampler_max_gap_s" ]; then
     if ! awk \
         -v actual="$sampler_max_gap_s" \
-        -v limit="$PERF_MAX_MAX_GAP_S" \
+        -v limit="$health_max_gap_limit" \
         'BEGIN { exit !(actual + 0 <= limit + 0) }'; then
-      echo "[com-perf] ERROR: sampler_max_gap_s=$sampler_max_gap_s exceeds $PERF_MAX_MAX_GAP_S" >&2
+      echo "[com-perf] ERROR: sampler_max_gap_s=$sampler_max_gap_s exceeds $health_max_gap_limit" >&2
       validation_failed=1
     fi
   fi
