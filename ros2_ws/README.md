@@ -613,6 +613,12 @@ tools/test-microros-config.sh
 tools/test-com-status-report.sh
 ```
 
+也可以一条命令跑完当前不碰硬件/串口的离线契约测试：
+
+```bash
+tools/test-offline-contracts.sh
+```
+
 终端 3：查看通信结果。
 
 ```bash
