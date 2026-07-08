@@ -79,19 +79,33 @@
 #endif
 
 /* ===== MCU 本地控制基线 =====
- * 第一阶段只做 1kHz 调度骨架:通信回调更新 latest target,本地控制 task 每 1ms
- * 读取一次最新目标。这里不驱动电机,只验证"本地闭环频率"与"ROS 通信频率"解耦。
- * 2/5/10kHz 后续不能再靠 FreeRTOS 1kHz tick,需要硬件定时器或 DWT 调度。 */
-static volatile uint32_t g_control_latest_seq = 0u;
-static volatile int32_t  g_control_latest_payload = 0;
+ * 通信回调更新 latest target,本地控制 tick 读取最新目标。这里不驱动电机,只验证
+ * "本地闭环频率"与"ROS 通信频率"解耦。>1kHz 时 TIM2 ISR 可设为高于 FreeRTOS
+ * syscall critical section 的优先级,因此 target 用双缓冲+原子 active index 提交:
+ * ISR 永远读 active buffer;任务只写 inactive buffer 后再切 active,避免半更新 seq/payload。 */
+typedef struct {
+    uint32_t seq;
+    int32_t payload;
+} control_target_t;
+
+static volatile control_target_t g_control_targets[2];
+static volatile uint32_t g_control_target_active = 0u;
+static volatile uint32_t g_control_latest_seq = 0u;       /* SWD/debug mirror */
+static volatile int32_t  g_control_latest_payload = 0;    /* SWD/debug mirror */
 static volatile uint32_t g_control_tick_count = 0u;
 
 static void com_control_update_target(uint32_t seq, int32_t payload)
 {
-    taskENTER_CRITICAL();
+    uint32_t next = (g_control_target_active ^ 1u) & 1u;
+
+    g_control_targets[next].payload = payload;
+    g_control_targets[next].seq = seq;
+    g_control_target_active = next;
+
+    /* Mirrors are for coarse SWD/debug observation only. The control ISR reads
+     * the double-buffered active target above. */
     g_control_latest_seq = seq;
     g_control_latest_payload = payload;
-    taskEXIT_CRITICAL();
 }
 
 void com_control_task(void *arg)
@@ -109,8 +123,9 @@ void com_control_task(void *arg)
 
 void com_control_tick_isr(void)
 {
-    uint32_t seq = g_control_latest_seq;
-    int32_t payload = g_control_latest_payload;
+    uint32_t active = g_control_target_active & 1u;
+    uint32_t seq = g_control_targets[active].seq;
+    int32_t payload = g_control_targets[active].payload;
 
     /* Phase baseline: consume latest target without motor output. */
     (void)seq;
@@ -125,7 +140,8 @@ uint32_t com_control_tick_count(void)
 
 uint32_t com_control_latest_seq(void)
 {
-    return g_control_latest_seq;
+    uint32_t active = g_control_target_active & 1u;
+    return g_control_targets[active].seq;
 }
 
 /* ===== 是否拿到 micro-ROS 头(lib 已生成) ===== */

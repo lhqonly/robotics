@@ -141,6 +141,18 @@ cmake -S firmware/f103-microros -B firmware/f103-microros/build \
   -DEXO_CONTROL_LOOP_HZ=10000
 ```
 
+`EXO_CONTROL_LOOP_HZ>1000` 时固件使用 TIM2 ISR 驱动本地控制 tick。默认
+`EXO_CONTROL_TIMER_IRQ_PRIORITY=4`，高于 FreeRTOS syscall critical section，
+用于减少 micro-ROS/ROS 通信侧临界区带来的闭环抖动；ISR 不调用 FreeRTOS API，
+latest target 用双缓冲提交，避免读到半更新的 `seq/payload`。如果需要保守地让
+TIM2 也被 FreeRTOS critical section 屏蔽，可以设为 5：
+
+```bash
+cmake -S firmware/f103-microros -B firmware/f103-microros/build \
+  -DEXO_CONTROL_LOOP_HZ=10000 \
+  -DEXO_CONTROL_TIMER_IRQ_PRIORITY=5
+```
+
 固件 UART transport 默认没数据时按 1 个 FreeRTOS tick 睡眠。要实验性验证“睡眠前
 先 `taskYIELD()` 快速轮询几次”能否压低 RX 长尾，可以编译候选 profile：
 

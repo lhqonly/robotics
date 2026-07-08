@@ -10,6 +10,7 @@ BUILD_ROOT="${BUILD_ROOT:-$SRC/build-spin-timeout-sweep}"
 TOOLCHAIN_FILE="${TOOLCHAIN_FILE:-$SRC/toolchain-arm-m3.cmake}"
 SPIN_TIMEOUT_US="${SPIN_TIMEOUT_US:-1000 500 200 100}"
 CONTROL_LOOP_HZ="${CONTROL_LOOP_HZ:-10000}"
+CONTROL_TIMER_IRQ_PRIORITY="${CONTROL_TIMER_IRQ_PRIORITY:-4}"
 QOS_BEST_EFFORT="${QOS_BEST_EFFORT:-ON}"
 STATUS_EVERY_N="${STATUS_EVERY_N:-40}"
 UART_BAUD="${UART_BAUD:-921600}"
@@ -29,11 +30,11 @@ if [ -n "$JOBS" ]; then
 fi
 
 cat >"$CSV" <<'EOF'
-executor_spin_timeout_us,verdict,reason,control_loop_hz,qos_best_effort,status_every_n,uart_baud,uart_read_poll_yields,flash_bytes,flash_margin_bytes,ram_static_bytes,ram_static_margin_bytes,data_bytes,bss_bytes
+executor_spin_timeout_us,verdict,reason,control_loop_hz,control_timer_irq_priority,qos_best_effort,status_every_n,uart_baud,uart_read_poll_yields,flash_bytes,flash_margin_bytes,ram_static_bytes,ram_static_margin_bytes,data_bytes,bss_bytes
 EOF
 cat >"$MD" <<'EOF'
-| spin timeout us | verdict | reason | loop Hz | QoS best-effort | status every | baud | poll yields | Flash B | Flash margin B | static RAM B | RAM margin B | data B | bss B |
-|---:|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| spin timeout us | verdict | reason | loop Hz | timer IRQ prio | QoS best-effort | status every | baud | poll yields | Flash B | Flash margin B | static RAM B | RAM margin B | data B | bss B |
+|---:|---|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 EOF
 
 metric_from_report() {
@@ -77,13 +78,14 @@ static_budget_verdict() {
 for spin_timeout_us in $SPIN_TIMEOUT_US; do
   build_dir="$BUILD_ROOT/${spin_timeout_us}us"
   report="$OUTDIR/$TAG.${spin_timeout_us}us.report.log"
-  echo "[spin-timeout-sweep] build spin_timeout_us=$spin_timeout_us loop_hz=$CONTROL_LOOP_HZ qos_best_effort=$QOS_BEST_EFFORT status_every=$STATUS_EVERY_N baud=$UART_BAUD poll_yields=$UART_READ_POLL_YIELDS"
+  echo "[spin-timeout-sweep] build spin_timeout_us=$spin_timeout_us loop_hz=$CONTROL_LOOP_HZ timer_irq_prio=$CONTROL_TIMER_IRQ_PRIORITY qos_best_effort=$QOS_BEST_EFFORT status_every=$STATUS_EVERY_N baud=$UART_BAUD poll_yields=$UART_READ_POLL_YIELDS"
 
   cmake -S "$SRC" -B "$build_dir" \
     -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN_FILE" \
     -DCMAKE_BUILD_TYPE=MinSizeRel \
     -DEXO_EXECUTOR_SPIN_TIMEOUT_US="$spin_timeout_us" \
     -DEXO_CONTROL_LOOP_HZ="$CONTROL_LOOP_HZ" \
+    -DEXO_CONTROL_TIMER_IRQ_PRIORITY="$CONTROL_TIMER_IRQ_PRIORITY" \
     -DEXO_QOS_BEST_EFFORT="$QOS_BEST_EFFORT" \
     -DEXO_STATUS_EVERY_N="$STATUS_EVERY_N" \
     -DEXO_UART_BAUD="$UART_BAUD" \
@@ -103,15 +105,17 @@ for spin_timeout_us in $SPIN_TIMEOUT_US; do
   verdict="${verdict_csv%%,*}"
   reason="${verdict_csv#*,}"
 
-  printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
+  printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
     "$spin_timeout_us" "$verdict" "$reason" \
-    "$CONTROL_LOOP_HZ" "$QOS_BEST_EFFORT" "$STATUS_EVERY_N" "$UART_BAUD" \
-    "$UART_READ_POLL_YIELDS" "$flash_bytes" "$flash_margin" \
+    "$CONTROL_LOOP_HZ" "$CONTROL_TIMER_IRQ_PRIORITY" "$QOS_BEST_EFFORT" \
+    "$STATUS_EVERY_N" "$UART_BAUD" "$UART_READ_POLL_YIELDS" \
+    "$flash_bytes" "$flash_margin" \
     "$ram_static_bytes" "$ram_static_margin" "$data_bytes" "$bss_bytes" >>"$CSV"
-  printf '| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n' \
+  printf '| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n' \
     "$spin_timeout_us" "$verdict" "$reason" \
-    "$CONTROL_LOOP_HZ" "$QOS_BEST_EFFORT" "$STATUS_EVERY_N" "$UART_BAUD" \
-    "$UART_READ_POLL_YIELDS" "$flash_bytes" "$flash_margin" \
+    "$CONTROL_LOOP_HZ" "$CONTROL_TIMER_IRQ_PRIORITY" "$QOS_BEST_EFFORT" \
+    "$STATUS_EVERY_N" "$UART_BAUD" "$UART_READ_POLL_YIELDS" \
+    "$flash_bytes" "$flash_margin" \
     "$ram_static_bytes" "$ram_static_margin" "$data_bytes" "$bss_bytes" >>"$MD"
 done
 

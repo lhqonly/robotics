@@ -32,6 +32,7 @@ LATEST_WARMUP_SECONDS="${LATEST_WARMUP_SECONDS:-5}"
 LATEST_HZ_SECONDS="${LATEST_HZ_SECONDS:-50}"
 LATEST_STATUS_EVERY_N="${LATEST_STATUS_EVERY_N:-40}"
 STAIRCASE_BAUDS="${STAIRCASE_BAUDS:-921600}"
+STAIRCASE_CONTROL_TIMER_IRQ_PRIORITY="${STAIRCASE_CONTROL_TIMER_IRQ_PRIORITY:-4}"
 STAIRCASE_UART_READ_POLL_YIELDS="${STAIRCASE_UART_READ_POLL_YIELDS:-0}"
 STAIRCASE_EXECUTOR_SPIN_TIMEOUT_US="${STAIRCASE_EXECUTOR_SPIN_TIMEOUT_US:-1000}"
 
@@ -222,6 +223,7 @@ run_latest_flash_stage() {
     FLASH_FIRMWARE="$FLASH_FIRMWARE" \
     BAUD="$baud" \
     CONTROL_LOOP_HZ="$hz" \
+    CONTROL_TIMER_IRQ_PRIORITY="$STAIRCASE_CONTROL_TIMER_IRQ_PRIORITY" \
     UART_READ_POLL_YIELDS="$poll_yields" \
     EXECUTOR_SPIN_TIMEOUT_US="$spin_timeout_us" \
     CMD_RATE_HZ=200 \
@@ -252,7 +254,7 @@ run_no_flash_smoke() {
 }
 
 record "staircase tag_prefix=$TAG_PREFIX logdir=$LOGDIR"
-record "mode build_firmware=$BUILD_FIRMWARE flash_firmware=$FLASH_FIRMWARE dry_run=$DRY_RUN staircase_bauds=$STAIRCASE_BAUDS staircase_uart_read_poll_yields=$STAIRCASE_UART_READ_POLL_YIELDS staircase_executor_spin_timeout_us=$STAIRCASE_EXECUTOR_SPIN_TIMEOUT_US"
+record "mode build_firmware=$BUILD_FIRMWARE flash_firmware=$FLASH_FIRMWARE dry_run=$DRY_RUN staircase_bauds=$STAIRCASE_BAUDS staircase_control_timer_irq_priority=$STAIRCASE_CONTROL_TIMER_IRQ_PRIORITY staircase_uart_read_poll_yields=$STAIRCASE_UART_READ_POLL_YIELDS staircase_executor_spin_timeout_us=$STAIRCASE_EXECUTOR_SPIN_TIMEOUT_US"
 
 failures=0
 if check_stlink_ready; then

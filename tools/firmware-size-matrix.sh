@@ -14,6 +14,7 @@ JOBS="${JOBS:-}"
 SRAM_BYTES="${SRAM_BYTES:-20480}"
 FLASH_BYTES="${FLASH_BYTES:-131072}"
 RAM_STATIC_WARN_BYTES="${RAM_STATIC_WARN_BYTES:-18432}"
+CONTROL_TIMER_IRQ_PRIORITY="${CONTROL_TIMER_IRQ_PRIORITY:-4}"
 
 mkdir -p "$OUTDIR" "$BUILD_ROOT"
 
@@ -24,11 +25,11 @@ fi
 
 write_headers() {
   cat >"$CSV" <<'EOF'
-profile,verdict,reason,control_loop_hz,control_tick_source,qos,status_every_n,executor_spin_timeout_us,flash_bytes,flash_margin_bytes,ram_static_bytes,ram_static_margin_bytes,data_bytes,bss_bytes,microros_stack_bytes,control_stack_bytes,led_stack_bytes,idle_stack_bytes
+profile,verdict,reason,control_loop_hz,control_tick_source,control_timer_irq_priority,qos,status_every_n,executor_spin_timeout_us,flash_bytes,flash_margin_bytes,ram_static_bytes,ram_static_margin_bytes,data_bytes,bss_bytes,microros_stack_bytes,control_stack_bytes,led_stack_bytes,idle_stack_bytes
 EOF
   cat >"$MD" <<'EOF'
-| Profile | verdict | reason | loop Hz | tick source | QoS | status every | spin us | Flash B | Flash margin B | static RAM B | RAM margin B | data B | bss B | micro-ROS stack B | control stack B | led stack B | idle stack B |
-|---|---|---|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Profile | verdict | reason | loop Hz | tick source | timer IRQ prio | QoS | status every | spin us | Flash B | Flash margin B | static RAM B | RAM margin B | data B | bss B | micro-ROS stack B | control stack B | led stack B | idle stack B |
+|---|---|---|---:|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 EOF
 }
 
@@ -138,6 +139,7 @@ run_profile() {
     -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN_FILE" \
     -DCMAKE_BUILD_TYPE=MinSizeRel \
     -DEXO_CONTROL_LOOP_HZ="$loop_hz" \
+    -DEXO_CONTROL_TIMER_IRQ_PRIORITY="$CONTROL_TIMER_IRQ_PRIORITY" \
     -DEXO_QOS_BEST_EFFORT="$qos_best_effort" \
     -DEXO_STATUS_EVERY_N="$status_every" \
     -DEXO_EXECUTOR_SPIN_TIMEOUT_US="$spin_timeout_us" \
@@ -160,15 +162,15 @@ run_profile() {
   verdict="${verdict_csv%%,*}"
   reason="${verdict_csv#*,}"
 
-  printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
+  printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
     "$profile" "$verdict" "$reason" "$loop_hz" "$control_tick_source" \
-    "$qos" "$status_every" "$spin_timeout_us" \
+    "$CONTROL_TIMER_IRQ_PRIORITY" "$qos" "$status_every" "$spin_timeout_us" \
     "$flash_bytes" "$flash_margin" "$ram_static_bytes" "$ram_static_margin" \
     "$data_bytes" "$bss_bytes" \
     "$microros_stack" "$control_stack" "$led_stack" "$idle_stack" >>"$CSV"
-  printf '| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n' \
+  printf '| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n' \
     "$profile" "$verdict" "$reason" "$loop_hz" "$control_tick_source" \
-    "$qos" "$status_every" "$spin_timeout_us" \
+    "$CONTROL_TIMER_IRQ_PRIORITY" "$qos" "$status_every" "$spin_timeout_us" \
     "$flash_bytes" "$flash_margin" "$ram_static_bytes" "$ram_static_margin" \
     "$data_bytes" "$bss_bytes" \
     "$microros_stack" "$control_stack" "$led_stack" "$idle_stack" >>"$MD"

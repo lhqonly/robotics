@@ -117,6 +117,14 @@ int clock_gettime(clockid_t clk_id, struct timespec *tp)
 #  define EXO_CONTROL_LOOP_HZ 1000u
 #endif
 
+#ifndef EXO_CONTROL_TIMER_IRQ_PRIORITY
+#  define EXO_CONTROL_TIMER_IRQ_PRIORITY 4u
+#endif
+
+#if EXO_CONTROL_TIMER_IRQ_PRIORITY > 15u
+#  error "EXO_CONTROL_TIMER_IRQ_PRIORITY must be <= 15"
+#endif
+
 static volatile uint8_t rx_dma_buf[RX_DMA_BUF_SIZE] __attribute__((aligned(4)));
 static          uint8_t tx_dma_buf[TX_DMA_BUF_SIZE] __attribute__((aligned(4)));
 
@@ -304,7 +312,9 @@ static void USART1_Init(void)
 #if EXO_CONTROL_LOOP_HZ > 1000u
 /* ===== TIM2 高频本地控制 tick =====
  * FreeRTOS tick=1kHz,无法表达 2/5/10kHz。高频基线改用 TIM2 ISR;ISR 只调用
- * com_control_tick_isr() 做 latest-target 采样/计数,不调用 FreeRTOS API。 */
+ * com_control_tick_isr() 做 latest-target 采样/计数,不调用 FreeRTOS API。
+ * 默认优先级 4 高于 configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY(5),不会被
+ * FreeRTOS critical section 屏蔽;latest target 在 microros_app.c 用双缓冲提交。 */
 static void ControlTimer_Init(void)
 {
     RCC->APB1ENR |= RCC_APB1ENR_TIM2EN;
@@ -317,7 +327,7 @@ static void ControlTimer_Init(void)
     TIM2->SR = 0;
     TIM2->DIER = TIM_DIER_UIE;
 
-    NVIC_SetPriority(TIM2_IRQn, 5);  /* 最高可被 FreeRTOS critical section 屏蔽的优先级 */
+    NVIC_SetPriority(TIM2_IRQn, EXO_CONTROL_TIMER_IRQ_PRIORITY);
     NVIC_EnableIRQ(TIM2_IRQn);
     TIM2->CR1 = TIM_CR1_CEN;
 }

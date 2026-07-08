@@ -9,8 +9,9 @@
  * SysTick/PendSV/SVC 由 FreeRTOS port 提供(经 FreeRTOSConfig.h 的宏映射到 CMSIS 名),
  * 此处不实现。Reset/NMI/HardFault 等由 CMSIS startup 提供默认弱实现。
  *
- * 注:本卡未在 ISR 内调用 FreeRTOS FromISR API(只搬字节进无锁 SPSC 环形缓冲),
- *     故无需 portYIELD_FROM_ISR。中断优先级数值=6 >= MAX_SYSCALL(5),已为将来用 API 留余地。
+ * 注:USART/DMA ISR 未调用 FreeRTOS FromISR API(只搬字节进无锁 SPSC 环形缓冲),
+ *     故无需 portYIELD_FROM_ISR。USART/DMA 优先级数值=6 >= MAX_SYSCALL(5),已为将来用
+ *     API 留余地。TIM2 高频控制 ISR 不调用 FreeRTOS API,可设为更高优先级以减少闭环抖动。
  */
 
 #include "stm32f1xx.h"
