@@ -138,6 +138,12 @@ cmake -S firmware/f103-microros -B firmware/f103-microros/build \
   -DEXO_CONTROL_LOOP_HZ=10000
 ```
 
+烧录并启动 bridge 后，可以用 SWD 粗测本地 tick 档位：
+
+```bash
+tools/measure-control-loop.sh 5 firmware/f103-microros/build/f103-microros.elf
+```
+
 终端 3：查看通信结果。
 
 ```bash
