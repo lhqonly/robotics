@@ -9,6 +9,7 @@ REPORT="$OUTDIR/$TAG.md"
 COM_LOGDIR="$ROOT/log/com-perf"
 SIZE_LOGDIR="$ROOT/log/firmware-size-matrix"
 STACK_LOGDIR="$ROOT/log/firmware-stack-sweep"
+SPIN_TIMEOUT_LOGDIR="$ROOT/log/firmware-spin-timeout-sweep"
 WATCH_LOGDIR="$ROOT/log/overnight-com-watch"
 
 mkdir -p "$OUTDIR"
@@ -161,6 +162,7 @@ fi
 latest_any_wire="$(latest_file "$COM_LOGDIR" '*.wire.log')"
 latest_size_md="$(latest_file "$SIZE_LOGDIR" '*.md')"
 latest_stack_md="$(latest_file "$STACK_LOGDIR" '*.md')"
+latest_spin_timeout_md="$(latest_file "$SPIN_TIMEOUT_LOGDIR" '*.md')"
 latest_watch_summary="$(latest_file "$WATCH_LOGDIR" '*.summary.md')"
 
 sampler_summary=""
@@ -278,6 +280,7 @@ serial_users="$(serial_lsof)"
   echo "- latest standalone wire stats：$(relpath "$latest_any_wire")"
   echo "- size matrix：$(relpath "$latest_size_md")"
   echo "- stack sweep：$(relpath "$latest_stack_md")"
+  echo "- spin timeout sweep：$(relpath "$latest_spin_timeout_md")"
   echo "- overnight summary：$(relpath "$latest_watch_summary")"
   echo
   echo "## 最新通信指标"
@@ -347,11 +350,20 @@ serial_users="$(serial_lsof)"
   first_table_rows "$latest_stack_md" 8
   echo '```'
   echo
+  echo "## executor spin timeout 候选"
+  echo
+  echo "来源：$(relpath "$latest_spin_timeout_md")"
+  echo
+  echo '```markdown'
+  first_table_rows "$latest_spin_timeout_md" 8
+  echo '```'
+  echo
   echo "## 未解决项"
   echo
   echo "- SWD 仍需恢复：当前无法 flash 新 profile，也无法读取高频运行期栈水位。"
   echo "- 10kHz/200Hz/best_effort/status_every_40 和 2Mbps profile 已能编译，但运行收益待 SWD 恢复后实测。"
   echo "- UART read polling 候选 \`EXO_UART_READ_POLL_YIELDS=4\` 仅完成编译/size 验证，是否改善 RTT/gap 长尾待上板实测。"
+  echo "- executor spin timeout 候选 \`EXO_EXECUTOR_SPIN_TIMEOUT_US=500/200/100\` 仅完成编译/size 验证，是否改善 RTT/gap 长尾待上板实测。"
   echo "- DWT snapshot 算法已有 host-side 模型测试 \`tools/test-dwt-snapshot-model.sh\`，但真实 stamp 单调性仍需 SWD 恢复后做 >60s 静默恢复对抗。"
   echo "- idle stack 96 words、micro-ROS stack 704/640 words 目前是静态候选，必须上板用 \`tools/measure-stack-hwm.sh\` 复测后再设为默认。"
   echo "- \`cmd_catchup_max=1\` 只应用于 best-effort/status decimation/sampled 的 latest-target profile；不要用于 reliable/status_every_1/full-echo 默认诊断。"

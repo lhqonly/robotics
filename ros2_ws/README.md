@@ -402,6 +402,16 @@ tools/firmware-stack-sweep.sh current_stack
 候选，不能替代上板后的 `tools/measure-stack-hwm.sh` 水位复测。表格中的
 `PASS_STATIC` 只表示静态 Flash/RAM 在预算内，仍必须复测运行期栈水位。
 
+要比较 executor `spin_some` 等待上限候选的静态 Flash/RAM，也不需要连接硬件：
+
+```bash
+tools/firmware-spin-timeout-sweep.sh current_spin
+```
+
+默认会在 10kHz/best-effort/status_every_40 profile 下比较 `1000/500/200/100us`，
+输出 `log/firmware-spin-timeout-sweep/current_spin.md` 和 `.csv`。这只说明候选
+可编译且静态预算 OK；是否改善 RTT/gap 长尾必须上板实测。
+
 固件 DWT timestamp 的双缓冲快照算法可以在 PC 上跑模型测试，不需要连接硬件：
 
 ```bash
