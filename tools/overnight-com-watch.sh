@@ -76,7 +76,7 @@ while [ "$(date +%s)" -lt "$end_epoch" ]; do
   if [ "$next" -gt "$end_epoch" ]; then
     break
   fi
-  log "sleep_s=$INTERVAL_SECONDS"
+  log "sleep_s=$INTERVAL_SECONDS wake_at=$(date -d "@$next" '+%Y-%m-%d %H:%M:%S %Z')"
   sleep "$INTERVAL_SECONDS"
 done
 
