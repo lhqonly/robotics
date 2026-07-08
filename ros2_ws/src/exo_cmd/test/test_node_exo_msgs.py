@@ -20,7 +20,7 @@ messages, exercising the adapter paths the rclpy-free tracker tests cannot:
     node self-sign;
   * LinkHealth publish (§7.7) -- _on_link_health builds a LinkHealth whose fields
     match the tracker snapshot (counters + RTT stats + reconciles);
-  * crc_mismatch on /exo/link_health (A13 / Low-3, §7.9) -- N bad-crc echoes are
+  * crc_mismatch on /com/tp_link_health (A13 / Low-3, §7.9) -- N bad-crc echoes are
     counted into the tracker, surface on the topic, stay non-blocking (seqs still
     matched) and stay OUT of the reconcile identity; crc_enabled=False keeps the
     published crc_mismatch at 0.
@@ -222,7 +222,7 @@ def test_crc_end_to_end_loopback_resign_no_mismatch():
 
 
 # --------------------------------------------------------------------------
-# A13 (Low-3): crc_mismatch is surfaced on /exo/link_health, is non-blocking,
+# A13 (Low-3): crc_mismatch is surfaced on /com/tp_link_health, is non-blocking,
 # and is a SIDE CHANNEL (never enters the reconcile identity). crc_enabled=False
 # -> the field stays 0 (the counter is never even checked).
 # --------------------------------------------------------------------------

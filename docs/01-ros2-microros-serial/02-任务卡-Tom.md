@@ -26,7 +26,7 @@
 ---
 
 ## T2 — ROS2 侧消息/节点 + bringup launch ｜ Phase A ｜ 无需硬件 ｜ ✅（2026-06-18 实跑验证通过）
-> 已落盘 `ros2_ws/src/exo_cmd`(节点 exo_cmd_node/loopback_node + qos.py 单点 QoS)与 `exo_bringup`(loopback_test.launch.py 一键起全套)。
+> 已落盘 `ros2_ws/src/exo_cmd`(节点 exo_cmd_node/loopback_node + qos.py 单点 QoS)与 `com_bringup`(loopback_test.launch.py 一键起全套)。
 > **主 agent 端到端实跑验证**:`colcon build` 两包零报错通过;起 launch 后 `/exo/mcu_status` 输出单调递增(902→907 无重复无丢序),回环判据成立;`topic info -v` 显示 Reliability=RELIABLE、Pub/Sub count 各 1。
 > **QoS 铁证(applied QoS,本地端点真值)**:Tom 在 `qos.py` 加了 `qos_summary()`,节点启动直接从 `publisher.qos_profile` 读并打印。实测四端点均 `reliability=RELIABLE history=KEEP_LAST depth=10`,与契约逐项一致。
 > **已知 introspection 现象(非 bug)**:`ros2 topic info -v` 的 History(Depth) 显示 UNKNOWN——rmw(FastDDS)发现阶段不传播 history/depth。验收以上面的 applied-QoS 日志为准,Gill 勿据 `topic info -v` 误判。
@@ -37,10 +37,10 @@
 1. 建 `ros2_ws/src/exo_cmd`（C++ 或 Python 皆可，建议 Python 起步快）：
    - pub `/exo/cmd_heartbeat`（Int32，10 Hz，递增计数器，QoS 见契约）。
    - sub `/exo/mcu_status`，打印并比对回环值。
-2. 建 `ros2_ws/src/exo_bringup`，提供 launch：可单独起 `exo_cmd`，也可起一个**本地 loopback 测试节点**（订阅 cmd_heartbeat、原样转发到 mcu_status）模拟 MCU 行为。
+2. 建 `ros2_ws/src/com_bringup`，提供 launch：可单独起 `exo_cmd`，也可起一个**本地 loopback 测试节点**（订阅 cmd_heartbeat、原样转发到 mcu_status）模拟 MCU 行为。
 3. `colcon build` 通过，`source install/setup.bash`。
 
-**产出物**：`exo_cmd`、`exo_bringup` 两个包 + loopback 测试节点 + launch 文件。
+**产出物**：`exo_cmd`、`com_bringup` 两个包 + loopback 测试节点 + launch 文件。
 **验收标准**：仅用 ROS2（无 MCU），起 `exo_cmd` + loopback 节点，`ros2 topic echo /exo/mcu_status` 能看到与 cmd_heartbeat 一致的递增值；回环判据成立。
 
 ---
@@ -50,9 +50,9 @@
 
 **步骤**
 1. 用 `micro_ros_setup`（或 Docker）build `micro_ros_agent`。
-2. 写 `tools/run-agent.sh`：封装 `ros2 run micro_ros_agent micro_ros_agent serial --dev ${DEV:-/dev/ttyACM0} -b 921600 -v6`，设备可由环境变量覆盖。
+2. 写 `tools/run-bridge.sh`：封装 `ros2 run micro_ros_agent micro_ros_agent serial --dev ${DEV:-/dev/ttyUSB0} -b 921600 -v6`，设备可由环境变量覆盖。
 
-**产出物**：可执行的 micro_ros_agent；`tools/run-agent.sh`。
+**产出物**：可执行的 micro_ros_agent；`tools/run-bridge.sh`。
 **验收标准**：agent 二进制可启动（无设备时会等待连接，不报致命错误即可）；脚本参数化正确。
 
 ---
@@ -102,7 +102,7 @@
 
 **步骤**
 1. `usbipd-win` 把 ST-Link 从 Windows attach 到 WSL，确认 `/dev/ttyACM0`。
-2. `flash.sh` 烧固件 → 起 `run-agent.sh` → 起 `exo_cmd`。
+2. `flash.sh` 烧固件 → 起 `run-bridge.sh` → 起 `exo_cmd`。
 3. 观察 `/exo/mcu_status` 是否回填 `/exo/cmd_heartbeat` 的值。
 
 **产出物**：联调记录（含 `ros2 topic echo` 截图/日志）。

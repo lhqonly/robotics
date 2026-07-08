@@ -11,7 +11,7 @@ T8（20KB spike）不是独立于 T4 的东西——它就是「T4 骨架 + libm
 ```
    [并行线 1: WSL 侧]                    [并行线 2: 固件侧]
 M0  T3 装 micro_ros_agent(源码/docker)    T4 F103 裸机骨架(点灯/串口自检)
-    产出 run-agent.sh          ┐         + generate_lib 产出 libmicroros.a
+    产出 run-bridge.sh          ┐         + generate_lib 产出 libmicroros.a
                                │         (两步互不依赖，真并行)
                                └────┬───────────────┘
                                     ▼
@@ -29,7 +29,7 @@ M4 收尾  .map 量 RAM/Flash + uxTaskGetStackHighWaterMark 栈水位 → 最终
 ### A.2 里程碑红绿灯
 | 里程碑 | 产物 | 验收信号（绿） | 红灯处置 |
 |---|---|---|---|
-| M0-A T3 | `tools/run-agent.sh` | `micro_ros_agent --help` 有输出；脚本能开 `/dev/ttyACM0` 不报 busy/permission | docker fallback |
+| M0-A T3 | `tools/run-bridge.sh` | `micro_ros_agent --help` 有输出；脚本能开 `/dev/ttyUSB0` 不报 busy/permission | docker fallback |
 | M0-B T4 | 可烧 `.elf/.bin`；LED 闪 + USART2 自检串 | `cat /dev/ttyACM0` 看到上电自检；`readelf -A` 为 M3 无 VFP | 时钟/BRR 排障(见 C) |
 | **M1 ★** T8 | 骨架+libmicroros+1pub 烧板 | agent `-v6` 打印 session established / create participant | 链接溢出/起不来 → C 的降级判定 |
 | **M2 ★** T5a | MCU 单向 pub | `ros2 topic echo /exo/mcu_status` 单调递增 Int32 | transport read/write 回调打桩排查 |
@@ -58,9 +58,9 @@ M4 收尾  .map 量 RAM/Flash + uxTaskGetStackHighWaterMark 栈水位 → 最终
 6. `[主agent]` `ros2 run micro_ros_setup create_agent_ws.sh; ros2 run micro_ros_setup build_agent.sh; source ~/uros_ws/install/local_setup.bash`
 7. 自检：`ros2 run micro_ros_agent micro_ros_agent --help` 有输出即装好。
 
-**方案 B（兜底）docker**：`[SUDO]` `sudo apt install -y docker.io && sudo usermod -aG docker $USER`（重开 shell）；`docker run -it --rm -v /dev:/dev --privileged --net=host microros/micro-ros-agent:jazzy serial --dev /dev/ttyACM0 -b 921600 -v6`
+**方案 B（兜底）docker**：`[SUDO]` `sudo apt install -y docker.io && sudo usermod -aG docker $USER`（重开 shell）；`docker run -it --rm -v /dev:/dev --privileged --net=host microros/micro-ros-agent:jazzy serial --dev /dev/ttyUSB0 -b 921600 -v6`
 
-**产出 `tools/run-agent.sh`**（Tom 写，主 agent 跑）：source ROS + uros_ws，`exec ros2 run micro_ros_agent micro_ros_agent serial --dev ${1:-/dev/ttyACM0} -b ${2:-921600} -v6`。`-v6` 起 session 时能看到 client/participant 创建日志（M1 验收靠它）。
+**产出 `tools/run-bridge.sh`**（Tom 写，主 agent 跑）：source ROS + uros_ws，`exec ros2 run micro_ros_agent micro_ros_agent serial --dev ${1:-/dev/ttyUSB0} -b ${2:-921600} -v6`。`-v6` 起 session 时能看到 client/participant 创建日志（M1 验收靠它）。
 
 **验收（Gill，G-B-1 收口）**：`--help` 有输出；脚本能开 ttyACM0 不报 permission/busy；无板时 `-v6` 周期打印等待；记录方案 A/B + agent 版本。
 

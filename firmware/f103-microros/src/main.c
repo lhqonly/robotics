@@ -8,7 +8,7 @@
  *   - 新增 uart_ll_write_blocking / uart_ll_read(本文件,见 uart_ll.h):
  *     transport 层(src/microros_transport.c)的 write/read 回调底座。
  *   - 任务模型:T4 的「echo + 临时 DBG 探针」AppTask 已删除,改为
- *       microros_app_task(src/microros_app.c):rclc 双向闭环 exo_mcu 节点;
+ *       microros_app_task(src/microros_app.c):rclc 双向闭环 node_com_mcu 节点;
  *       + 一个极小 LedTask 做 liveness 心跳。
  *   - 串口归 micro-ROS(XRCE-DDS over serial);仅上电横幅/建链失败用明文自检串。
  *

@@ -247,7 +247,7 @@ firmware/f103-microros/  (M-B，等板子)
 | 里程碑 | 内容 | 硬件依赖 | 风险 | 验证手段 |
 |---|---|---|---|---|
 | **M-A（今天就能全做完，WSL 侧）** | ① 建 `exo_msgs` 包（4 个 .msg）；② tracker 模数 2^31→2^32 + RTT 滚动窗口；③ exo_cmd_node / loopback_node 迁移到 ExoCmd/ExoStatus；④ 诊断 topic publisher；⑤ 全部测试迁移 + 新增（payload/seq 解耦、CRC、p95、回绕重标定）；⑥ 契约 bump v1.7 | **无** | 低（tracker 逻辑零改动是最强证据；纯 WSL 内 loopback 自洽） | `colcon build` + `colcon test` 全绿；loopback 跑 A1–A8（exo_msgs 载体）；零 UNMATCHED / 对账恒等 |
-| **M-B（必须等板子）** | ① 把 exo_msgs 喂进 micro-ROS firmware 构建、**重建 libmicroros**；② 固件收 ExoCmd 解包 / 回填 ExoStatus；③ MCU 时钟源（DWT CYCCNT）盖 stamp；④ CRC 端到端字节序一致（若启用）；⑤ 真机 A1–A8 在 exo_msgs 上复现 + endurance soak；⑥ 量 RAM/ROM 增量、确认动态分配仍为零 | **是（反复烧 / 联调）** | 中（重建 libmicroros 是 T5 同类操作有经验；真风险=CRC 字节序一致 + MCU 时钟折算 + 联调时间） | `tools/run-agent.sh` + 真机对账（沿用 `bidi_recon.sh` 思路，载体换 exo_msgs）；gdb 读 RAM 水位 |
+| **M-B（必须等板子）** | ① 把 exo_msgs 喂进 micro-ROS firmware 构建、**重建 libmicroros**；② 固件收 ExoCmd 解包 / 回填 ExoStatus；③ MCU 时钟源（DWT CYCCNT）盖 stamp；④ CRC 端到端字节序一致（若启用）；⑤ 真机 A1–A8 在 exo_msgs 上复现 + endurance soak；⑥ 量 RAM/ROM 增量、确认动态分配仍为零 | **是（反复烧 / 联调）** | 中（重建 libmicroros 是 T5 同类操作有经验；真风险=CRC 字节序一致 + MCU 时钟折算 + 联调时间） | `tools/run-bridge.sh` + 真机对账（沿用 `bidi_recon.sh` 思路，载体换 exo_msgs）；gdb 读 RAM 水位 |
 
 **关键调度结论**：M-A 与 M-B **解耦**。M-A 今天就能让 exo_msgs 在 WSL 侧 build/test 全绿、在 loopback 内复现 A1–A8，**完全不依赖硬件**；真机仍可继续跑已验证的 Int32 链路（git tag 退路）。M-B 在有板子的时段做。这正好契合「当前没有硬件、WSL 侧今天就能 build/test、板子集成推后」的现实。
 

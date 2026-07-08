@@ -1,9 +1,9 @@
 /* microros_app.h — micro-ROS rclc 双向应用任务对外接口 (T5)
  *
  * 实现契约 §1 的最小双向闭环:
- *   sub /exo/cmd_heartbeat (Int32, RELIABLE, KEEP_LAST depth=1)
- *     → 回调里原样回填 → pub /exo/mcu_status (Int32, RELIABLE, KEEP_LAST depth=1)
- *   节点名 exo_mcu(契约 §5)。
+ *   sub /com/tp_cmd_heartbeat (exo_msgs/ExoCmd, RELIABLE, KEEP_LAST depth=1)
+ *     → 回调里原样回填 → pub /com/tp_mcu_status (exo_msgs/ExoStatus, RELIABLE, KEEP_LAST depth=1)
+ *   节点名 node_com_mcu(契约 §5)。
  *
  * 用法:main.c 用 xTaskCreateStatic 起本任务(替代 T4 的 AppTask echo)。
  */

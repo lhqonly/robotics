@@ -1,9 +1,9 @@
-/* microros_app.c — micro-ROS rclc 双向应用(节点 exo_mcu) (M-B / exo_msgs 迁移)
+/* microros_app.c — micro-ROS rclc 双向应用(节点 node_com_mcu) (M-B / exo_msgs 迁移)
  *
  * 契约 §1 双向闭环(01-接口契约.md v1.7,exo_msgs 载体;原 v1.5 std_msgs/Int32 已迁移):
- *   sub /exo/cmd_heartbeat (exo_msgs/ExoCmd, RELIABLE, KEEP_LAST, F103 侧 depth=1)
- *     → ON_NEW_DATA 回调里解包 ExoCmd → 回填 ExoStatus → pub /exo/mcu_status(同 QoS)。
- *   节点名 exo_mcu(§5),响应式回发(每收一条回一条,§1.2)。
+ *   sub /com/tp_cmd_heartbeat (exo_msgs/ExoCmd, RELIABLE, KEEP_LAST, F103 侧 depth=1)
+ *     → ON_NEW_DATA 回调里解包 ExoCmd → 回填 ExoStatus → pub /com/tp_mcu_status(同 QoS)。
+ *   节点名 node_com_mcu(§5),响应式回发(每收一条回一条,§1.2)。
  *
  * 【M-B 回填语义(契约 §1.2 / 11 之 H1)】每收一条 ExoCmd:
  *   - header.seq           = 原样回填 cmd.header.seq(§7.6 seq 配对,精确相等)
@@ -83,9 +83,9 @@ extern void uart_puts(const char *s);
 /* ===== 静态句柄(全部 .bss,无动态分配) ===== */
 static rcl_allocator_t      g_allocator;          /* micro-ROS 默认 allocator(内部走静态池) */
 static rclc_support_t       g_support;            /* support(含 rcl context / init options) */
-static rcl_node_t           g_node;               /* 节点 exo_mcu */
-static rcl_publisher_t      g_pub_status;         /* /exo/mcu_status */
-static rcl_subscription_t   g_sub_cmd;            /* /exo/cmd_heartbeat */
+static rcl_node_t           g_node;               /* 节点 node_com_mcu */
+static rcl_publisher_t      g_pub_status;         /* /com/tp_mcu_status */
+static rcl_subscription_t   g_sub_cmd;            /* /com/tp_cmd_heartbeat */
 static rclc_executor_t      g_executor;           /* 单线程 executor */
 
 /* 消息体:sub 收的 ExoCmd、pub 发的 ExoStatus,各一个(header 16B + payload 4B = 20B)。静态。 */
@@ -173,13 +173,13 @@ static bool microros_entities_init(void)
         return false;
     }
 
-    /* 节点 exo_mcu,默认命名空间。topic 名带 /exo/ 前缀由下面 topic 字符串给全。
-     * 注:契约 §5 节点名 = exo_mcu;命名空间留空("")避免与 /exo/ topic 前缀重复。 */
-    if (!RCSOFT(rclc_node_init_default(&g_node, "exo_mcu", "", &g_support))) {
+    /* 节点 node_com_mcu,默认命名空间。topic 名带 /com/ 前缀由下面 topic 字符串给全。
+     * 注:契约 §5 节点名 = node_com_mcu;命名空间留空("")避免与 /com/ topic 前缀重复。 */
+    if (!RCSOFT(rclc_node_init_default(&g_node, "node_com_mcu", "", &g_support))) {
         return false;
     }
 
-    /* publisher /exo/mcu_status,RELIABLE QoS。
+    /* publisher /com/tp_mcu_status,RELIABLE QoS。
      * ⚠️ micro-ROS 默认 best-effort,契约 §1.2 要求 RELIABLE,必须显式用 _init
      *    传 qos_profile_default(rmw 默认 = RELIABLE/KEEP_LAST)。History depth 由
      *    colcon.meta 的 RMW_UXRCE_MAX_HISTORY=1 在 lib 层钉死为 1(契约 F103 侧 depth=1)。
@@ -188,17 +188,17 @@ static bool microros_entities_init(void)
             &g_pub_status,
             &g_node,
             ROSIDL_GET_MSG_TYPE_SUPPORT(exo_msgs, msg, ExoStatus),
-            "exo/mcu_status"))) {   /* rclc 会补成 /exo/mcu_status(默认命名空间下绝对化) */
+            "com/tp_mcu_status"))) {   /* rclc 会补成 /com/tp_mcu_status(默认命名空间下绝对化) */
         return false;
     }
 
-    /* subscription /exo/cmd_heartbeat,RELIABLE QoS(同上,_init_default = reliable)。
+    /* subscription /com/tp_cmd_heartbeat,RELIABLE QoS(同上,_init_default = reliable)。
      * 用 rosidl 的 exo_msgs/ExoCmd type support。 */
     if (!RCSOFT(rclc_subscription_init_default(
             &g_sub_cmd,
             &g_node,
             ROSIDL_GET_MSG_TYPE_SUPPORT(exo_msgs, msg, ExoCmd),
-            "exo/cmd_heartbeat"))) {
+            "com/tp_cmd_heartbeat"))) {
         return false;
     }
 

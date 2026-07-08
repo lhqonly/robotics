@@ -26,7 +26,7 @@
 | 目录 | 内容 |
 |------|------|
 | `docs/` | 架构文档、接口契约、任务卡、变更设计 |
-| `ros2_ws/` | ROS2 工作区（`exo_cmd` 心跳+链路监控、`exo_bringup` 启动） |
+| `ros2_ws/` | ROS2 工作区（`exo_cmd` 心跳+链路监控、`com_bringup` 启动） |
 | `firmware/` | STM32 / micro-ROS 固件相关配置（F103 裁剪 colcon.meta 等） |
 | `tools/` | 工具链安装、环境自检、实跑验证脚本 |
 

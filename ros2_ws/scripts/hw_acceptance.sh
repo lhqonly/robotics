@@ -5,7 +5,7 @@
 #
 # This is NOT a loopback test. The micro-ROS Agent + the real board replace the
 # loopback_node. exo_cmd_node (WSL side) is the SAME node used in Phase A: it
-# publishes /exo/cmd_heartbeat and subscribes /exo/mcu_status with the v1.1
+# publishes /com/tp_cmd_heartbeat and subscribes /com/tp_mcu_status with the v1.1
 # LinkHealthTracker. The board echoes cmd_heartbeat.data back on mcu_status.
 #
 # Prereqs (主 agent verifies before running):
@@ -41,12 +41,12 @@ SECS="${2:-}"
 # (firmware leaves RMW_UXRCE_DEFAULT_DOMAIN_ID unset -> 0; the agent bridges it
 # onto whatever ROS_DOMAIN_ID the agent runs in, but the client-declared domain
 # is what `ros2 node list` matches). Forcing a non-zero domain here made UNI
-# fail ("/exo_mcu not visible") because the board stays on 0. So default to 0;
+# fail ("/node_com_mcu not visible") because the board stays on 0. So default to 0;
 # isolation still comes from ROS_LOCALHOST_ONLY below. To isolate on a non-zero
 # domain you must ALSO rebuild firmware with RMW_UXRCE_DEFAULT_DOMAIN_ID set.
 export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-0}"
 # Single-host test: restrict discovery to localhost so no remote participant
-# can supply a fake /exo_mcu or extra publisher. (CycloneDDS/FastDDS honor this.)
+# can supply a fake /node_com_mcu or extra publisher. (CycloneDDS/FastDDS honor this.)
 export ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY:-1}"
 echo "DDS isolation: ROS_DOMAIN_ID=$ROS_DOMAIN_ID ROS_LOCALHOST_ONLY=$ROS_LOCALHOST_ONLY"
 
@@ -95,16 +95,16 @@ preflight() {
     exit 2
   fi
   exec 9>&-
-  # DDS graph must be empty of /exo/* before WE create anything (Codex finding).
+  # DDS graph must be empty of /com/* before WE create anything (Codex finding).
   local pre_topics
-  pre_topics=$(ros2 topic list 2>/dev/null | grep '^/exo/' || true)
+  pre_topics=$(ros2 topic list 2>/dev/null | grep '^/com/' || true)
   if [ -n "$pre_topics" ]; then
-    red "PREFLIGHT FAIL: /exo/* topics already on the graph BEFORE we start:"
+    red "PREFLIGHT FAIL: /com/* topics already on the graph BEFORE we start:"
     echo "$pre_topics"
     red "  Something else is publishing on this domain. Aborting (would crosstalk)."
     exit 2
   fi
-  grn "preflight OK: clean graph, no /exo/* preexisting, $DEV free & openable"
+  grn "preflight OK: clean graph, no /com/* preexisting, $DEV free & openable"
 }
 
 start_agent() {
@@ -203,19 +203,19 @@ phase_session() {
 #           (entities created; one direction observable)
 # ===========================================================================
 phase_uni() {
-  hr; echo "PHASE 2: UNI (ROS2 graph discovers exo_mcu + topics)"; hr
-  # exo_mcu node visible
-  if wait_for 20 'ros2 node list 2>/dev/null | grep -q "/exo_mcu\|exo_mcu"'; then
-    grn "UNI: exo_mcu node present in ROS2 graph"
+  hr; echo "PHASE 2: UNI (ROS2 graph discovers node_com_mcu + topics)"; hr
+  # node_com_mcu node visible
+  if wait_for 20 'ros2 node list 2>/dev/null | grep -q "/node_com_mcu\|node_com_mcu"'; then
+    grn "UNI: node_com_mcu node present in ROS2 graph"
   else
-    red "UNI FAIL: exo_mcu not in 'ros2 node list'. Session up but no node/entities."
+    red "UNI FAIL: node_com_mcu not in 'ros2 node list'. Session up but no node/entities."
     ros2 node list 2>/dev/null || true
     return 1
   fi
   echo "--- ros2 node list ---"; ros2 node list
   echo "--- ros2 topic list ---"; ros2 topic list
   # both contract topics present
-  for t in /exo/cmd_heartbeat /exo/mcu_status; do
+  for t in /com/tp_cmd_heartbeat /com/tp_mcu_status; do
     if ros2 topic list 2>/dev/null | grep -qx "$t"; then grn "  topic $t present";
     else red "  topic $t MISSING"; return 1; fi
   done
@@ -223,20 +223,20 @@ phase_uni() {
   # if it's purely responsive (echo only), there may be 0 Hz until we publish.
   # So we ALSO need a publisher running; that is phase_bidi's job. Here we only
   # assert the entity/QoS side.
-  echo "--- ros2 topic info -v /exo/mcu_status (publisher = exo_mcu, QoS) ---"
-  ros2 topic info -v /exo/mcu_status
-  echo "--- ros2 topic info -v /exo/cmd_heartbeat (subscriber = exo_mcu, QoS) ---"
-  ros2 topic info -v /exo/cmd_heartbeat
+  echo "--- ros2 topic info -v /com/tp_mcu_status (publisher = node_com_mcu, QoS) ---"
+  ros2 topic info -v /com/tp_mcu_status
+  echo "--- ros2 topic info -v /com/tp_cmd_heartbeat (subscriber = node_com_mcu, QoS) ---"
+  ros2 topic info -v /com/tp_cmd_heartbeat
   echo "CHECK MANUALLY: mcu_status Reliability=RELIABLE, History=KEEP_LAST."
   echo "(Depth shows UNKNOWN via rmw -- expected, not a defect.)"
 
   # --- endpoint provenance gates (Codex finding: node-list alone proves nothing)
-  # mcu_status MUST be published by exactly one exo_mcu and nothing else.
+  # mcu_status MUST be published by exactly one node_com_mcu and nothing else.
   local pubcnt fakeloop
-  pubcnt=$(ros2 topic info /exo/mcu_status 2>/dev/null | sed -nE 's/.*Publisher count: *([0-9]+).*/\1/p')
+  pubcnt=$(ros2 topic info /com/tp_mcu_status 2>/dev/null | sed -nE 's/.*Publisher count: *([0-9]+).*/\1/p')
   echo "mcu_status publisher count = ${pubcnt:-?}"
   if [ "${pubcnt:-0}" != "1" ]; then
-    red "UNI FAIL: /exo/mcu_status publisher count = ${pubcnt:-0}, expected exactly 1 (the board)."
+    red "UNI FAIL: /com/tp_mcu_status publisher count = ${pubcnt:-0}, expected exactly 1 (the board)."
     red "  >1 means a fake/loopback/second source is also publishing -> echo could be faked."
     return 1
   fi
@@ -250,12 +250,12 @@ phase_uni() {
   #       BIDI is the authoritative QoS gate (a true RELIABLE/BEST_EFFORT
   #       mismatch leaves the endpoints unmatched -> zero matched there).
   local qos_dump=""
-  wait_for 10 'ros2 topic info -v /exo/mcu_status 2>/dev/null | grep -qi "Reliability:"' || true
-  qos_dump=$(ros2 topic info -v /exo/mcu_status 2>/dev/null)
+  wait_for 10 'ros2 topic info -v /com/tp_mcu_status 2>/dev/null | grep -qi "Reliability:"' || true
+  qos_dump=$(ros2 topic info -v /com/tp_mcu_status 2>/dev/null)
   if echo "$qos_dump" | grep -qi "Reliability: *RELIABLE"; then
     grn "  mcu_status endpoint QoS observed RELIABLE"
   elif echo "$qos_dump" | grep -qi "Reliability:"; then
-    red "UNI FAIL: /exo/mcu_status board endpoint QoS is NOT RELIABLE:"
+    red "UNI FAIL: /com/tp_mcu_status board endpoint QoS is NOT RELIABLE:"
     echo "$qos_dump" | grep -i "Reliability:"
     return 1
   else
@@ -309,7 +309,7 @@ phase_bidi() {
     red "  BIDI WARN: link did not start matching within 15s warmup -- measuring from 0 (expect startup losses)."
   fi
   # capture the echo stream independently as ground truth (causality cross-check)
-  setsid timeout "$run" ros2 topic echo /exo/mcu_status exo_msgs/msg/ExoStatus \
+  setsid timeout "$run" ros2 topic echo /com/tp_mcu_status exo_msgs/msg/ExoStatus \
       > "$ECHO_LOG" 2>&1 &
   # let it run (measured steady-state window)
   sleep "$run"
@@ -324,7 +324,7 @@ phase_bidi() {
   sleep 1   # let the node print its shutdown / final state
 
   echo "--- ros2 topic hz: NOTE this is WEAK proof. Run in a SEPARATE shell DURING"
-  echo "    the run: 'ros2 topic hz /exo/mcu_status' (~10Hz). Rate alone can be"
+  echo "    the run: 'ros2 topic hz /com/tp_mcu_status' (~10Hz). Rate alone can be"
   echo "    faked by an autonomous board publisher -- the AUTHORITATIVE proof is"
   echo "    the tracker's matched count + zero UNMATCHED below (value causality)."
   hr
@@ -445,13 +445,13 @@ phase_bidi() {
     red "  WARN nonce: no 'start_seq=' line in $CMD_LOG -- cannot run the causality"
     red "       cross-check (old build?). Skipping (not a FAIL)."
   elif [ -z "$first_echo_seq" ]; then
-    red "  FAIL echo-capture: no ExoStatus.header.seq captured on /exo/mcu_status"
+    red "  FAIL echo-capture: no ExoStatus.header.seq captured on /com/tp_mcu_status"
     ok=1
   elif grep -qE "matched seq=${first_echo_seq}\b" "$CMD_LOG" 2>/dev/null; then
     grn "  OK echo-capture: captured seq $first_echo_seq is matched by exo_cmd in this run (start_seq=$nonce)"
   else
     red "  FAIL echo-capture: captured seq $first_echo_seq is not matched by exo_cmd"
-    red "        (wrong source on /exo/mcu_status? echo capture from another run?)"
+    red "        (wrong source on /com/tp_mcu_status? echo capture from another run?)"
     ok=1
   fi
   return $ok

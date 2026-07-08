@@ -6,7 +6,7 @@
   <description>
     Custom interface package for the exoskeleton link (M-A, WSL-side first).
     Lifts seq / monotonic timestamp / application-level CRC from "inferred on
-    the WSL side" to explicit wire fields, and ships the /exo/link_health
+    the WSL side" to explicit wire fields, and ships the /com/tp_link_health
     diagnostic message. Pure interface package (no logic code): ExoHeader,
     ExoCmd, ExoStatus, LinkHealth.
     Interface contract: docs/01-ros2-microros-serial/01-接口契约.md (v1.7).

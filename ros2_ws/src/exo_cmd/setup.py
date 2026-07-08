@@ -20,9 +20,9 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            # WSL command node: pub /exo/cmd_heartbeat, sub /exo/mcu_status
+            # WSL command node: pub /com/tp_cmd_heartbeat, sub /com/tp_mcu_status
             'exo_cmd_node = exo_cmd.exo_cmd_node:main',
-            # Local MCU simulator: sub /exo/cmd_heartbeat -> pub /exo/mcu_status
+            # Local MCU simulator: sub /com/tp_cmd_heartbeat -> pub /com/tp_mcu_status
             'loopback_node = exo_cmd.loopback_node:main',
         ],
     },

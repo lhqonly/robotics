@@ -32,8 +32,8 @@
 - **判定**：exo_msgs create bin 描述消息能在最终 STREAM_HISTORY 配置下塞进流缓冲、实体在 client 侧成功创建；若调大了 STREAM_HISTORY，MTU 分片不破 + RAM 复测达标 + 已记录回报。
 
 ### V1 — agent bin 模式自定义类型兼容性结论（★技术风险闸门，先于 A1–A8，在 V0.5 通过之后）
-> 这是 M-B 的技术风险闸门（契约 colcon.meta `RMW_UXRCE_CREATION_MODE=bin`、`tools/run-agent.sh` = bin 模式 vanilla agent）。Gill 独立复验 Tom 任务 5 的结论。**前提：V0.5 流缓冲闸门已过**（client 侧实体建得出来），否则 agent 根本看不到 create 子消息。
-- 起 `tools/run-agent.sh /dev/ttyUSB0 921600`（vanilla bin agent），烧迁移后固件，看 agent `-v6` 日志：**datawriter（`/exo/mcu_status`，类型 `exo_msgs::msg::dds_::ExoStatus_`）与 datareader（`/exo/cmd_heartbeat`，`ExoCmd`）都建出**（不是建实体失败、不是退回通用类型）。
+> 这是 M-B 的技术风险闸门（契约 colcon.meta `RMW_UXRCE_CREATION_MODE=bin`、`tools/run-bridge.sh` = bin 模式 vanilla agent）。Gill 独立复验 Tom 任务 5 的结论。**前提：V0.5 流缓冲闸门已过**（client 侧实体建得出来），否则 agent 根本看不到 create 子消息。
+- 起 `tools/run-bridge.sh /dev/ttyUSB0 921600`（vanilla bin agent），烧迁移后固件，看 agent `-v6` 日志：**datawriter（`/exo/mcu_status`，类型 `exo_msgs::msg::dds_::ExoStatus_`）与 datareader（`/exo/cmd_heartbeat`，`ExoCmd`）都建出**（不是建实体失败、不是退回通用类型）。
 - WSL 侧（source 了 exo_msgs install）`ros2 topic echo /exo/mcu_status` **正确反序列化**出 exo_msgs 字段（`header.seq` / `header.stamp_mono_ns` / `header.crc` / `payload`），不是乱码 / 不匹配。
 - **若 Tom 的结论是「需喂 agent 侧 exo_msgs」（首选 (a)）**：复验重建 agent 工作区后兼容性恢复，且**确认 Tom 没动 colcon.meta 的 creation mode**（仍是 bin，固件侧建链路径/RAM 不变）。
 - **🛑 若 Tom 改了 `RMW_UXRCE_CREATION_MODE` 为 `xml`（下策 (b)）**：Gill 必须先**确认该决策已经过用户/Elon 拍板**（见 `11` checklist 的确认门——Tom 不得自决切 xml）。若是 Tom 自行切换、未经拍板 → **直接判 V1 不通过并回报**。若已拍板：复验改动后兼容性恢复 + 复核 colcon.meta 变更已记录 + libmicroros 已据此再重建 + **V0.5 流缓冲闸门在 xml 模式下重测**（xml 实体描述更大）+ RAM 复测仍达标（V6）+ 建链路径重跑 T5 级对账（4 根因在 xml 下复核）。

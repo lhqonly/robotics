@@ -32,7 +32,7 @@ Design contract (see docs/01-ros2-microros-serial/01-接口契约.md §7):
 
 The tracker also keeps a bounded rolling RTT window (deque, exo_msgs M-A / §7.7)
 so the node can publish rtt_last_ms / rtt_p95_ms / rtt_max_ms on
-/exo/link_health alongside the reconciliation counters.
+/com/tp_link_health alongside the reconciliation counters.
 
 The tracker never logs by itself; it returns a list of structured `Event`
 objects so the caller (ROS node, or a test) decides how to surface them. This
@@ -163,7 +163,7 @@ class LinkHealthTracker:
     # sent->{matched,lost} lifecycle), so this is a SIDE-CHANNEL observable only
     # and MUST NOT enter the reconcile identity. It lives in the tracker (not the
     # node) so snapshot() returns it under the SAME lock as sent/matched/rtt --
-    # i.e. /exo/link_health never publishes a crc_mismatch from a different
+    # i.e. /com/tp_link_health never publishes a crc_mismatch from a different
     # instant than the rest of the message (no torn snapshot; High-1 invariant).
     crc_mismatch_count: int = 0
 
@@ -268,7 +268,7 @@ class LinkHealthTracker:
         public entry, so the increment is consistent with a concurrent
         snapshot()/counters() read under the MultiThreadedExecutor. This is the
         SINGLE source of truth for the CRC-mismatch tally (the node no longer
-        keeps its own copy) so the count published on /exo/link_health and the
+        keeps its own copy) so the count published on /com/tp_link_health and the
         count the node logs cannot diverge. NON-BLOCKING by contract: callers
         still feed the echo's seq to on_echo() after noting the mismatch -- the
         count is an observable signal, never a reason to drop a seq, and it never
@@ -369,7 +369,7 @@ class LinkHealthTracker:
         Counters + RTT stats + reconcile flag are read under a single lock
         acquisition.
 
-        Why: /exo/link_health is the only outward-observable window onto the
+        Why: /com/tp_link_health is the only outward-observable window onto the
         safety-critical link. If the node read counters(), rtt_stats() and
         reconciles() in three separate lock acquisitions, an rx echo callback
         (running concurrently under the MultiThreadedExecutor) could mutate the
@@ -506,7 +506,7 @@ class LinkHealthTracker:
             self._mark_settled(seq)
             self.matched_count += 1
             # exo_msgs M-A / §7.7: feed the bounded rolling RTT window so the
-            # node can publish rtt_last/p95/max on /exo/link_health. The deque's
+            # node can publish rtt_last/p95/max on /com/tp_link_health. The deque's
             # maxlen evicts the oldest sample; _rtt_last keeps the truly-latest
             # matched RTT even after it ages out of the window.
             self._rtt_window.append(rtt_ms)

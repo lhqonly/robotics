@@ -3,7 +3,7 @@ import os
 
 from setuptools import find_packages, setup
 
-package_name = 'exo_bringup'
+package_name = 'com_bringup'
 
 setup(
     name=package_name,
@@ -21,7 +21,7 @@ setup(
     zip_safe=True,
     maintainer='Tom',
     maintainer_email='lhqonly@users.noreply.github.com',
-    description='Launch files for the exoskeleton serial loopback.',
+    description='Launch files for the communication module.',
     license='MIT',
     tests_require=['pytest'],
     entry_points={

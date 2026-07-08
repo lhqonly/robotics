@@ -1,9 +1,9 @@
 """
 loopback_node: local stand-in for the MCU (Phase A, no hardware).
 
-Mimics the contract behaviour of the STM32 micro-ROS app (node exo_mcu):
-  - subscribes /exo/cmd_heartbeat (exo_msgs/ExoCmd)
-  - on each message, echoes it back on /exo/mcu_status as exo_msgs/ExoStatus:
+Mimics the contract behaviour of the STM32 micro-ROS app (node node_com_mcu):
+  - subscribes /com/tp_cmd_heartbeat (exo_msgs/ExoCmd)
+  - on each message, echoes it back on /com/tp_mcu_status as exo_msgs/ExoStatus:
     header.seq is the received cmd.header.seq verbatim; header.stamp_mono_ns is
     OVERWRITTEN with the loopback's own monotonic clock (the MCU re-stamps with
     its own clock, it does NOT echo back the cmd's stamp); payload is the
@@ -29,8 +29,8 @@ Fault-injection ROS params
   seed (int, default 0)
       RNG seed for drop_rate, for reproducible runs. 0 = system entropy.
 
-Node name 'exo_loopback' (not 'exo_mcu') so it never collides with the real
-firmware node on Phase B; the topic wire behaviour is identical.
+Node name 'node_com_loopback' (not 'node_com_mcu') so it never collides with the
+real firmware node on Phase B; the topic wire behaviour is identical.
 """
 
 import random
@@ -43,13 +43,13 @@ from rcl_interfaces.msg import ParameterDescriptor
 import rclpy
 from rclpy.node import Node
 
-TOPIC_HEARTBEAT = '/exo/cmd_heartbeat'
-TOPIC_STATUS = '/exo/mcu_status'
+TOPIC_HEARTBEAT = '/com/tp_cmd_heartbeat'
+TOPIC_STATUS = '/com/tp_mcu_status'
 
 
 class LoopbackNode(Node):
     def __init__(self):
-        super().__init__('exo_loopback')
+        super().__init__('node_com_loopback')
 
         # ----- fault-injection params (all default to "no fault") -----
         self.declare_parameter('inject_delay_ms', 0.0)
@@ -92,7 +92,7 @@ class LoopbackNode(Node):
             ExoCmd, TOPIC_HEARTBEAT, self._on_heartbeat, EXO_QOS)
 
         self.get_logger().info(
-            'exo_loopback up (MCU simulator): sub %s -> pub %s (echo)'
+            'node_com_loopback up (MCU simulator): sub %s -> pub %s (echo)'
             % (TOPIC_HEARTBEAT, TOPIC_STATUS))
         self.get_logger().info(
             'fault-injection: delay_ms=%.1f drop_rate=%.3f duplicate=%d '

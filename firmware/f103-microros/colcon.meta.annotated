@@ -57,9 +57,9 @@
 
     "rmw_microxrcedds": {
       "cmake-args": [
-        "-DRMW_UXRCE_MAX_NODES=1",            // 只有 1 个节点 exo_mcu -> 节点池 1 槽
-        "-DRMW_UXRCE_MAX_PUBLISHERS=1",       // 只有 /exo/mcu_status -> publisher 池 1 槽
-        "-DRMW_UXRCE_MAX_SUBSCRIPTIONS=1",    // 只有 /exo/cmd_heartbeat -> subscription 池 1 槽
+        "-DRMW_UXRCE_MAX_NODES=1",            // 只有 1 个节点 node_com_mcu -> 节点池 1 槽
+        "-DRMW_UXRCE_MAX_PUBLISHERS=1",       // 只有 /com/tp_mcu_status -> publisher 池 1 槽
+        "-DRMW_UXRCE_MAX_SUBSCRIPTIONS=1",    // 只有 /com/tp_cmd_heartbeat -> subscription 池 1 槽
         "-DRMW_UXRCE_MAX_SERVICES=0",         // 无 service -> 0 槽,省服务池整块 RAM
         "-DRMW_UXRCE_MAX_CLIENTS=0",          // 无 client -> 0 槽
         "-DRMW_UXRCE_MAX_HISTORY=1",          // ★契约 v1.2 拍板:F103 侧历史深度=1(默认 8)-> 大幅省订阅消息队列 RAM

@@ -1,12 +1,12 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>exo_bringup</name>
+  <name>com_bringup</name>
   <version>1.0.0</version>
   <description>
-    Launch files for the exoskeleton minimal serial loopback. Brings up the
-    WSL exo_cmd node, and optionally a local loopback (MCU simulator) node for
-    hardware-free self-test.
+    Launch files for the communication module. Brings up the WSL command node,
+    and optionally a local loopback (MCU simulator) node for hardware-free
+    self-test.
   </description>
   <maintainer email="lhqonly@users.noreply.github.com">Tom</maintainer>
   <license>MIT</license>

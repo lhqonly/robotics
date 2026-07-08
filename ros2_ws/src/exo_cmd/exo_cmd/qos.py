@@ -2,7 +2,7 @@
 Shared QoS profile for the exoskeleton minimal serial loopback.
 
 The interface contract (docs/01-ros2-microros-serial/01-接口契约.md, v1.0)
-fixes the QoS for BOTH topics (/exo/cmd_heartbeat and /exo/mcu_status):
+fixes the QoS for BOTH topics (/com/tp_cmd_heartbeat and /com/tp_mcu_status):
 
     Reliability = RELIABLE
     History     = KEEP_LAST
@@ -16,7 +16,7 @@ match this profile or DDS endpoint matching will silently fail.
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 
 # Single source of truth for the contract QoS. Use this for every
-# publisher/subscriber on /exo/* topics.
+# publisher/subscriber on /com/* topics.
 EXO_QOS = QoSProfile(
     reliability=ReliabilityPolicy.RELIABLE,
     history=HistoryPolicy.KEEP_LAST,

@@ -19,7 +19,7 @@
 > - **P1-2（Low）** 重复 echo（RELIABLE 重传）落入 else 误报 UNMATCHED。Phase B 真机可能制造噪声告警。
 > - **P1-3（High/Codex，6.8年后/远期）** Int32 计数器 2^31 溢出 + 回绕点 `value>last_status` 误判。引入 exo_msgs（契约第6节）时必须定义回绕语义。
 > **放行条件**：P1-1/P1-2 在代码或文档层给出明确处置；P1-3 在 exo_msgs 阶段解决。
-> 命名结论：loopback 用 `exo_loopback`(非 exo_mcu) Gill 从测试视角**支持维持现状**（避免 Phase B 同名冲突），要求 Phase B 联调禁用 loopback_test.launch.py（已由 exo_cmd.launch.py 提供独立入口）。
+> 命名结论：loopback 用 `exo_loopback`(非 exo_mcu) Gill 从测试视角**支持维持现状**（避免 Phase B 同名冲突），要求 Phase B 联调禁用 loopback_test.launch.py（已由 pc_cmd.launch.py 提供独立入口）。
 > 新增测试：`ros2_ws/src/exo_cmd/test/test_roundtrip_logic.py`（无 rclpy 依赖的逻辑单测）。
 - 不依赖 MCU：起 `exo_cmd` + loopback 节点，用 `ros2 topic echo`/`ros2 topic hz` 独立验证：
   - `/exo/cmd_heartbeat` 频率 ≈10 Hz、值单调递增；
@@ -29,7 +29,7 @@
 - **判定**：回环判据成立且 QoS 匹配。
 
 ## G3 — 验收 Agent 起法（对应 T3）｜ Phase A ｜ ⬜
-- 独立运行 `tools/run-agent.sh`，确认 agent 二进制启动、串口参数(921600/dev)正确传入、无设备时优雅等待。
+- 独立运行 `tools/run-bridge.sh`，确认 agent 二进制启动、串口参数(921600/dev)正确传入、无设备时优雅等待。
 - 对抗点：故意传错 `DEV` 路径，确认报错清晰而非静默失败。
 - **判定**：agent 可启动且参数化正确。
 

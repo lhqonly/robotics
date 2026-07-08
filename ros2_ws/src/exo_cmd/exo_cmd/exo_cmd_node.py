@@ -2,15 +2,15 @@
 exo_cmd node: WSL-side heartbeat publisher + link-health monitor.
 
 Per the interface contract (v1.7, exo_msgs M-A):
-  - publishes /exo/cmd_heartbeat  (exo_msgs/ExoCmd, 10 Hz). header.seq is the
+  - publishes /com/tp_cmd_heartbeat  (exo_msgs/ExoCmd, 10 Hz). header.seq is the
     counter that wraps mod 2^32 (§7.6); header.stamp_mono_ns is the sender's
     monotonic nanoseconds (§7.1); header.crc is the optional application CRC;
     payload is the loopback value, DECOUPLED from header.seq;
-  - subscribes /exo/mcu_status    (exo_msgs/ExoStatus) and feeds every echo's
+  - subscribes /com/tp_mcu_status    (exo_msgs/ExoStatus) and feeds every echo's
     header.seq (NOT payload) to a LinkHealthTracker that measures RTT, detects
     loss / duplicates / wrap and maintains the reconciliation counters (§7 link
     health, safety-crit);
-  - publishes /exo/link_health    (exo_msgs/LinkHealth, ~1 Hz) the structured
+  - publishes /com/tp_link_health    (exo_msgs/LinkHealth, ~1 Hz) the structured
     counters + rolling RTT stats + reconcile flag (§7.7).
 
 The actual monitoring logic lives in exo_cmd.link_health.LinkHealthTracker
@@ -24,7 +24,7 @@ seconds) and header.stamp_mono_ns (as nanoseconds). The LinkHealth message's
 std_msgs/Header.stamp uses wall-clock get_clock().now() for the diagnostic /
 bag time axis only -- it never enters the RTT path.
 
-Node name: exo_cmd. Topic prefix: /exo/. QoS: see exo_cmd.qos.EXO_QOS.
+Node name: node_com_cmd. Topic prefix: /com/. QoS: see exo_cmd.qos.EXO_QOS.
 
 This node makes no assumption about WHO sends mcu_status: in Phase A it is the
 local loopback_node, in Phase B it is the STM32 micro-ROS firmware.
@@ -43,9 +43,9 @@ from rclpy.executors import ExternalShutdownException, MultiThreadedExecutor
 from rclpy.node import Node
 
 # Contract-defined names (do not change without updating 01-接口契约.md).
-TOPIC_HEARTBEAT = '/exo/cmd_heartbeat'
-TOPIC_STATUS = '/exo/mcu_status'
-TOPIC_LINK_HEALTH = '/exo/link_health'
+TOPIC_HEARTBEAT = '/com/tp_cmd_heartbeat'
+TOPIC_STATUS = '/com/tp_mcu_status'
+TOPIC_LINK_HEALTH = '/com/tp_link_health'
 HEARTBEAT_PERIOD_S = 0.1  # 10 Hz
 
 
@@ -54,7 +54,7 @@ class ExoCmdNode(Node):
         # Forward Node kwargs (e.g. parameter_overrides, context) so tests can
         # inject parameter values at construction time. Production main() passes
         # nothing -> identical behaviour to before.
-        super().__init__('exo_cmd', **node_kwargs)
+        super().__init__('node_com_cmd', **node_kwargs)
 
         # ----- params (§7.2: thresholds are runtime-configurable, NOT hard-
         # coded; defaults are the Phase A placeholder values 50/200 ms). -----
@@ -68,7 +68,7 @@ class ExoCmdNode(Node):
         self.declare_parameter('sweep_period_s', 0.05)
         # Period of the periodic counter/reconciliation summary log (A8). 0 off.
         self.declare_parameter('summary_period_s', 1.0)
-        # Period of the /exo/link_health publisher (§7.7, ~1 Hz). Decoupled from
+        # Period of the /com/tp_link_health publisher (§7.7, ~1 Hz). Decoupled from
         # summary_period_s. 0 disables the diagnostic topic.
         self.declare_parameter('link_health_period_s', 1.0)
         # Application-level CRC self-check (Q4 / §7.9). Default OFF: cmd.crc is
@@ -100,7 +100,7 @@ class ExoCmdNode(Node):
         settled_window = self.get_parameter('settled_window').value
         self._crc_enabled = bool(self.get_parameter('crc_enabled').value)
         # CRC-mismatch tally (§7.9) lives in the tracker now (Low-3), so the
-        # count published on /exo/link_health and the count read here come from
+        # count published on /com/tp_link_health and the count read here come from
         # ONE source under ONE lock -- no two-copies-can-diverge bug. The node
         # exposes it via the _crc_mismatch_count read-through property below.
         self.executor_threads = self.get_parameter('executor_threads').value
@@ -146,7 +146,7 @@ class ExoCmdNode(Node):
         self._sub = self.create_subscription(
             ExoStatus, TOPIC_STATUS, self._on_status, EXO_QOS,
             callback_group=self._rx_group)
-        # /exo/link_health diagnostic publisher (§7.7). Its own timer (decoupled
+        # /com/tp_link_health diagnostic publisher (§7.7). Its own timer (decoupled
         # from summary_period_s) packs counters + RTT stats + reconcile flag.
         self._health_pub = self.create_publisher(
             LinkHealth, TOPIC_LINK_HEALTH, EXO_QOS)
@@ -199,7 +199,7 @@ class ExoCmdNode(Node):
         Read-through to the tracker's CRC-mismatch tally (§7.9, single source).
 
         Kept as a property (not a plain attribute) so the node has no second
-        copy that could drift from what /exo/link_health publishes -- both read
+        copy that could drift from what /com/tp_link_health publishes -- both read
         the tracker. Preserves the prior `node._crc_mismatch_count` read API the
         node tests rely on.
         """

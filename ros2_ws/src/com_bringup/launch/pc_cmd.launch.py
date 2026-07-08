@@ -1,11 +1,11 @@
 """
-Launch only the WSL exo_cmd node.
+Launch only the WSL command node.
 
 Use this when the other end of the loopback is the real MCU (Phase B) or the
 micro-ROS agent, i.e. when you do NOT want the local simulator.
 
 Run:
-    ros2 launch exo_bringup exo_cmd.launch.py
+    ros2 launch com_bringup pc_cmd.launch.py
 """
 
 from launch import LaunchDescription
@@ -26,7 +26,7 @@ def generate_launch_description():
         Node(
             package='exo_cmd',
             executable='exo_cmd_node',
-            name='exo_cmd',
+            name='node_com_cmd',
             output='screen',
             arguments=['--ros-args', '--log-level', log_level],
         ),

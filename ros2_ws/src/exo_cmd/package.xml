@@ -5,11 +5,11 @@
   <version>1.7.0</version>
   <description>
     WSL-side ROS2 nodes for the exoskeleton serial loopback (exo_msgs M-A).
-    Publishes /exo/cmd_heartbeat (exo_msgs/ExoCmd, 10 Hz; header.seq wraps
+    Publishes /com/tp_cmd_heartbeat (exo_msgs/ExoCmd, 10 Hz; header.seq wraps
     mod 2^32, header.stamp_mono_ns, optional header.crc; payload decoupled from
-    seq) and subscribes /exo/mcu_status (exo_msgs/ExoStatus) to verify the
+    seq) and subscribes /com/tp_mcu_status (exo_msgs/ExoStatus) to verify the
     round-trip and monitor link health (RTT / loss / duplicate / reconciliation,
-    contract §7), publishing /exo/link_health (exo_msgs/LinkHealth). Also ships
+    contract §7), publishing /com/tp_link_health (exo_msgs/LinkHealth). Also ships
     a local loopback node with fault injection that mimics the MCU for
     hardware-free self-test.
     Interface contract: docs/01-ros2-microros-serial/01-接口契约.md (v1.7).

@@ -17,7 +17,7 @@
 > - 时钟：`firmware/f103-microros/src/main.c` `Clock_Init()` —— HSE 8MHz → PLL×9 = **72MHz SYSCLK**，`SystemCoreClock=72000000`。**当前无任何 DWT / CYCCNT 使用**（已全仓确认）——M-B 要新建 DWT 时钟源。
 > - 裁剪：`firmware/f103-microros/colcon.meta` —— `RMW_UXRCE_MAX_*=1`、`UCLIENT_*`、`MTU=128`、**`RMW_UXRCE_STREAM_HISTORY=2`**（★见任务 5 / 任务 5.0 流缓冲闸门）、**`RMW_UXRCE_CREATION_MODE=bin`**（★见任务 5 兼容性调研）。
 > - libmicroros：预构建静态库在 `firmware/f103-microros/ThirdParty/microros/libmicroros.a` + `include/`；构建工作区在 `~/uros_ws/firmware/`（`mcu_ws/uros/` = 自定义消息注入点，`build/libmicroros.a` = 产物）。
-> - agent：`tools/run-agent.sh` —— `micro_ros_agent serial --dev /dev/ttyUSB0 -b 921600 -v6`，**bin 模式 vanilla agent**（不带自定义类型）。
+> - agent：`tools/run-bridge.sh` —— `micro_ros_agent serial --dev /dev/ttyUSB0 -b 921600 -v6`，**bin 模式 vanilla agent**（不带自定义类型）。
 
 ## 目标
 把固件从 `std_msgs/Int32` 最小闭环迁移到 `exo_msgs/ExoCmd`(sub) / `exo_msgs/ExoStatus`(pub)：① 把 `exo_msgs` 喂进 micro-ROS 固件构建、**完整重建 libmicroros**（含 exo_msgs type support）；② 固件应用收 `ExoCmd` 解包 → 回填 `ExoStatus`（`header.seq` 原样回填、`header.stamp_mono_ns`=MCU 本地 DWT 时钟、`payload` 原样、`header.crc`=按开关重算）；③ MCU 时钟源用 **DWT CYCCNT @72MHz** 折纳秒（**64 位回绕扩展由独立高频源维护，见任务 3**）；④ CRC（启用时）端到端字节序与 WSL 规范逐字节一致；⑤ **先验证** exo_msgs 的 bin `create` 实体描述消息塞得进当前 `STREAM_HISTORY=2`（256B）流缓冲（任务 5.0 前置闸门），再调研并回答 **bin 模式 vanilla agent 能否桥接自定义 exo_msgs 类型**（任务 5）；⑥ 用 T8 工具量化 RAM/ROM 增量、确认动态分配仍为零。全部需真机反复烧录联调验证。
@@ -70,7 +70,7 @@
 >
 > **失效模式会伪装**：若塞不下，现象是 **publisher/subscriber 创建失败**——这极易被误判成「任务 5 的 agent 兼容性问题」而排错方向。**先排除流缓冲这一层，再谈 agent 兼容性。**
 
-1. **重建后第一件事：测 create bin 描述消息大小 vs 流缓冲容量。** 烧最小 exo_msgs spike（固件只 init node + 创建一个 `ExoStatus` publisher + 一个 `ExoCmd` subscriber），起 `tools/run-agent.sh`（`-v6`），观察：
+1. **重建后第一件事：测 create bin 描述消息大小 vs 流缓冲容量。** 烧最小 exo_msgs spike（固件只 init node + 创建一个 `ExoStatus` publisher + 一个 `ExoCmd` subscriber），起 `tools/run-bridge.sh`（`-v6`），观察：
    - 固件侧：`rclc_publisher_init_default` / `rclc_subscription_init_default` 是否**返回成功**（建实体未失败）；
    - agent `-v6` 日志：是否正常收到并处理 `CREATE` 子消息（不是流缓冲溢出 / 帧被截断 / create 超时重试）。
 2. **若 create 成功**：记录「exo_msgs create bin 描述消息在 STREAM_HISTORY=2 下塞得下」，闸门通过，继续任务 5。
@@ -83,7 +83,7 @@
 
 ### 任务 5 — agent 侧兼容性调研点 ★必须先验证的技术风险（卡里让 Tom 先回答）
 
-> **这是必须先验证的技术风险**（§3 风险登记：「agent bin 模式自定义类型兼容性」）。当前 `colcon.meta` 有 **`RMW_UXRCE_CREATION_MODE=bin`**，`tools/run-agent.sh` 起的是 **bin 模式 vanilla agent**（不带自定义类型）。**问题**：bin 模式 vanilla agent 能否桥接自定义 `exo_msgs` 类型（在 DDS 侧建出 `exo_msgs/ExoCmd` / `ExoStatus` 的 datawriter/datareader），还是需要把 exo_msgs 也喂给 agent 侧 / 改 creation mode？
+> **这是必须先验证的技术风险**（§3 风险登记：「agent bin 模式自定义类型兼容性」）。当前 `colcon.meta` 有 **`RMW_UXRCE_CREATION_MODE=bin`**，`tools/run-bridge.sh` 起的是 **bin 模式 vanilla agent**（不带自定义类型）。**问题**：bin 模式 vanilla agent 能否桥接自定义 `exo_msgs` 类型（在 DDS 侧建出 `exo_msgs/ExoCmd` / `ExoStatus` 的 datawriter/datareader），还是需要把 exo_msgs 也喂给 agent 侧 / 改 creation mode？
 >
 > **顺序**：先过任务 5.0（流缓冲闸门）再做本任务——若 5.0 都没过（实体在 client 侧就建不出来），agent 侧根本看不到 create 子消息，兼容性无从谈起。
 
@@ -91,7 +91,7 @@
   - **`xml`（ref）模式**：client 把类型/topic 的完整 XML 描述发给 agent，agent 据此在 DDS 侧动态建实体；vanilla agent 不需要预知类型。
   - **`bin`（binary）模式**：client 发紧凑二进制表示，agent 需要能解析出 type/topic。**bin 模式下 agent 能否对一个它本地没有的自定义类型建出 DDS datawriter/datareader，是本卡必须先回答的问题**——若 agent 需要类型信息却拿不到，会建实体失败 / 用通用类型导致 WSL 侧 `exo_cmd` 节点匹配不上。
 - **Tom 必须先做的验证（在任务 2 大规模迁移前）**：
-  1. 重建 libmicroros 出 exo_msgs type support 后（且任务 5.0 流缓冲闸门已过），用同一个最小 exo_msgs pub spike（固件 pub 一条 `ExoStatus` 到 `/exo/mcu_status`），起 `tools/run-agent.sh`（vanilla bin agent），看 agent `-v6` 日志：**能否 create datawriter for `exo_msgs::msg::dds_::ExoStatus_`**；WSL 侧 `ros2 topic echo /exo/mcu_status`（source 了 exo_msgs 的 install）**能否收到正确解出的 exo_msgs 消息**。
+  1. 重建 libmicroros 出 exo_msgs type support 后（且任务 5.0 流缓冲闸门已过），用同一个最小 exo_msgs pub spike（固件 pub 一条 `ExoStatus` 到 `/exo/mcu_status`），起 `tools/run-bridge.sh`（vanilla bin agent），看 agent `-v6` 日志：**能否 create datawriter for `exo_msgs::msg::dds_::ExoStatus_`**；WSL 侧 `ros2 topic echo /exo/mcu_status`（source 了 exo_msgs 的 install）**能否收到正确解出的 exo_msgs 消息**。
   2. **若 bin + vanilla agent 桥接成功**（agent 不需要预知类型即可建出实体、WSL 侧能正确反序列化）→ 记录「vanilla agent 兼容自定义类型」，无需额外工作。**这是最希望命中的结果。**
   3. **若失败**（agent 建实体失败 / WSL 侧收到的是乱码或匹配不上）→ 评估两条出路，**按下述优先级排序**：
      - **首选 (a) —— 把 exo_msgs 也喂给 agent 侧**（风险最小，不动 creation mode）：重建 agent 工作区（`micro_ros_setup` 的 agent 侧 / `create_agent_ws.sh` 流程）让 agent 内置 exo_msgs 类型。**这不回退 T5 已验证的 bin 决策，固件侧 colcon.meta / libmicroros / 建链路径全不变**，对 RAM/RTT/已签字的 4 根因零影响——优先走这条。
@@ -174,7 +174,7 @@
 - **usbipd attach**（前置，主 agent / 用户在交互终端）：`usbipd attach` 把 USB-TTL（`/dev/ttyUSB0`）+ ST-Link（`/dev/ttyACM0`）都进 WSL；`ls /dev/ttyUSB* /dev/ttyACM*` 都在。
 - **烧录**（契约 §3，WSL + usbip 下 F103 **必须 `--connect-under-reset`**）：
   `st-flash --connect-under-reset write build/<elf 对应的>.bin 0x08000000`
-- **起 agent**（`tools/run-agent.sh`，bin 模式 vanilla agent）：`tools/run-agent.sh /dev/ttyUSB0 921600` → `micro_ros_agent serial --dev /dev/ttyUSB0 -b 921600 -v6`。**烧录与起 agent 串行**（别同占串口；ST-Link SWD 烧录 vs USART1 通信是两个口，但联调节奏沿用 T5）。
+- **起 agent**（`tools/run-bridge.sh`，bin 模式 vanilla agent）：`tools/run-bridge.sh /dev/ttyUSB0 921600` → `micro_ros_agent serial --dev /dev/ttyUSB0 -b 921600 -v6`。**烧录与起 agent 串行**（别同占串口；ST-Link SWD 烧录 vs USART1 通信是两个口，但联调节奏沿用 T5）。
 - **WSL 侧对端**：M-A 已迁移的 `exo_cmd` 节点（已是 exo_msgs 载体）对接真板（任务交付给 Gill 验收，见 `10` 卡）。
 
 ---

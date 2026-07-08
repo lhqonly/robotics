@@ -14,8 +14,8 @@ micro-ROS 官方推荐最低 32KB RAM,F103RB 只有 20KB,**低于官方下限**(
 
 ## 对应的接口契约决策(v1.2)
 
-- 本闭环只有 **1 个 publisher**(`/exo/mcu_status`)+ **1 个 subscription**
-  (`/exo/cmd_heartbeat`),无 service / client,wire = `std_msgs/Int32`。
+- 本闭环只有 **1 个 publisher**(`/com/tp_mcu_status`)+ **1 个 subscription**
+  (`/com/tp_cmd_heartbeat`),无 service / client,wire = `exo_msgs`。
 - 契约 v1.2 已用户拍板:**F103(micro-ROS client)侧 QoS History Depth = 1**
   (`RMW_UXRCE_MAX_HISTORY=1`),WSL(ROS2)侧维持 Depth=10,RELIABLE 两端不变。
   这是 20KB 省 RAM 的契约级取舍,代价(MCU 侧缓存浅、抖动更易丢)由契约第 7 节

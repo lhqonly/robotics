@@ -2,17 +2,17 @@
 Hardware-free self-test launch (Phase A).
 
 Brings up BOTH:
-  - exo_cmd      : publishes /exo/cmd_heartbeat, checks /exo/mcu_status
-  - exo_loopback : MCU simulator, echoes cmd_heartbeat back to mcu_status
+  - node_com_cmd      : publishes /com/tp_cmd_heartbeat, checks /com/tp_mcu_status
+  - node_com_loopback : MCU simulator, echoes tp_cmd_heartbeat back to tp_mcu_status
 
 Run:
-    ros2 launch exo_bringup loopback_test.launch.py
+    ros2 launch com_bringup loopback_test.launch.py
 
 Then in another sourced terminal:
-    ros2 topic echo /exo/mcu_status
-    ros2 topic info -v /exo/cmd_heartbeat
+    ros2 topic echo /com/tp_mcu_status
+    ros2 topic info -v /com/tp_cmd_heartbeat
 
-You should see /exo/mcu_status carrying the same monotonically increasing
+You should see /com/tp_mcu_status carrying the same monotonically increasing
 values exo_cmd publishes, and exo_cmd logging "round-trip OK".
 """
 
@@ -34,14 +34,14 @@ def generate_launch_description():
         Node(
             package='exo_cmd',
             executable='exo_cmd_node',
-            name='exo_cmd',
+            name='node_com_cmd',
             output='screen',
             arguments=['--ros-args', '--log-level', log_level],
         ),
         Node(
             package='exo_cmd',
             executable='loopback_node',
-            name='exo_loopback',
+            name='node_com_loopback',
             output='screen',
             arguments=['--ros-args', '--log-level', log_level],
         ),

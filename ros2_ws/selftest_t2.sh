@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # T2 hardware-free loopback self-test.
 # Sources ROS2 + this workspace, launches exo_cmd + loopback, then samples
-# /exo/mcu_status and the QoS of both topics, and shuts everything down.
+# /com/tp_mcu_status and the QoS of both topics, and shuts everything down.
 #
 # Run:  ./selftest_t2.sh
 #
@@ -18,8 +18,8 @@ WS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "=== ROS_DISTRO=${ROS_DISTRO} ==="
 
-# Start the full loopback (exo_cmd + exo_loopback) in the background.
-ros2 launch exo_bringup loopback_test.launch.py > /tmp/t2_launch.log 2>&1 &
+# Start the full loopback (node_com_cmd + node_com_loopback) in the background.
+ros2 launch com_bringup loopback_test.launch.py > /tmp/t2_launch.log 2>&1 &
 LAUNCH_PID=$!
 
 # Let discovery + a few heartbeats happen.
@@ -28,19 +28,19 @@ sleep 4
 echo "=== ros2 node list ==="
 ros2 node list
 
-echo "=== ros2 topic list (exo) ==="
-ros2 topic list | grep exo
+echo "=== ros2 topic list (com) ==="
+ros2 topic list | grep com
 
-echo "=== sample /exo/mcu_status (3 msgs) ==="
-timeout 3 ros2 topic echo --once /exo/mcu_status
-timeout 3 ros2 topic echo --once /exo/mcu_status
-timeout 3 ros2 topic echo --once /exo/mcu_status
+echo "=== sample /com/tp_mcu_status (3 msgs) ==="
+timeout 3 ros2 topic echo --once /com/tp_mcu_status
+timeout 3 ros2 topic echo --once /com/tp_mcu_status
+timeout 3 ros2 topic echo --once /com/tp_mcu_status
 
-echo "=== QoS: /exo/cmd_heartbeat ==="
-ros2 topic info -v /exo/cmd_heartbeat
+echo "=== QoS: /com/tp_cmd_heartbeat ==="
+ros2 topic info -v /com/tp_cmd_heartbeat
 
-echo "=== QoS: /exo/mcu_status ==="
-ros2 topic info -v /exo/mcu_status
+echo "=== QoS: /com/tp_mcu_status ==="
+ros2 topic info -v /com/tp_mcu_status
 
 echo "=== applied QoS (local ground truth, from node logs) ==="
 echo "NOTE: 'ros2 topic info -v' shows History/Depth=UNKNOWN for REMOTE"
