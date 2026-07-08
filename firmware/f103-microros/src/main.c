@@ -9,6 +9,7 @@
  *     transport 层(src/microros_transport.c)的 write/read 回调底座。
  *   - 任务模型:T4 的「echo + 临时 DBG 探针」AppTask 已删除,改为
  *       microros_app_task(src/microros_app.c):rclc 双向闭环 node_com_mcu 节点;
+ *       com_control_task(src/microros_app.c):1kHz 本地控制基线(消费最新目标,暂不驱动电机);
  *       + 一个极小 LedTask 做 liveness 心跳。
  *   - 串口归 micro-ROS(XRCE-DDS over serial);仅上电横幅/建链失败用明文自检串。
  *
@@ -366,8 +367,7 @@ size_t uart_ll_read(uint8_t *out, size_t max, int timeout_ms)
         return got;   /* 已有数据 / 不等待 → 立即返回(XRCE 轮询常态) */
     }
 
-    /* 当前为空且要求等待:在 timeout_ms 内轮询(2ms 粒度,平衡延迟与 CPU)。
-     * 注:micro-ROS read 超时多在 ~1–10ms 量级,这里 2ms 粒度足够,且不占满 CPU。 */
+    /* 当前为空且要求等待:在 timeout_ms 内轮询(1ms 粒度,降低 200Hz 基线 RTT)。 */
     TickType_t start    = xTaskGetTickCount();
     TickType_t deadline = pdMS_TO_TICKS((uint32_t)timeout_ms);
     while ((xTaskGetTickCount() - start) < deadline) {
@@ -379,7 +379,7 @@ size_t uart_ll_read(uint8_t *out, size_t max, int timeout_ms)
             }
             return got;
         }
-        vTaskDelay(pdMS_TO_TICKS(2));
+        vTaskDelay(pdMS_TO_TICKS(1));
     }
     return got;   /* 超时,got==0 */
 }
@@ -400,16 +400,20 @@ static void LedTask(void *arg)
 /* ===== 静态 task 资源(configSUPPORT_STATIC_ALLOCATION=1) =====
  * micro-ROS 任务栈:rcl→rmw→xrce 调用链较深。早期按 05 文档 T8 建议从 ~2500 words
  *   起测,现已基于 gdb 栈水位和硬件验收收敛到 1024 words。
+ * 控制任务栈:128 words(=512B),1kHz latest-target 消费骨架。
  * LED 任务栈:64 words(=256B),只翻 GPIO + delay,够用。 */
 #define MICROROS_TASK_STACK_WORDS  1024u   /* 4KB。gdb 实测 rcl_init+create_session 全程栈最深仅用 ~235 words
                                             * (早期 2048-word 栈 HWM 余 1813),4KB 仍保留约 3KB 栈余量;
                                             * 省下 2KB SRAM 给 newlib heap / micro-ROS 运行余量。
                                             * (注:建链 hang 与栈无关,真因是 best_effort 流配置见 colcon.meta;
                                             *  此前 10KB→6KB 的栈调整是误判方向,栈从来不是瓶颈。) */
+#define CONTROL_TASK_STACK_WORDS   128u    /* = 512B,1kHz local control baseline */
 #define LED_TASK_STACK_WORDS       64u     /* = 256B */
 
 static StaticTask_t microros_task_tcb;
 static StackType_t  microros_task_stack[MICROROS_TASK_STACK_WORDS];
+static StaticTask_t control_task_tcb;
+static StackType_t  control_task_stack[CONTROL_TASK_STACK_WORDS];
 static StaticTask_t led_task_tcb;
 static StackType_t  led_task_stack[LED_TASK_STACK_WORDS];
 static StaticTask_t idle_task_tcb;
@@ -423,6 +427,7 @@ static volatile uint32_t t8_probe_anchor;
 #endif
 
 T8_PROBE_NOINLINE uint32_t t8_probe_microros_stack_hwm_words(void);
+T8_PROBE_NOINLINE uint32_t t8_probe_control_stack_hwm_words(void);
 T8_PROBE_NOINLINE uint32_t t8_probe_led_stack_hwm_words(void);
 T8_PROBE_NOINLINE uint32_t t8_probe_idle_stack_hwm_words(void);
 
@@ -450,7 +455,10 @@ int main(void)
      * 污染 XRCE 帧流,agent 无法建链)。固件存活靠 LED 心跳(LedTask)观察,不靠串口文本。
      * 原 boot banner 已移除(2026-06-20:实测 banner 文本混进 XRCE 流导致 agent 收不到 session)。 */
 
-    /* micro-ROS 应用任务(优先级 2);LED 心跳任务(优先级 1,更低,绝不抢 micro-ROS)。 */
+    /* 控制任务优先级 3,高于通信任务:本地闭环不被 ROS 通信阻塞。
+     * micro-ROS 应用任务优先级 2;LED 心跳任务优先级 1,更低。 */
+    xTaskCreateStatic(com_control_task, "ctrl", CONTROL_TASK_STACK_WORDS, NULL,
+                      3 /*prio*/, control_task_stack, &control_task_tcb);
     xTaskCreateStatic(microros_app_task, "uros", MICROROS_TASK_STACK_WORDS, NULL,
                       2 /*prio*/, microros_task_stack, &microros_task_tcb);
     xTaskCreateStatic(LedTask, "led", LED_TASK_STACK_WORDS, NULL,
@@ -460,6 +468,7 @@ int main(void)
      * 这条 volatile 分支的主要作用是让 linker 保留 t8_probe_* 符号和 FreeRTOS 查询函数。 */
     if (t8_probe_anchor == 0x54385052u) {  /* "T8PR" */
         t8_probe_anchor += t8_probe_microros_stack_hwm_words();
+        t8_probe_anchor += t8_probe_control_stack_hwm_words();
         t8_probe_anchor += t8_probe_led_stack_hwm_words();
         t8_probe_anchor += t8_probe_idle_stack_hwm_words();
     }
@@ -487,6 +496,11 @@ void vApplicationGetIdleTaskMemory(StaticTask_t **ppxIdleTaskTCBBuffer,
 T8_PROBE_NOINLINE uint32_t t8_probe_microros_stack_hwm_words(void)
 {
     return (uint32_t)uxTaskGetStackHighWaterMark((TaskHandle_t)&microros_task_tcb);
+}
+
+T8_PROBE_NOINLINE uint32_t t8_probe_control_stack_hwm_words(void)
+{
+    return (uint32_t)uxTaskGetStackHighWaterMark((TaskHandle_t)&control_task_tcb);
 }
 
 T8_PROBE_NOINLINE uint32_t t8_probe_led_stack_hwm_words(void)

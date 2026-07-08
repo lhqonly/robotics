@@ -1,21 +1,22 @@
 # ros2_ws — ROS2 communication workspace (Jazzy)
 
 WSL-side ROS2 packages for the ROS2 ↔ micro-ROS minimal serial loopback.
-Interface contract: `docs/01-ros2-microros-serial/01-接口契约.md` (v1.12).
+Interface contract: `docs/01-ros2-microros-serial/01-接口契约.md` (v1.13).
 
 ## Packages
 
 - **exo_cmd** (ament_python) — WSL command node + local MCU simulator.
-  - `exo_cmd_node`: pub `/com/tp_cmd_heartbeat` (`exo_msgs/msg/ExoCmd`, 10 Hz),
-    sub `/com/tp_mcu_status`, verifies round-trip values.
+  - `exo_cmd_node`: pub `/com/tp_cmd_heartbeat` (`exo_msgs/msg/ExoCmd`,
+    configurable rate), sub `/com/tp_mcu_status`, verifies round-trip values.
   - `loopback_node`: Phase-A MCU stand-in. Sub `/com/tp_cmd_heartbeat`, echoes the
     same value to `/com/tp_mcu_status`.
 - **com_bringup** (ament_python) — communication launch files.
   - `loopback_test.launch.py`: exo_cmd + loopback (hardware-free self-test).
   - `pc_cmd.launch.py`: exo_cmd only (for the real MCU / agent).
 
-QoS for all `/com/*` topics (contract): RELIABLE / KEEP_LAST / depth 10.
-Defined once in `exo_cmd/exo_cmd/qos.py`.
+QoS for all `/com/*` topics (contract): RELIABLE / KEEP_LAST. Historical
+self-tests use depth 10; high-rate real-hardware runs use depth 1 to avoid stale
+command queueing. Defined once in `exo_cmd/exo_cmd/qos.py`.
 
 ## Source Rule
 
@@ -82,6 +83,12 @@ cd ~/robotics
 tools/run-bridge.sh /dev/ttyUSB0 921600
 ```
 
+性能排障时可以临时开详细日志；延迟测试建议保持默认 `-v1`：
+
+```bash
+MICROROS_AGENT_VERBOSITY=6 tools/run-bridge.sh /dev/ttyUSB0 921600
+```
+
 终端 2：启动 PC 侧命令节点。
 
 ```bash
@@ -89,6 +96,19 @@ cd ~/robotics
 source /opt/ros/jazzy/setup.bash
 source ros2_ws/install/setup.bash
 ros2 launch com_bringup pc_cmd.launch.py
+```
+
+`pc_cmd.launch.py` 默认按当前已验证稳定基线启动：20 Hz、QoS depth 1、
+`rtt_warn_ms=10`、`rtt_deadline_ms=50`。需要退回历史 10 Hz 时：
+
+```bash
+ros2 launch com_bringup pc_cmd.launch.py cmd_rate_hz:=10 qos_depth:=10
+```
+
+200 Hz 是目标压力测试，不是当前稳定默认值：
+
+```bash
+ros2 launch com_bringup pc_cmd.launch.py cmd_rate_hz:=200 qos_depth:=1
 ```
 
 终端 3：查看通信结果。
@@ -143,7 +163,7 @@ source ros2_ws/install/setup.bash
 # watch the echoed values (should be the same increasing counter)
 ros2 topic echo /com/tp_mcu_status
 
-# confirm QoS matches the contract (RELIABLE / KEEP_LAST / depth 10)
+# confirm QoS matches the selected profile (RELIABLE / KEEP_LAST / depth)
 ros2 topic info -v /com/tp_cmd_heartbeat
 ros2 topic info -v /com/tp_mcu_status
 ```

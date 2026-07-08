@@ -15,13 +15,21 @@ match this profile or DDS endpoint matching will silently fail.
 
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 
-# Single source of truth for the contract QoS. Use this for every
-# publisher/subscriber on /com/* topics.
-EXO_QOS = QoSProfile(
-    reliability=ReliabilityPolicy.RELIABLE,
-    history=HistoryPolicy.KEEP_LAST,
-    depth=10,
-)
+
+def make_exo_qos(depth: int = 10) -> QoSProfile:
+    """Build the shared /com/* QoS profile with a configurable history depth."""
+    if depth < 1:
+        raise ValueError('QoS depth must be >= 1, got %d' % depth)
+    return QoSProfile(
+        reliability=ReliabilityPolicy.RELIABLE,
+        history=HistoryPolicy.KEEP_LAST,
+        depth=depth,
+    )
+
+
+# Single source of truth for the contract QoS default. Use make_exo_qos() when a
+# runtime profile needs a smaller depth for high-rate control traffic.
+EXO_QOS = make_exo_qos()
 
 
 def qos_summary(endpoint) -> str:

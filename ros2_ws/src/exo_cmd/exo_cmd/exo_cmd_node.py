@@ -2,7 +2,7 @@
 exo_cmd node: WSL-side heartbeat publisher + link-health monitor.
 
 Per the interface contract (v1.7, exo_msgs M-A):
-  - publishes /com/tp_cmd_heartbeat  (exo_msgs/ExoCmd, 10 Hz). header.seq is the
+  - publishes /com/tp_cmd_heartbeat  (exo_msgs/ExoCmd, configurable Hz). header.seq is the
     counter that wraps mod 2^32 (§7.6); header.stamp_mono_ns is the sender's
     monotonic nanoseconds (§7.1); header.crc is the optional application CRC;
     payload is the loopback value, DECOUPLED from header.seq;
@@ -35,7 +35,7 @@ import time
 
 from exo_cmd.crc import compute_crc
 from exo_cmd.link_health import LinkHealthTracker
-from exo_cmd.qos import EXO_QOS, qos_summary
+from exo_cmd.qos import make_exo_qos, qos_summary
 from exo_msgs.msg import ExoCmd, ExoStatus, LinkHealth
 import rclpy
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
@@ -90,6 +90,12 @@ class ExoCmdNode(Node):
         # prove THIS run's causality (a board replaying an old 0.. sequence
         # cannot impersonate this run). Default 0 keeps Phase-A determinism.
         self.declare_parameter('start_value', 0)
+        # Command publish rate. Default keeps the historical self-test behavior;
+        # pc_cmd.launch.py overrides this for the real-hardware baseline.
+        self.declare_parameter('cmd_rate_hz', 10.0)
+        # Keep-last depth. Default remains 10 for compatibility; high-rate
+        # control runs can use depth=1 to avoid stale command queueing.
+        self.declare_parameter('qos_depth', 10)
 
         rtt_warn_ms = self.get_parameter('rtt_warn_ms').value
         rtt_deadline_ms = self.get_parameter('rtt_deadline_ms').value
@@ -105,6 +111,20 @@ class ExoCmdNode(Node):
         # exposes it via the _crc_mismatch_count read-through property below.
         self.executor_threads = self.get_parameter('executor_threads').value
         start_value = self.get_parameter('start_value').value
+        cmd_rate_hz = float(self.get_parameter('cmd_rate_hz').value)
+        qos_depth = int(self.get_parameter('qos_depth').value)
+
+        if cmd_rate_hz <= 0.0:
+            self.get_logger().fatal(
+                'invalid cmd_rate_hz %.3f: must be > 0' % cmd_rate_hz)
+            raise ValueError('cmd_rate_hz must be > 0')
+
+        self._heartbeat_period_s = 1.0 / cmd_rate_hz
+        try:
+            self._qos = make_exo_qos(qos_depth)
+        except ValueError as exc:
+            self.get_logger().fatal('invalid qos_depth: %s' % exc)
+            raise
 
         # §7.6 run nonce: -1 -> random 32-bit nonce; >=0 -> literal start; any
         # other negative is illegal (turning -1 into a real nonce is the node's
@@ -142,16 +162,16 @@ class ExoCmdNode(Node):
         self._rx_group = MutuallyExclusiveCallbackGroup()    # echo subscription
         self._timer_group = MutuallyExclusiveCallbackGroup()  # the three timers
 
-        self._pub = self.create_publisher(ExoCmd, TOPIC_HEARTBEAT, EXO_QOS)
+        self._pub = self.create_publisher(ExoCmd, TOPIC_HEARTBEAT, self._qos)
         self._sub = self.create_subscription(
-            ExoStatus, TOPIC_STATUS, self._on_status, EXO_QOS,
+            ExoStatus, TOPIC_STATUS, self._on_status, self._qos,
             callback_group=self._rx_group)
         # /com/tp_link_health diagnostic publisher (§7.7). Its own timer (decoupled
         # from summary_period_s) packs counters + RTT stats + reconcile flag.
         self._health_pub = self.create_publisher(
-            LinkHealth, TOPIC_LINK_HEALTH, EXO_QOS)
+            LinkHealth, TOPIC_LINK_HEALTH, self._qos)
         self._timer = self.create_timer(
-            HEARTBEAT_PERIOD_S, self._on_timer,
+            self._heartbeat_period_s, self._on_timer,
             callback_group=self._timer_group)
         self._sweep_timer = self.create_timer(
             sweep_period_s, self._on_sweep, callback_group=self._timer_group)
@@ -166,15 +186,15 @@ class ExoCmdNode(Node):
 
         self.get_logger().info(
             'exo_cmd up: pub %s @ %.0f Hz, sub %s'
-            % (TOPIC_HEARTBEAT, 1.0 / HEARTBEAT_PERIOD_S, TOPIC_STATUS))
+            % (TOPIC_HEARTBEAT, cmd_rate_hz, TOPIC_STATUS))
         self.get_logger().info(
             'link-health: rtt_warn_ms=%.1f rtt_deadline_ms=%.1f '
             'max_inflight=%s sweep_period_s=%.3f settled_window=%d'
             % (rtt_warn_ms, rtt_deadline_ms, max_inflight, sweep_period_s,
                settled_window))
         self.get_logger().info(
-            'executor_threads=%d (0 = auto / os.cpu_count())'
-            % self.executor_threads)
+            'executor_threads=%d (0 = auto / os.cpu_count()), qos_depth=%d'
+            % (self.executor_threads, qos_depth))
         self.get_logger().info(
             'crc_enabled=%s (application self-check, non-blocking; §7.9), '
             'link_health %s @ %.2f Hz'

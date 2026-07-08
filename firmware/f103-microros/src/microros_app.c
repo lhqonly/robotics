@@ -44,6 +44,8 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
+#include <stdint.h>
+
 /* ===== CRC 自检开关(契约 §7.9,默认关,不阻断主链路) =====
  * 默认 0:发送侧 header.crc 置 0、收侧不校验。联调时改 1 端到端验字节序(WSL 侧
  * crc_mismatch_count 应恒 0)。这是编译期开关——改这里重新编译固件即可切换。
@@ -51,6 +53,55 @@
 #ifndef EXO_CRC_ENABLED
 #  define EXO_CRC_ENABLED 0
 #endif
+
+/* ===== MCU 本地控制基线 =====
+ * 第一阶段只做 1kHz 调度骨架:通信回调更新 latest target,本地控制 task 每 1ms
+ * 读取一次最新目标。这里不驱动电机,只验证"本地闭环频率"与"ROS 通信频率"解耦。
+ * 2/5/10kHz 后续不能再靠 FreeRTOS 1kHz tick,需要硬件定时器或 DWT 调度。 */
+static volatile uint32_t g_control_latest_seq = 0u;
+static volatile int32_t  g_control_latest_payload = 0;
+static volatile uint32_t g_control_tick_count = 0u;
+
+static void com_control_update_target(uint32_t seq, int32_t payload)
+{
+    taskENTER_CRITICAL();
+    g_control_latest_seq = seq;
+    g_control_latest_payload = payload;
+    taskEXIT_CRITICAL();
+}
+
+void com_control_task(void *arg)
+{
+    (void)arg;
+    TickType_t last = xTaskGetTickCount();
+    const TickType_t period = pdMS_TO_TICKS(1u);
+
+    for (;;) {
+        uint32_t seq;
+        int32_t payload;
+
+        vTaskDelayUntil(&last, period);
+        taskENTER_CRITICAL();
+        seq = g_control_latest_seq;
+        payload = g_control_latest_payload;
+        taskEXIT_CRITICAL();
+
+        /* Phase-1 baseline: consume latest target without motor output. */
+        (void)seq;
+        (void)payload;
+        g_control_tick_count++;
+    }
+}
+
+uint32_t com_control_tick_count(void)
+{
+    return g_control_tick_count;
+}
+
+uint32_t com_control_latest_seq(void)
+{
+    return g_control_latest_seq;
+}
 
 /* ===== 是否拿到 micro-ROS 头(lib 已生成) ===== */
 /* M-B:守卫从 std_msgs/Int32 换成 exo_msgs 生成头(保留「lib 未就位编占位」策略)。
@@ -142,6 +193,7 @@ static void cmd_heartbeat_callback(const void *msgin)
     /* ---- 回填 ExoStatus(§1.2 / H1)---- */
     g_msg_status.header.seq = m->header.seq;   /* 原样回填 seq(§7.6 配对,精确相等) */
     g_msg_status.payload    = m->payload;      /* ★bit-exact 原样回填 payload(H1:零变换) */
+    com_control_update_target(m->header.seq, m->payload);
 
     /* stamp 用 MCU 自己的 DWT 单调时钟重盖(不回填 cmd 的 stamp;两端时钟不可比 §D4)。 */
     g_msg_status.header.stamp_mono_ns = dwt_now_ns();
@@ -272,17 +324,17 @@ void microros_app_task(void *arg)
          *    每轮 spin_some 处理已到数据,期间定期 ping 检测 agent 是否掉线。 */
         uint32_t miss = 0;
         for (;;) {
-            /* spin_some 超时 10ms:足够覆盖 10Hz 心跳(周期 100ms),CPU 占用低。 */
-            (void)rclc_executor_spin_some(&g_executor, RCL_MS_TO_NS(10));
+            /* spin_some 超时 1ms:配合 PC 200Hz/MCU 1kHz 基线,降低串口响应等待。 */
+            (void)rclc_executor_spin_some(&g_executor, RCL_MS_TO_NS(1));
 
             /* 每 ~1s ping 一次 agent;连续多次失败判定掉线,跳出去重连。 */
-            if (++miss >= 100u) {     /* 100 × ~10ms ≈ 1s */
+            if (++miss >= 1000u) {     /* 1000 × ~1ms ≈ 1s */
                 miss = 0;
                 if (rmw_uros_ping_agent(50, 2) != RMW_RET_OK) {
                     break;            /* agent 掉线 → 清理重连 */
                 }
             }
-            vTaskDelay(pdMS_TO_TICKS(2));   /* 让出 CPU 给 LED/其它任务 */
+            taskYIELD();   /* 不额外睡 1 tick;高优先级控制 task 仍可抢占 */
         }
 
         /* 断链:清理实体,回到外层重新等 agent。 */

@@ -20,22 +20,37 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
     log_level = LaunchConfiguration('log_level')
+    cmd_rate_hz = LaunchConfiguration('cmd_rate_hz')
+    qos_depth = LaunchConfiguration('qos_depth')
 
     return LaunchDescription([
         DeclareLaunchArgument(
             'log_level',
             default_value='info',
             description='rclpy/RCL log level (e.g. debug, info, warn).'),
+        DeclareLaunchArgument(
+            'cmd_rate_hz',
+            default_value='10.0',
+            description='PC command publish rate in Hz.'),
+        DeclareLaunchArgument(
+            'qos_depth',
+            default_value='10',
+            description='KEEP_LAST depth for /com/* endpoints.'),
 
         Node(
             package='exo_cmd',
             executable='exo_cmd_node',
             name='node_com_cmd',
             output='screen',
+            parameters=[{
+                'cmd_rate_hz': ParameterValue(cmd_rate_hz, value_type=float),
+                'qos_depth': ParameterValue(qos_depth, value_type=int),
+            }],
             arguments=['--ros-args', '--log-level', log_level],
         ),
         Node(
