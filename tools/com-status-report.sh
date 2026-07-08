@@ -30,6 +30,22 @@ relpath() {
   fi
 }
 
+tag_from_log_file() {
+  local path="${1:-}"
+  local base
+  if [ -z "$path" ]; then
+    return 0
+  fi
+  base="$(basename "$path")"
+  case "$base" in
+    *.cmd.log) printf '%s' "${base%.cmd.log}" ;;
+    *.sampler.log) printf '%s' "${base%.sampler.log}" ;;
+    *.hz.log) printf '%s' "${base%.hz.log}" ;;
+    *.wire.log) printf '%s' "${base%.wire.log}" ;;
+    *) printf '%s' "$base" ;;
+  esac
+}
+
 metric_from_line() {
   local line="$1"
   local key="$2"
@@ -137,7 +153,12 @@ fi
 latest_sampler="$(latest_file "$COM_LOGDIR" '*.sampler.log')"
 latest_hz="$(latest_file "$COM_LOGDIR" '*.hz.log')"
 latest_cmd="$(latest_file "$COM_LOGDIR" '*.cmd.log')"
-latest_wire="$(latest_file "$COM_LOGDIR" '*.wire.log')"
+latest_tag="$(tag_from_log_file "$latest_cmd")"
+latest_wire=""
+if [ -n "$latest_tag" ] && [ -f "$COM_LOGDIR/$latest_tag.wire.log" ]; then
+  latest_wire="$COM_LOGDIR/$latest_tag.wire.log"
+fi
+latest_any_wire="$(latest_file "$COM_LOGDIR" '*.wire.log')"
 latest_size_md="$(latest_file "$SIZE_LOGDIR" '*.md')"
 latest_stack_md="$(latest_file "$STACK_LOGDIR" '*.md')"
 latest_watch_summary="$(latest_file "$WATCH_LOGDIR" '*.summary.md')"
@@ -229,10 +250,12 @@ serial_users="$(serial_lsof)"
   echo
   echo "## 最近日志"
   echo
+  echo "- latest tag：${latest_tag:-unknown}"
   echo "- sampler：$(relpath "$latest_sampler")"
   echo "- topic hz：$(relpath "$latest_hz")"
   echo "- PC cmd：$(relpath "$latest_cmd")"
-  echo "- wire stats：$(relpath "$latest_wire")"
+  echo "- same-tag wire stats：$(relpath "$latest_wire")"
+  echo "- latest standalone wire stats：$(relpath "$latest_any_wire")"
   echo "- size matrix：$(relpath "$latest_size_md")"
   echo "- stack sweep：$(relpath "$latest_stack_md")"
   echo "- overnight summary：$(relpath "$latest_watch_summary")"
@@ -242,7 +265,7 @@ serial_users="$(serial_lsof)"
   echo "- ros2 topic hz status_hz=${status_hz:-unknown}"
   echo "- sampler：${sampler_summary:-unknown}"
   echo "- LinkHealth：${link_summary:-unknown}"
-  echo "- wire：${wire_metrics:-unknown}"
+  echo "- same-tag wire：${wire_metrics:-unknown}"
   echo
   echo "## overnight no-flash 趋势"
   echo
