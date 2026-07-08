@@ -60,6 +60,12 @@ SAMPLER_LOG="$LOGDIR/$TAG.sampler.log"
 GRAPH_LOG="$LOGDIR/$TAG.graph.log"
 OPENOCD_LOG="$LOGDIR/$TAG.openocd.log"
 
+extract_metric() {
+  local line="$1"
+  local key="$2"
+  printf '%s\n' "$line" | tr ' ' '\n' | awk -F= -v k="$key" '$1 == k {print $2}' | tail -1
+}
+
 graph_snapshot() {
   {
     echo "--- $1 ---"
@@ -203,8 +209,12 @@ if [ -n "$status_hz" ]; then
   estimated_rx_hz="$(awk -v r="$status_hz" -v n="$STATUS_EVERY_N" 'BEGIN { printf "%.2f", r * n }')"
 fi
 sampler_summary="$(grep 'status_sampler:' "$SAMPLER_LOG" | tail -1 || true)"
-sampler_hz="$(printf '%s\n' "$sampler_summary" | grep -o 'rate_hz=[0-9.]*' | tail -1 | cut -d= -f2 || true)"
-sampler_max_gap_s="$(printf '%s\n' "$sampler_summary" | grep -o 'max_gap_s=[0-9.]*' | tail -1 | cut -d= -f2 || true)"
+sampler_hz="$(extract_metric "$sampler_summary" rate_hz)"
+sampler_max_gap_s="$(extract_metric "$sampler_summary" max_gap_s)"
+sampler_seq_rate_hz="$(extract_metric "$sampler_summary" seq_rate_hz)"
+sampler_seq_delta_avg="$(extract_metric "$sampler_summary" seq_delta_avg)"
+sampler_seq_delta_min="$(extract_metric "$sampler_summary" seq_delta_min)"
+sampler_seq_delta_max="$(extract_metric "$sampler_summary" seq_delta_max)"
 sampler_target_rx_hz=""
 if [ -n "$sampler_hz" ]; then
   sampler_target_rx_hz="$(awk -v r="$sampler_hz" -v n="$STATUS_EVERY_N" 'BEGIN { printf "%.2f", r * n }')"
@@ -227,6 +237,10 @@ echo "[com-perf] hz_stats=${hz_stats:-NA}"
 echo "[com-perf] sampler_hz=${sampler_hz:-NA}"
 echo "[com-perf] sampler_target_rx_hz=${sampler_target_rx_hz:-NA}"
 echo "[com-perf] sampler_max_gap_s=${sampler_max_gap_s:-NA}"
+echo "[com-perf] sampler_seq_rate_hz=${sampler_seq_rate_hz:-NA}"
+echo "[com-perf] sampler_seq_delta_avg=${sampler_seq_delta_avg:-NA}"
+echo "[com-perf] sampler_seq_delta_min=${sampler_seq_delta_min:-NA}"
+echo "[com-perf] sampler_seq_delta_max=${sampler_seq_delta_max:-NA}"
 echo "[com-perf] pc_wire_sent=${wire_sent:-NA}"
 echo "[com-perf] pc_wire_rate_hz=${wire_rate_hz:-NA}"
 echo "[com-perf] pc_target_rate_hz=${target_rate_hz:-NA}"

@@ -158,6 +158,7 @@ cmake -S firmware/f103-microros -B firmware/f103-microros/build \
 
 ros2 run exo_cmd exo_cmd_node --ros-args \
   -p cmd_rate_hz:=200.0 \
+  -p cmd_catchup_max:=1 \
   -p qos_depth:=1 \
   -p qos_reliability:=best_effort \
   -p tracking_mode:=sampled \
@@ -170,6 +171,7 @@ ros2 run exo_cmd exo_cmd_node --ros-args \
 ```bash
 ros2 launch com_bringup pc_cmd.launch.py \
   cmd_rate_hz:=200 \
+  cmd_catchup_max:=1 \
   qos_depth:=1 \
   qos_reliability:=best_effort \
   tracking_mode:=sampled \
@@ -178,7 +180,9 @@ ros2 launch com_bringup pc_cmd.launch.py \
 
 如果要一键复现某个真机通信 profile，可以用压测脚本。它会编译/烧录固件、
 重启 bridge、跑 PC node、采样 `/com/tp_mcu_status`，最后打印状态频率、
-按 `status_every_n` 反推的 MCU 目标接收频率，以及最后一条 LinkHealth summary：
+按 `status_every_n` 反推的 MCU 目标接收频率、status seq 步长
+（`seq_delta_avg/min/max`，用来识别 best-effort 跳号），以及最后一条
+LinkHealth summary：
 
 ```bash
 CMD_RATE_HZ=200 \
