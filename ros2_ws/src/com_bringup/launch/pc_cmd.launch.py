@@ -29,6 +29,9 @@ def generate_launch_description():
     tracking_mode = LaunchConfiguration('tracking_mode')
     status_every_n = LaunchConfiguration('status_every_n')
     sample_window = LaunchConfiguration('sample_window')
+    rtt_warn_ms = LaunchConfiguration('rtt_warn_ms')
+    rtt_deadline_ms = LaunchConfiguration('rtt_deadline_ms')
+    sweep_period_s = LaunchConfiguration('sweep_period_s')
 
     return LaunchDescription([
         DeclareLaunchArgument(
@@ -59,6 +62,18 @@ def generate_launch_description():
             'sample_window',
             default_value='4096',
             description='Recent sent seq window for sampled status matching.'),
+        DeclareLaunchArgument(
+            'rtt_warn_ms',
+            default_value='10.0',
+            description='Soft RTT warning threshold in milliseconds.'),
+        DeclareLaunchArgument(
+            'rtt_deadline_ms',
+            default_value='100.0',
+            description='Hard echo deadline in milliseconds before LOST.'),
+        DeclareLaunchArgument(
+            'sweep_period_s',
+            default_value='0.005',
+            description='Deadline sweep period in seconds.'),
 
         Node(
             package='exo_cmd',
@@ -72,9 +87,9 @@ def generate_launch_description():
                 'tracking_mode': tracking_mode,
                 'status_every_n': ParameterValue(status_every_n, value_type=int),
                 'sample_window': ParameterValue(sample_window, value_type=int),
-                'sweep_period_s': 0.005,
-                'rtt_warn_ms': 10.0,
-                'rtt_deadline_ms': 50.0,
+                'sweep_period_s': ParameterValue(sweep_period_s, value_type=float),
+                'rtt_warn_ms': ParameterValue(rtt_warn_ms, value_type=float),
+                'rtt_deadline_ms': ParameterValue(rtt_deadline_ms, value_type=float),
             }],
             arguments=['--ros-args', '--log-level', log_level],
         ),
