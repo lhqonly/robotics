@@ -23,6 +23,13 @@ matrix="$("$ROOT/tools/com-wire-budget.py" \
   --status-every-n 1,40 \
   --baud 921600,2000000)"
 
+contract="$("$ROOT/tools/com-wire-budget.py" \
+  --wire-log "$WIRE_LOG" \
+  --cmd-hz 200,1000 \
+  --status-every-n 1,40 \
+  --baud 921600 \
+  --max-baud-util-pct 30)"
+
 assert_contains() {
   local haystack="$1"
   local needle="$2"
@@ -36,11 +43,25 @@ assert_contains() {
 assert_contains "$single" "| 200.00 | 40 | 5.00 | 921600 | 88.60 | 2.17 | 90.77 | 9.85 |"
 assert_contains "$matrix" "| 200.00 | 1 | 200.00 | 921600 | 88.60 | 86.70 | 175.30 | 19.02 |"
 assert_contains "$matrix" "| 1000.00 | 40 | 25.00 | 2000000 | 443.00 | 10.84 | 453.84 | 22.69 |"
+assert_contains "$contract" "budget contract: baud_util_pct <= 30.00"
+assert_contains "$contract" "| 200.00 | 40 | 5.00 | 921600 | 88.60 | 2.17 | 90.77 | 9.85 | PASS |"
+assert_contains "$contract" "| 1000.00 | 1 | 1000.00 | 921600 | 443.00 | 433.50 | 876.50 | 95.11 | OVER_BUDGET |"
 
 row_count="$(grep -c '^| [0-9]' <<<"$matrix")"
 if [ "$row_count" -ne 8 ]; then
   echo "ERROR: expected 8 matrix rows, got $row_count" >&2
   echo "$matrix" >&2
+  exit 1
+fi
+
+if "$ROOT/tools/com-wire-budget.py" \
+    --wire-log "$WIRE_LOG" \
+    --cmd-hz 1000 \
+    --status-every-n 1 \
+    --baud 921600 \
+    --max-baud-util-pct 30 \
+    --fail-on-over-budget >/dev/null; then
+  echo "ERROR: expected over-budget contract check to fail" >&2
   exit 1
 fi
 

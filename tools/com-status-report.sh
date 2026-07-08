@@ -238,11 +238,31 @@ wire_budget_matrix=""
 if [ -n "$wire_budget_source" ] && [ -f "$wire_budget_source" ] &&
     [ -x "$ROOT/tools/com-wire-budget.py" ]; then
   wire_budget_source_rel="${wire_budget_source#$ROOT/}"
+  wire_budget_tag="$(tag_from_log_file "$wire_budget_source")"
+  wire_budget_cmd="$COM_LOGDIR/$wire_budget_tag.cmd.log"
+  wire_budget_sampler="$COM_LOGDIR/$wire_budget_tag.sampler.log"
+  wire_budget_summary=""
+  wire_budget_sampler_summary=""
+  wire_budget_baseline_cmd_hz=""
+  wire_budget_baseline_status_hz=""
+  if [ -f "$wire_budget_cmd" ]; then
+    wire_budget_summary="$(grep 'link-health summary' "$wire_budget_cmd" | tail -1 || true)"
+    wire_budget_baseline_cmd_hz="$(metric_from_line "$wire_budget_summary" target_rate_hz)"
+  fi
+  if [ -f "$wire_budget_sampler" ]; then
+    wire_budget_sampler_summary="$(grep 'status_sampler:' "$wire_budget_sampler" | tail -1 || true)"
+    wire_budget_baseline_status_hz="$(metric_from_line "$wire_budget_sampler_summary" rate_hz)"
+  fi
+  wire_budget_baseline_cmd_hz="${wire_budget_baseline_cmd_hz:-20}"
+  wire_budget_baseline_status_hz="${wire_budget_baseline_status_hz:-20}"
   wire_budget_matrix="$(cd "$ROOT" && tools/com-wire-budget.py \
     --wire-log "$wire_budget_source_rel" \
+    --baseline-cmd-hz "$wire_budget_baseline_cmd_hz" \
+    --baseline-status-hz "$wire_budget_baseline_status_hz" \
     --cmd-hz 200,1000 \
     --status-every-n 1,10,40 \
-    --baud 921600,2000000 2>/dev/null || true)"
+    --baud 921600,2000000 \
+    --max-baud-util-pct 30 2>/dev/null || true)"
 fi
 
 recovery_sampler="$COM_LOGDIR/noflash_recovery_20hz_after_200hz.sampler.log"

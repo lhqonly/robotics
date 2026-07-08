@@ -85,6 +85,19 @@ def main() -> int:
         default=parse_float_list("921600"),
         help="UART baud rates, comma/space separated. Default: 921600.",
     )
+    parser.add_argument(
+        "--max-baud-util-pct",
+        type=float,
+        help=(
+            "Optional contract threshold for projected UART utilization. "
+            "When set, the table includes a verdict column."
+        ),
+    )
+    parser.add_argument(
+        "--fail-on-over-budget",
+        action="store_true",
+        help="Exit non-zero if any projected row exceeds --max-baud-util-pct.",
+    )
     args = parser.parse_args()
 
     tx_kbit_s = args.tx_kbit_s
@@ -109,6 +122,12 @@ def main() -> int:
             any(status_every_n < 1 for status_every_n in args.status_every_n) or \
             any(baud <= 0 for baud in args.baud):
         raise SystemExit("ERROR: cmd-hz/baud must be > 0 and status-every-n >= 1")
+    if args.max_baud_util_pct is not None and args.max_baud_util_pct <= 0:
+        raise SystemExit("ERROR: --max-baud-util-pct must be > 0")
+    if args.fail_on_over_budget and args.max_baud_util_pct is None:
+        raise SystemExit(
+            "ERROR: --fail-on-over-budget requires --max-baud-util-pct"
+        )
 
     tx_bits_per_cmd = tx_kbit_s * 1000.0 / args.baseline_cmd_hz
     rx_bits_per_status = rx_kbit_s * 1000.0 / args.baseline_status_hz
@@ -129,9 +148,27 @@ def main() -> int:
         f"cmd={fmt(tx_bits_per_cmd, 1)} serial bits, "
         f"status={fmt(rx_bits_per_status, 1)} serial bits"
     )
+    if args.max_baud_util_pct is not None:
+        print(f"- budget contract: baud_util_pct <= {fmt(args.max_baud_util_pct)}")
     print()
-    print("| cmd Hz | status every N | status Hz | baud | tx kbit/s | rx kbit/s | total kbit/s | baud util % |")
-    print("|---:|---:|---:|---:|---:|---:|---:|---:|")
+
+    headers = [
+        "cmd Hz",
+        "status every N",
+        "status Hz",
+        "baud",
+        "tx kbit/s",
+        "rx kbit/s",
+        "total kbit/s",
+        "baud util %",
+    ]
+    aligns = ["---:"] * len(headers)
+    if args.max_baud_util_pct is not None:
+        headers.append("verdict")
+        aligns.append("---")
+    print("| " + " | ".join(headers) + " |")
+    print("|" + "|".join(aligns) + "|")
+    over_budget = False
     for cmd_hz in args.cmd_hz:
         for status_every_n in args.status_every_n:
             projected_status_hz = cmd_hz / status_every_n
@@ -142,18 +179,31 @@ def main() -> int:
             projected_total_kbit_s = projected_tx_kbit_s + projected_rx_kbit_s
             for baud in args.baud:
                 projected_util = projected_total_kbit_s * 1000.0 * 100.0 / baud
-                print(
-                    f"| {fmt(cmd_hz)} | {status_every_n} | "
-                    f"{fmt(projected_status_hz)} | {int(baud)} | "
-                    f"{fmt(projected_tx_kbit_s)} | {fmt(projected_rx_kbit_s)} | "
-                    f"{fmt(projected_total_kbit_s)} | {fmt(projected_util)} |"
-                )
+                row = [
+                    fmt(cmd_hz),
+                    str(status_every_n),
+                    fmt(projected_status_hz),
+                    str(int(baud)),
+                    fmt(projected_tx_kbit_s),
+                    fmt(projected_rx_kbit_s),
+                    fmt(projected_total_kbit_s),
+                    fmt(projected_util),
+                ]
+                if args.max_baud_util_pct is not None:
+                    if projected_util <= args.max_baud_util_pct:
+                        row.append("PASS")
+                    else:
+                        row.append("OVER_BUDGET")
+                        over_budget = True
+                print("| " + " | ".join(row) + " |")
     print()
     print(
         "Note: this linear model uses measured XRCE serial bytes from one profile. "
         "Discovery traffic, reliable retries, Agent verbosity overhead, OS jitter, "
         "and MCU scheduling are not modeled."
     )
+    if over_budget and args.fail_on_over_budget:
+        return 1
     return 0
 
 
