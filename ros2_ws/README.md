@@ -237,6 +237,15 @@ BUILD_FIRMWARE=0 FLASH_FIRMWARE=0 tools/run-com-perf.sh no_flash_smoke
 
 `FLASH_FIRMWARE=0` 时脚本默认也会跳过 OpenOCD reset；确实需要只 reset 不重刷时，
 显式追加 `RESET_TARGET=1`。
+默认 echo/status_every_1 基线会执行健康门槛：sampler 频率在目标频率附近、
+status seq 不跳号、`lost=0`、`duplicate=0`、gap 不超过默认阈值，否则脚本退出
+非 0。刻意采集压力失败样本时可关闭门槛：
+
+```bash
+REQUIRE_HEALTH_PASS=0 CMD_RATE_HZ=200 \
+BUILD_FIRMWARE=0 FLASH_FIRMWARE=0 \
+tools/run-com-perf.sh pressure_collect_only
+```
 
 如果要验证 PC 主机调度是否导致 command timer 长尾，可以给 PC command node 加
 launch prefix。常用的低权限实验是绑到某个 CPU 核，跑完后对比

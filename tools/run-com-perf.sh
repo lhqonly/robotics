@@ -53,6 +53,13 @@ FLASH_TIMEOUT_SECONDS="${FLASH_TIMEOUT_SECONDS:-90}"
 RESET_TIMEOUT_SECONDS="${RESET_TIMEOUT_SECONDS:-15}"
 STLINK_PREFLIGHT="${STLINK_PREFLIGHT:-1}"
 REQUIRE_CORE_METRICS="${REQUIRE_CORE_METRICS:-1}"
+REQUIRE_HEALTH_PASS="${REQUIRE_HEALTH_PASS:-1}"
+PERF_MIN_RATE_RATIO="${PERF_MIN_RATE_RATIO:-0.90}"
+PERF_MAX_RATE_RATIO="${PERF_MAX_RATE_RATIO:-1.10}"
+PERF_MAX_LOST="${PERF_MAX_LOST:-0}"
+PERF_MAX_DUPLICATE="${PERF_MAX_DUPLICATE:-0}"
+PERF_MAX_P99_GAP_S="${PERF_MAX_P99_GAP_S:-0.10}"
+PERF_MAX_MAX_GAP_S="${PERF_MAX_MAX_GAP_S:-0.25}"
 
 case "$QOS_RELIABILITY" in
   reliable) EXO_QOS_BEST_EFFORT=OFF ;;
@@ -302,6 +309,9 @@ wire_gap_avg_ms="$(extract_metric "$summary" wire_gap_avg_ms)"
 wire_gap_p95_ms="$(extract_metric "$summary" wire_gap_p95_ms)"
 wire_gap_p99_ms="$(extract_metric "$summary" wire_gap_p99_ms)"
 wire_gap_max_ms="$(extract_metric "$summary" wire_gap_max_ms)"
+lost="$(extract_metric "$summary" lost)"
+duplicate="$(extract_metric "$summary" duplicate)"
+inflight="$(extract_metric "$summary" inflight)"
 
 wire_metrics=""
 case "$WIRE_STATS" in
@@ -355,6 +365,9 @@ echo "[com-perf] pc_wire_gap_avg_ms=${wire_gap_avg_ms:-NA}"
 echo "[com-perf] pc_wire_gap_p95_ms=${wire_gap_p95_ms:-NA}"
 echo "[com-perf] pc_wire_gap_p99_ms=${wire_gap_p99_ms:-NA}"
 echo "[com-perf] pc_wire_gap_max_ms=${wire_gap_max_ms:-NA}"
+echo "[com-perf] lost=${lost:-NA}"
+echo "[com-perf] duplicate=${duplicate:-NA}"
+echo "[com-perf] inflight=${inflight:-NA}"
 echo "[com-perf] wire_metrics=${wire_metrics:-NA}"
 echo "[com-perf] last_summary=${summary:-NA}"
 echo "[com-perf] sampler_summary=${sampler_summary:-NA}"
@@ -369,6 +382,54 @@ if [ "$REQUIRE_CORE_METRICS" = "1" ]; then
   fi
   if [ -z "$sampler_count" ] || [ "$sampler_count" -le 0 ] 2>/dev/null; then
     echo "[com-perf] ERROR: sampler received no status messages" >&2
+    validation_failed=1
+  fi
+fi
+if [ "$REQUIRE_HEALTH_PASS" = "1" ] &&
+    [ "$TRACKING_MODE" = "echo" ] &&
+    [ "$STATUS_EVERY_N" -eq 1 ] 2>/dev/null; then
+  if [ -n "$sampler_hz" ]; then
+    if ! awk \
+        -v actual="$sampler_hz" \
+        -v expected="$CMD_RATE_HZ" \
+        -v min_ratio="$PERF_MIN_RATE_RATIO" \
+        -v max_ratio="$PERF_MAX_RATE_RATIO" \
+        'BEGIN { ok = (actual + 0 >= expected * min_ratio && actual + 0 <= expected * max_ratio); exit !ok }'; then
+      echo "[com-perf] ERROR: sampler_hz=$sampler_hz outside expected band for cmd_rate_hz=$CMD_RATE_HZ" >&2
+      validation_failed=1
+    fi
+  fi
+  if [ -n "$sampler_seq_delta_min" ] && [ -n "$sampler_seq_delta_max" ] &&
+      { [ "$sampler_seq_delta_min" -ne 1 ] ||
+        [ "$sampler_seq_delta_max" -ne 1 ]; } 2>/dev/null; then
+    echo "[com-perf] ERROR: status seq delta not 1/1: min=$sampler_seq_delta_min max=$sampler_seq_delta_max" >&2
+    validation_failed=1
+  fi
+  if [ -n "$sampler_p99_gap_s" ]; then
+    if ! awk \
+        -v actual="$sampler_p99_gap_s" \
+        -v limit="$PERF_MAX_P99_GAP_S" \
+        'BEGIN { exit !(actual + 0 <= limit + 0) }'; then
+      echo "[com-perf] ERROR: sampler_p99_gap_s=$sampler_p99_gap_s exceeds $PERF_MAX_P99_GAP_S" >&2
+      validation_failed=1
+    fi
+  fi
+  if [ -n "$sampler_max_gap_s" ]; then
+    if ! awk \
+        -v actual="$sampler_max_gap_s" \
+        -v limit="$PERF_MAX_MAX_GAP_S" \
+        'BEGIN { exit !(actual + 0 <= limit + 0) }'; then
+      echo "[com-perf] ERROR: sampler_max_gap_s=$sampler_max_gap_s exceeds $PERF_MAX_MAX_GAP_S" >&2
+      validation_failed=1
+    fi
+  fi
+  if [ -n "$lost" ] && [ "$lost" -gt "$PERF_MAX_LOST" ] 2>/dev/null; then
+    echo "[com-perf] ERROR: lost=$lost exceeds $PERF_MAX_LOST" >&2
+    validation_failed=1
+  fi
+  if [ -n "$duplicate" ] &&
+      [ "$duplicate" -gt "$PERF_MAX_DUPLICATE" ] 2>/dev/null; then
+    echo "[com-perf] ERROR: duplicate=$duplicate exceeds $PERF_MAX_DUPLICATE" >&2
     validation_failed=1
   fi
 fi
