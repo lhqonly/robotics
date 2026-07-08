@@ -77,6 +77,9 @@ smoke_verdict() {
   local max_gap_s="$5"
   local lost="$6"
   local duplicate="$7"
+  local pc_target_window_hz="$8"
+  local pc_wire_gap_p99_ms="$9"
+  local pc_wire_gap_max_ms="${10}"
 
   awk \
     -v expected="$PERF_EXPECTED_RATE_HZ" \
@@ -92,7 +95,10 @@ smoke_verdict() {
     -v p99_gap_s="$p99_gap_s" \
     -v max_gap_s="$max_gap_s" \
     -v lost="$lost" \
-    -v duplicate="$duplicate" '
+    -v duplicate="$duplicate" \
+    -v pc_target_window_hz="$pc_target_window_hz" \
+    -v pc_wire_gap_p99_ms="$pc_wire_gap_p99_ms" \
+    -v pc_wire_gap_max_ms="$pc_wire_gap_max_ms" '
       function missing(v) { return v == "" || v == "NA" }
       function add_reason(reason) {
         if (reasons == "") reasons = reason
@@ -123,6 +129,24 @@ smoke_verdict() {
         if (!missing(max_gap_s) && max_gap_s + 0 > max_max_gap) {
           verdict = "WARN"
           add_reason("max_gap_high")
+        }
+        pc_p99_limit_ms = 1000.0 / expected * 4.0
+        pc_max_limit_ms = 1000.0 / expected * 10.0
+        if (!missing(pc_target_window_hz) &&
+            (pc_target_window_hz + 0 < expected * min_ratio ||
+             pc_target_window_hz + 0 > expected * max_ratio)) {
+          verdict = "WARN"
+          add_reason("pc_target_rate_out_of_band")
+        }
+        if (!missing(pc_wire_gap_p99_ms) &&
+            pc_wire_gap_p99_ms + 0 > pc_p99_limit_ms) {
+          verdict = "WARN"
+          add_reason("pc_wire_gap_p99_high")
+        }
+        if (!missing(pc_wire_gap_max_ms) &&
+            pc_wire_gap_max_ms + 0 > pc_max_limit_ms) {
+          verdict = "WARN"
+          add_reason("pc_wire_gap_max_high")
         }
         if (!missing(duplicate) && duplicate + 0 > max_duplicate) {
           verdict = "WARN"
@@ -197,7 +221,8 @@ summarize_tag() {
   reason=""
   if [ -n "$PERF_EXPECTED_RATE_HZ" ]; then
     verdict_csv="$(smoke_verdict "$sampler_hz" "$seq_delta_min" \
-      "$seq_delta_max" "$p99_gap_s" "$max_gap_s" "$lost" "$duplicate")"
+      "$seq_delta_max" "$p99_gap_s" "$max_gap_s" "$lost" "$duplicate" \
+      "$pc_target_window_hz" "$pc_wire_gap_p99_ms" "$pc_wire_gap_max_ms")"
     verdict="${verdict_csv%%,*}"
     reason="${verdict_csv#*,}"
   fi

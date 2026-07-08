@@ -28,7 +28,7 @@ write_perf_logs() {
     'status_sampler: rate_hz=20.001 seq_rate_hz=20.001 seq_delta_avg=1 seq_delta_min=1 seq_delta_max=1 p95_gap_s=0.051 p99_gap_s=0.056 max_gap_s=0.061 zero_gap_count=0' \
     >"$TMPDIR/com-perf/sample.sampler.log"
   printf '%s\n' \
-    '[node_com_cmd] link-health summary: wire_rate_hz=20.001 target_rate_hz=200.000 target_window_hz=200.000 wire_gap_p95_ms=5.1 wire_gap_p99_ms=6.2 wire_gap_max_ms=9.9 lost=0 duplicate=0 inflight=1' \
+    '[node_com_cmd] link-health summary: wire_rate_hz=20.001 target_rate_hz=20.000 target_window_hz=20.000 wire_gap_p95_ms=5.1 wire_gap_p99_ms=6.2 wire_gap_max_ms=9.9 lost=0 duplicate=0 inflight=1' \
     >"$TMPDIR/com-perf/sample.cmd.log"
   printf '%s\n' \
     'METRICS total_serial_kbit_s=90.77 baud_util_pct=9.85' \
@@ -41,6 +41,14 @@ write_perf_logs() {
   printf '%s\n' \
     '[node_com_cmd] link-health summary: wire_rate_hz=20.000 target_rate_hz=20.000 target_window_hz=20.000 lost=0 duplicate=0 inflight=1' \
     >"$TMPDIR/com-perf/legacy.cmd.log"
+
+  printf '%s\n' 'average rate: 20.000' >"$TMPDIR/com-perf/badpc.hz.log"
+  printf '%s\n' \
+    'status_sampler: rate_hz=20.000 seq_rate_hz=20.000 seq_delta_avg=1 seq_delta_min=1 seq_delta_max=1 p95_gap_s=0.050 p99_gap_s=0.055 max_gap_s=0.060 zero_gap_count=0' \
+    >"$TMPDIR/com-perf/badpc.sampler.log"
+  printf '%s\n' \
+    '[node_com_cmd] link-health summary: wire_rate_hz=20.000 target_rate_hz=20.000 target_window_hz=20.000 wire_gap_p95_ms=50.0 wire_gap_p99_ms=250.0 wire_gap_max_ms=600.0 lost=0 duplicate=0 inflight=1' \
+    >"$TMPDIR/com-perf/badpc.cmd.log"
 }
 
 test_com_perf_summary() {
@@ -51,7 +59,7 @@ test_com_perf_summary() {
     'pc_wire_gap_p95_ms,pc_wire_gap_p99_ms,pc_wire_gap_max_ms' \
     'com-perf csv header includes PC publish gap fields'
   assert_contains "$csv" \
-    'sample,19.997,20.001,20.001,1,1,1,0.051,0.056,0.061,0,20.001,200.000,200.000,5.1,6.2,9.9,90.77,9.85,0,0,1' \
+    'sample,19.997,20.001,20.001,1,1,1,0.051,0.056,0.061,0,20.001,20.000,20.000,5.1,6.2,9.9,90.77,9.85,0,0,1' \
     'com-perf csv parses sample metrics'
   assert_contains "$csv" \
     'legacy,20.000,20.000,20.000,1,1,1,0.050,0.055,0.060,0,20.000,20.000,20.000,NA,NA,NA,NA,NA,0,0,1' \
@@ -60,8 +68,14 @@ test_com_perf_summary() {
   md="$(LOGDIR="$TMPDIR/com-perf" "$ROOT/tools/summarize-com-perf.sh" sample)"
   assert_contains "$md" 'PC gap p95/p99/max ms' \
     'com-perf markdown header includes PC publish gap fields'
-  assert_contains "$md" '| sample | 19.997 | 20.001 | 20.001 | 1/1/1 | 0.051 | 0.056 | 0.061 | 0 | 20.001 | 200.000 / 200.000 | 5.1/6.2/9.9 | 90.77 | 9.85 | 0 | 0 | 1 |' \
+  assert_contains "$md" '| sample | 19.997 | 20.001 | 20.001 | 1/1/1 | 0.051 | 0.056 | 0.061 | 0 | 20.001 | 20.000 / 20.000 | 5.1/6.2/9.9 | 90.77 | 9.85 | 0 | 0 | 1 |' \
     'com-perf markdown parses sample metrics'
+
+  csv="$(LOGDIR="$TMPDIR/com-perf" FORMAT=csv PERF_EXPECTED_RATE_HZ=20 \
+    "$ROOT/tools/summarize-com-perf.sh" badpc)"
+  assert_contains "$csv" \
+    'badpc,WARN,pc_wire_gap_p99_high;pc_wire_gap_max_high,20.000,20.000,20.000,1,1,1,0.050,0.055,0.060,0,20.000,20.000,20.000,50.0,250.0,600.0,NA,NA,0,0,1' \
+    'com-perf verdict flags PC publish gap contract'
 }
 
 test_staircase_summary() {
