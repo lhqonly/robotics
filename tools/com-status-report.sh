@@ -296,6 +296,22 @@ if [ -n "$latest_watch_log" ] && [ -f "$latest_watch_log" ] &&
     [ -x "$ROOT/tools/summarize-overnight-com-watch.sh" ]; then
   overnight_live_summary="$(cd "$ROOT" && tools/summarize-overnight-com-watch.sh "$latest_watch_log" 2>/dev/null || true)"
 fi
+overnight_summary_source="$overnight_live_summary"
+if [ -z "$overnight_summary_source" ] && [ -n "$latest_watch_summary" ] &&
+    [ -f "$latest_watch_summary" ]; then
+  overnight_summary_source="$(cat "$latest_watch_summary")"
+fi
+overnight_counts=""
+overnight_fail_count=""
+overnight_reasons=""
+if [ -n "$overnight_summary_source" ]; then
+  overnight_counts="$(printf '%s\n' "$overnight_summary_source" |
+    awk -F': ' '/PASS\/WARN\/FAIL\/INFO/ {print $2; exit}')"
+  overnight_fail_count="$(printf '%s\n' "$overnight_counts" |
+    awk -F/ 'NF >= 3 {print $3}')"
+  overnight_reasons="$(printf '%s\n' "$overnight_summary_source" |
+    awk -F': ' '/^- reasons:/ {print $2; exit}')"
+fi
 latest_is_scheduler_experiment=0
 case "${latest_tag:-}" in
   scheduler_*|pc_sched_*|latest_gate_*)
@@ -614,6 +630,9 @@ serial_users="$(serial_lsof)"
   echo "- 当前 ELF 中 \`rosidl_type_metadata\` 约 2.8KB RAM，是新的内存优化重点；但 \`ROSIDL_TYPESUPPORT_SINGLE_TYPESUPPORT\` 曾是 T5 HardFault/agent 兼容修复的一部分，需用独立 libmicroros rebuild 矩阵验证后再改默认。"
   echo "- DWT snapshot 算法已有 host-side 模型测试 \`tools/test-dwt-snapshot-model.sh\`，但真实 stamp 单调性仍需 SWD 恢复后做 >60s 静默恢复对抗。"
   echo "- idle stack 96 words、micro-ROS stack 704/640 words 目前是静态候选，必须上板用 \`tools/measure-stack-hwm.sh\` 复测后再设为默认。"
+  if [ -n "$overnight_fail_count" ] && [ "$overnight_fail_count" -gt 0 ] 2>/dev/null; then
+    echo "- overnight reliable/full-echo no-flash 仍有失败样本：PASS/WARN/FAIL/INFO=${overnight_counts:-unknown}，reasons=${overnight_reasons:-unknown}。这类长尾需继续用 sampler + PC publish gap + LinkHealth 交叉判断，并优先做 \`taskset\` 整夜对比。"
+  fi
   echo "- \`cmd_catchup_max=1\` 只应用于 best-effort/status decimation/sampled 的 latest-target profile；不要用于 reliable/status_every_1/full-echo 默认诊断。"
   echo "- 200Hz reliable/status_every_1/full-echo 不适合作为控制链路目标；后续验收重点应转向 latest-target 接收率、状态采样频率、长尾 gap、lost/duplicate/inflight。"
   echo
