@@ -11,6 +11,7 @@ Performance baseline:
     ros2 launch com_bringup pc_cmd.launch.py cmd_rate_hz:=20 qos_depth:=1
 Stress target:
     ros2 launch com_bringup pc_cmd.launch.py cmd_rate_hz:=200 qos_depth:=1
+    ros2 launch com_bringup pc_cmd.launch.py cmd_rate_hz:=200 qos_reliability:=best_effort
 """
 
 from launch import LaunchDescription
@@ -24,6 +25,7 @@ def generate_launch_description():
     log_level = LaunchConfiguration('log_level')
     cmd_rate_hz = LaunchConfiguration('cmd_rate_hz')
     qos_depth = LaunchConfiguration('qos_depth')
+    qos_reliability = LaunchConfiguration('qos_reliability')
 
     return LaunchDescription([
         DeclareLaunchArgument(
@@ -38,6 +40,10 @@ def generate_launch_description():
             'qos_depth',
             default_value='1',
             description='KEEP_LAST depth for high-rate /com/* endpoints.'),
+        DeclareLaunchArgument(
+            'qos_reliability',
+            default_value='reliable',
+            description="QoS reliability: 'reliable' or 'best_effort'."),
 
         Node(
             package='exo_cmd',
@@ -47,6 +53,7 @@ def generate_launch_description():
             parameters=[{
                 'cmd_rate_hz': ParameterValue(cmd_rate_hz, value_type=float),
                 'qos_depth': ParameterValue(qos_depth, value_type=int),
+                'qos_reliability': qos_reliability,
                 'sweep_period_s': 0.005,
                 'rtt_warn_ms': 10.0,
                 'rtt_deadline_ms': 50.0,

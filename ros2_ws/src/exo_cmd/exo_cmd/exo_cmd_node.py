@@ -96,6 +96,9 @@ class ExoCmdNode(Node):
         # Keep-last depth. Default remains 10 for compatibility; high-rate
         # control runs can use depth=1 to avoid stale command queueing.
         self.declare_parameter('qos_depth', 10)
+        # Reliable is the safety/acceptance default. best_effort is a performance
+        # experiment mode for latest-only high-rate command/status streams.
+        self.declare_parameter('qos_reliability', 'reliable')
 
         rtt_warn_ms = self.get_parameter('rtt_warn_ms').value
         rtt_deadline_ms = self.get_parameter('rtt_deadline_ms').value
@@ -113,6 +116,7 @@ class ExoCmdNode(Node):
         start_value = self.get_parameter('start_value').value
         cmd_rate_hz = float(self.get_parameter('cmd_rate_hz').value)
         qos_depth = int(self.get_parameter('qos_depth').value)
+        qos_reliability = self.get_parameter('qos_reliability').value
 
         if cmd_rate_hz <= 0.0:
             self.get_logger().fatal(
@@ -121,9 +125,9 @@ class ExoCmdNode(Node):
 
         self._heartbeat_period_s = 1.0 / cmd_rate_hz
         try:
-            self._qos = make_exo_qos(qos_depth)
+            self._qos = make_exo_qos(qos_depth, qos_reliability)
         except ValueError as exc:
-            self.get_logger().fatal('invalid qos_depth: %s' % exc)
+            self.get_logger().fatal('invalid QoS profile: %s' % exc)
             raise
 
         # §7.6 run nonce: -1 -> random 32-bit nonce; >=0 -> literal start; any
@@ -193,8 +197,9 @@ class ExoCmdNode(Node):
             % (rtt_warn_ms, rtt_deadline_ms, max_inflight, sweep_period_s,
                settled_window))
         self.get_logger().info(
-            'executor_threads=%d (0 = auto / os.cpu_count()), qos_depth=%d'
-            % (self.executor_threads, qos_depth))
+            'executor_threads=%d (0 = auto / os.cpu_count()), '
+            'qos_depth=%d qos_reliability=%s'
+            % (self.executor_threads, qos_depth, qos_reliability))
         self.get_logger().info(
             'crc_enabled=%s (application self-check, non-blocking; §7.9), '
             'link_health %s @ %.2f Hz'

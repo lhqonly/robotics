@@ -27,6 +27,7 @@ def generate_launch_description():
     log_level = LaunchConfiguration('log_level')
     cmd_rate_hz = LaunchConfiguration('cmd_rate_hz')
     qos_depth = LaunchConfiguration('qos_depth')
+    qos_reliability = LaunchConfiguration('qos_reliability')
 
     return LaunchDescription([
         DeclareLaunchArgument(
@@ -41,6 +42,10 @@ def generate_launch_description():
             'qos_depth',
             default_value='10',
             description='KEEP_LAST depth for /com/* endpoints.'),
+        DeclareLaunchArgument(
+            'qos_reliability',
+            default_value='reliable',
+            description="QoS reliability: 'reliable' or 'best_effort'."),
 
         Node(
             package='exo_cmd',
@@ -50,6 +55,7 @@ def generate_launch_description():
             parameters=[{
                 'cmd_rate_hz': ParameterValue(cmd_rate_hz, value_type=float),
                 'qos_depth': ParameterValue(qos_depth, value_type=int),
+                'qos_reliability': qos_reliability,
             }],
             arguments=['--ros-args', '--log-level', log_level],
         ),

@@ -22,6 +22,8 @@ project(f103-microros C ASM)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
+option(EXO_QOS_BEST_EFFORT "Use best-effort QoS for ExoCmd/ExoStatus perf tests" OFF)
+
 # ---- 路径 ----
 set(TP        ${CMAKE_SOURCE_DIR}/ThirdParty)
 set(CMSIS     ${TP}/CMSIS)
@@ -33,6 +35,11 @@ set(LDSCRIPT  ${CMAKE_SOURCE_DIR}/STM32F103RB_FLASH.ld)
 # STM32F103xB : 选择 CMSIS device 头里的具体型号寄存器定义。
 # USE_HAL_DRIVER 不定义(我们不用 HAL)。
 add_compile_definitions(STM32F103xB)
+if(EXO_QOS_BEST_EFFORT)
+    add_compile_definitions(EXO_QOS_BEST_EFFORT=1)
+else()
+    add_compile_definitions(EXO_QOS_BEST_EFFORT=0)
+endif()
 
 # ---- micro-ROS 静态库(T5)----
 # [MICROROS-INCLUDE] / [MICROROS-LIB]:libmicroros.a + 其 include/ 由主 agent 用

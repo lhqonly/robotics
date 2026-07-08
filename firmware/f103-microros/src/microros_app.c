@@ -54,6 +54,10 @@
 #  define EXO_CRC_ENABLED 0
 #endif
 
+#ifndef EXO_QOS_BEST_EFFORT
+#  define EXO_QOS_BEST_EFFORT 0
+#endif
+
 /* ===== MCU 本地控制基线 =====
  * 第一阶段只做 1kHz 调度骨架:通信回调更新 latest target,本地控制 task 每 1ms
  * 读取一次最新目标。这里不驱动电机,只验证"本地闭环频率"与"ROS 通信频率"解耦。
@@ -236,6 +240,15 @@ static bool microros_entities_init(void)
      *    传 qos_profile_default(rmw 默认 = RELIABLE/KEEP_LAST)。History depth 由
      *    colcon.meta 的 RMW_UXRCE_MAX_HISTORY=1 在 lib 层钉死为 1(契约 F103 侧 depth=1)。
      * 用 rosidl 的 exo_msgs/ExoStatus type support。 */
+#if EXO_QOS_BEST_EFFORT
+    if (!RCSOFT(rclc_publisher_init_best_effort(
+            &g_pub_status,
+            &g_node,
+            ROSIDL_GET_MSG_TYPE_SUPPORT(exo_msgs, msg, ExoStatus),
+            "com/tp_mcu_status"))) {
+        return false;
+    }
+#else
     if (!RCSOFT(rclc_publisher_init_default(
             &g_pub_status,
             &g_node,
@@ -243,9 +256,19 @@ static bool microros_entities_init(void)
             "com/tp_mcu_status"))) {   /* rclc 会补成 /com/tp_mcu_status(默认命名空间下绝对化) */
         return false;
     }
+#endif
 
     /* subscription /com/tp_cmd_heartbeat,RELIABLE QoS(同上,_init_default = reliable)。
      * 用 rosidl 的 exo_msgs/ExoCmd type support。 */
+#if EXO_QOS_BEST_EFFORT
+    if (!RCSOFT(rclc_subscription_init_best_effort(
+            &g_sub_cmd,
+            &g_node,
+            ROSIDL_GET_MSG_TYPE_SUPPORT(exo_msgs, msg, ExoCmd),
+            "com/tp_cmd_heartbeat"))) {
+        return false;
+    }
+#else
     if (!RCSOFT(rclc_subscription_init_default(
             &g_sub_cmd,
             &g_node,
@@ -253,6 +276,7 @@ static bool microros_entities_init(void)
             "com/tp_cmd_heartbeat"))) {
         return false;
     }
+#endif
 
     /* executor:1 个句柄(只挂 1 个 subscription)。 */
     g_executor = rclc_executor_get_zero_initialized_executor();
