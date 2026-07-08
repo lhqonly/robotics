@@ -222,6 +222,13 @@ tools/run-com-staircase.sh staircase_$(date +%Y%m%d_%H%M)
 DRY_RUN=1 tools/run-com-staircase.sh dryrun
 ```
 
+阶梯跑完后，可以把 summary 转成表格或 CSV：
+
+```bash
+tools/summarize-com-staircase.sh log/com-staircase/<tag>.summary.log
+FORMAT=csv tools/summarize-com-staircase.sh log/com-staircase/<tag>.summary.log
+```
+
 烧录并启动 bridge 后，可以用 SWD 粗测本地 tick 档位：
 
 ```bash

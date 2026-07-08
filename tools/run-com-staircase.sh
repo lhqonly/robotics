@@ -10,6 +10,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TAG_PREFIX="${1:-com_staircase}"
 LOGDIR="${LOGDIR:-$ROOT/log/com-staircase}"
 SUMMARY="$LOGDIR/$TAG_PREFIX.summary.log"
+METRICS_MD="$LOGDIR/$TAG_PREFIX.metrics.md"
+METRICS_CSV="$LOGDIR/$TAG_PREFIX.metrics.csv"
 
 DRY_RUN="${DRY_RUN:-0}"
 CONTINUE_ON_ERROR="${CONTINUE_ON_ERROR:-1}"
@@ -234,6 +236,11 @@ else
 fi
 
 record "DONE failures=$failures summary=$SUMMARY"
+if grep -q '^METRICS ' "$SUMMARY"; then
+  "$ROOT/tools/summarize-com-staircase.sh" "$SUMMARY" >"$METRICS_MD"
+  FORMAT=csv "$ROOT/tools/summarize-com-staircase.sh" "$SUMMARY" >"$METRICS_CSV"
+  record "METRICS_TABLE markdown=$METRICS_MD csv=$METRICS_CSV"
+fi
 if [ "$failures" -ne 0 ] && [ "$FAIL_ON_STAGE_ERROR" = "1" ]; then
   exit 1
 fi
