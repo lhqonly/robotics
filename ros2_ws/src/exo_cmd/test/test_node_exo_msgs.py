@@ -31,6 +31,7 @@ call the node's callbacks directly with constructed messages.
 """
 
 import contextlib
+import copy
 
 from exo_cmd.crc import compute_crc
 from exo_cmd.exo_cmd_node import ExoCmdNode
@@ -85,6 +86,15 @@ def make_status(seq, payload, stamp_mono_ns=0, crc=0):
     m.header.crc = crc
     m.payload = payload
     return m
+
+
+def capture_publish_into(out, ids=None):
+    """Return a publish hook that snapshots messages at publish time."""
+    def _capture(msg):
+        if ids is not None:
+            ids.append(id(msg))
+        out.append(copy.deepcopy(msg))
+    return _capture
 
 
 # --------------------------------------------------------------------------
@@ -185,8 +195,8 @@ def test_crc_end_to_end_loopback_resign_no_mismatch():
                    summary_period_s=0.0) as cmd, \
             make_loopback(crc_enabled=True) as loop:
         # Intercept both publishers so no DDS is involved.
-        cmd._pub.publish = sent_cmds.append
-        loop._pub.publish = echoes.append
+        cmd._pub.publish = capture_publish_into(sent_cmds)
+        loop._pub.publish = capture_publish_into(echoes)
 
         # 1) exo_cmd publishes a heartbeat with a crc over ITS t_send envelope.
         cmd._on_timer()
@@ -333,7 +343,7 @@ def test_sampled_tracking_only_tracks_every_nth_command():
     sent_cmds = []
     with make_node(tracking_mode='sampled', status_every_n=5,
                    link_health_period_s=0.0, summary_period_s=0.0) as node:
-        node._pub.publish = sent_cmds.append
+        node._pub.publish = capture_publish_into(sent_cmds)
         for _ in range(5):
             node._on_timer()
 
@@ -356,7 +366,7 @@ def test_startup_grace_ignores_warmup_seq_counters():
     sent_cmds = []
     with make_node(startup_grace_s=0.5, link_health_period_s=0.0,
                    summary_period_s=0.0) as node:
-        node._pub.publish = sent_cmds.append
+        node._pub.publish = capture_publish_into(sent_cmds)
 
         node._on_timer()
         assert sent_cmds[-1].header.seq == 0
@@ -394,7 +404,7 @@ def test_cmd_catchup_publishes_one_extra_when_late():
     sent_cmds = []
     with make_node(cmd_catchup_max=1, link_health_period_s=0.0,
                    summary_period_s=0.0) as node:
-        node._pub.publish = sent_cmds.append
+        node._pub.publish = capture_publish_into(sent_cmds)
         node._next_cmd_due_s = node._now() - node._heartbeat_period_s * 1.1
 
         node._on_timer()
@@ -403,3 +413,19 @@ def test_cmd_catchup_publishes_one_extra_when_late():
         assert node._wire_send_count == 2
         assert node._tracker.counters()['sent'] == 2
         assert node._tracker.counters()['inflight'] == 2
+
+
+def test_command_publish_reuses_message_instance_but_snapshots_values():
+    """The hot path reuses ExoCmd while each publish still carries new values."""
+    sent_cmds = []
+    published_ids = []
+    with make_node(link_health_period_s=0.0, summary_period_s=0.0) as node:
+        node._pub.publish = capture_publish_into(sent_cmds, published_ids)
+
+        node._on_timer()
+        node._on_timer()
+        node._on_timer()
+
+        assert len(set(published_ids)) == 1
+        assert [m.header.seq for m in sent_cmds] == [0, 1, 2]
+        assert [m.payload for m in sent_cmds] == [0, 1, 2]

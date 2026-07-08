@@ -209,6 +209,7 @@ class ExoCmdNode(Node):
         self._sampled_seen = set()
         self._startup_grace_active = self._startup_grace_s > 0.0
         self._startup_grace_seqs = set()
+        self._cmd_msg = ExoCmd()
 
         # Callback groups (task ⑤): rx (echo subscription) gets its OWN group so
         # on_status -- which timestamps the safety-critical RTT -- can run
@@ -412,7 +413,7 @@ class ExoCmdNode(Node):
         else:
             seq, events = self._tracker.on_send(now_s)
         self._wire_send_count += 1
-        msg = ExoCmd()
+        msg = self._cmd_msg
         msg.header.seq = seq
         msg.header.stamp_mono_ns = now_ns
         # payload is the loopback value, DECOUPLED from seq. We reuse seq's value
