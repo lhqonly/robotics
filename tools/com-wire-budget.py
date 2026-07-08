@@ -98,6 +98,14 @@ def main() -> int:
         action="store_true",
         help="Exit non-zero if any projected row exceeds --max-baud-util-pct.",
     )
+    parser.add_argument(
+        "--show-wire-time",
+        action="store_true",
+        help=(
+            "Include per-message UART serialization time estimates. These are "
+            "wire-time lower bounds only, not end-to-end ROS/XRCE latency."
+        ),
+    )
     args = parser.parse_args()
 
     tx_kbit_s = args.tx_kbit_s
@@ -167,6 +175,13 @@ def main() -> int:
         "baud util %",
     ]
     aligns = ["---:"] * len(headers)
+    if args.show_wire_time:
+        headers.extend([
+            "cmd wire ms",
+            "status wire ms",
+            "full echo wire ms",
+        ])
+        aligns.extend(["---:", "---:", "---:"])
     if args.max_baud_util_pct is not None:
         headers.append("min baud @ budget")
         aligns.append("---:")
@@ -197,6 +212,14 @@ def main() -> int:
                     fmt(projected_total_kbit_s),
                     fmt(projected_util),
                 ]
+                if args.show_wire_time:
+                    cmd_wire_ms = tx_bits_per_cmd * 1000.0 / baud
+                    status_wire_ms = rx_bits_per_status * 1000.0 / baud
+                    row.extend([
+                        fmt(cmd_wire_ms, 3),
+                        fmt(status_wire_ms, 3),
+                        fmt(cmd_wire_ms + status_wire_ms, 3),
+                    ])
                 if args.max_baud_util_pct is not None:
                     min_baud = (
                         projected_total_kbit_s * 1000.0 * 100.0 /
@@ -217,6 +240,12 @@ def main() -> int:
         "Discovery traffic, reliable retries, Agent verbosity overhead, OS jitter, "
         "and MCU scheduling are not modeled."
     )
+    if args.show_wire_time:
+        print(
+            "Wire-time columns are UART serialization lower bounds for one command "
+            "frame, one status frame, and their sum. They do not include executor, "
+            "DDS/XRCE, OS scheduling, MCU spin/read timeout, or control-loop time."
+        )
     if over_budget and args.fail_on_over_budget:
         return 1
     return 0

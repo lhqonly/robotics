@@ -30,6 +30,13 @@ contract="$("$ROOT/tools/com-wire-budget.py" \
   --baud 921600 \
   --max-baud-util-pct 30)"
 
+wire_time="$("$ROOT/tools/com-wire-budget.py" \
+  --wire-log "$WIRE_LOG" \
+  --cmd-hz 200 \
+  --status-every-n 40 \
+  --baud 921600,2000000 \
+  --show-wire-time)"
+
 assert_contains() {
   local haystack="$1"
   local needle="$2"
@@ -47,6 +54,10 @@ assert_contains "$contract" "budget contract: baud_util_pct <= 30.00"
 assert_contains "$contract" "budget math: min_baud = total_kbit/s * 1000 * 100 / max_baud_util_pct"
 assert_contains "$contract" "| 200.00 | 40 | 5.00 | 921600 | 88.60 | 2.17 | 90.77 | 9.85 | 302559 | 20.15 | PASS |"
 assert_contains "$contract" "| 1000.00 | 1 | 1000.00 | 921600 | 443.00 | 433.50 | 876.50 | 95.11 | 2921667 | -65.11 | OVER_BUDGET |"
+assert_contains "$wire_time" "| cmd Hz | status every N | status Hz | baud | tx kbit/s | rx kbit/s | total kbit/s | baud util % | cmd wire ms | status wire ms | full echo wire ms |"
+assert_contains "$wire_time" "| 200.00 | 40 | 5.00 | 921600 | 88.60 | 2.17 | 90.77 | 9.85 | 0.481 | 0.470 | 0.951 |"
+assert_contains "$wire_time" "| 200.00 | 40 | 5.00 | 2000000 | 88.60 | 2.17 | 90.77 | 4.54 | 0.222 | 0.217 | 0.438 |"
+assert_contains "$wire_time" "Wire-time columns are UART serialization lower bounds"
 
 row_count="$(grep -c '^| [0-9]' <<<"$matrix")"
 if [ "$row_count" -ne 8 ]; then

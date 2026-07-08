@@ -626,13 +626,16 @@ tools/com-wire-budget.py \
   --cmd-hz 200,1000 \
   --status-every-n 1,10,40 \
   --baud 921600,2000000 \
-  --max-baud-util-pct 30
+  --max-baud-util-pct 30 \
+  --show-wire-time
 ```
 
 加上 `--max-baud-util-pct 30` 后，表格会多出 `min baud @ budget`、
 `budget margin %` 和 `PASS/OVER_BUDGET`：前者表示在该利用率红线下至少需要的
 baud，后者表示当前 baud 离红线还有多少百分点余量。如果要在脚本里把超预算当作失败，
 再加 `--fail-on-over-budget`。
+加上 `--show-wire-time` 后会多出单条 command/status 在 UART 8N1 上的串行发送时间下限；
+它只解释裸线速，不包含 ROS executor、DDS/XRCE、OS 调度、MCU read/spin timeout 或控制环耗时。
 这个工具用已测 XRCE 串口字节数做线性估算，只用于排序实验优先级；真实验收仍以
 上板 `run-com-perf.sh` / staircase 实测为准。
 
