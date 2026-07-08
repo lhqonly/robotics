@@ -65,7 +65,7 @@ def generate_launch_description():
             description='Deadline sweep period in seconds.'),
         DeclareLaunchArgument(
             'summary_period_s',
-            default_value='1.0',
+            default_value='5.0',
             description='Link-health summary log period in seconds.'),
         DeclareLaunchArgument(
             'link_health_period_s',
