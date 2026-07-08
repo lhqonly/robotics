@@ -149,6 +149,10 @@ def main() -> int:
         f"status={fmt(rx_bits_per_status, 1)} serial bits"
     )
     if args.max_baud_util_pct is not None:
+        print(
+            "- budget math: min_baud = total_kbit/s * 1000 * 100 / "
+            "max_baud_util_pct"
+        )
         print(f"- budget contract: baud_util_pct <= {fmt(args.max_baud_util_pct)}")
     print()
 
@@ -164,6 +168,10 @@ def main() -> int:
     ]
     aligns = ["---:"] * len(headers)
     if args.max_baud_util_pct is not None:
+        headers.append("min baud @ budget")
+        aligns.append("---:")
+        headers.append("budget margin %")
+        aligns.append("---:")
         headers.append("verdict")
         aligns.append("---")
     print("| " + " | ".join(headers) + " |")
@@ -190,6 +198,13 @@ def main() -> int:
                     fmt(projected_util),
                 ]
                 if args.max_baud_util_pct is not None:
+                    min_baud = (
+                        projected_total_kbit_s * 1000.0 * 100.0 /
+                        args.max_baud_util_pct
+                    )
+                    budget_margin = args.max_baud_util_pct - projected_util
+                    row.append(str(int(min_baud + 0.999999)))
+                    row.append(fmt(budget_margin))
                     if projected_util <= args.max_baud_util_pct:
                         row.append("PASS")
                     else:

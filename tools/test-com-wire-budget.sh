@@ -44,8 +44,9 @@ assert_contains "$single" "| 200.00 | 40 | 5.00 | 921600 | 88.60 | 2.17 | 90.77 
 assert_contains "$matrix" "| 200.00 | 1 | 200.00 | 921600 | 88.60 | 86.70 | 175.30 | 19.02 |"
 assert_contains "$matrix" "| 1000.00 | 40 | 25.00 | 2000000 | 443.00 | 10.84 | 453.84 | 22.69 |"
 assert_contains "$contract" "budget contract: baud_util_pct <= 30.00"
-assert_contains "$contract" "| 200.00 | 40 | 5.00 | 921600 | 88.60 | 2.17 | 90.77 | 9.85 | PASS |"
-assert_contains "$contract" "| 1000.00 | 1 | 1000.00 | 921600 | 443.00 | 433.50 | 876.50 | 95.11 | OVER_BUDGET |"
+assert_contains "$contract" "budget math: min_baud = total_kbit/s * 1000 * 100 / max_baud_util_pct"
+assert_contains "$contract" "| 200.00 | 40 | 5.00 | 921600 | 88.60 | 2.17 | 90.77 | 9.85 | 302559 | 20.15 | PASS |"
+assert_contains "$contract" "| 1000.00 | 1 | 1000.00 | 921600 | 443.00 | 433.50 | 876.50 | 95.11 | 2921667 | -65.11 | OVER_BUDGET |"
 
 row_count="$(grep -c '^| [0-9]' <<<"$matrix")"
 if [ "$row_count" -ne 8 ]; then
