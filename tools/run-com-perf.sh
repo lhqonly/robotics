@@ -155,6 +155,30 @@ sleep 1
 kill -9 -- "-$CMD_PID" 2>/dev/null || true
 
 status_hz="$(awk '/average rate:/ {rate=$3} END {print rate}' "$HZ_LOG")"
+hz_stats="$(awk '
+  /^\s*min:/ {
+    min_s = $2
+    max_s = $4
+    std_s = $7
+    window = $9
+    sub(/s$/, "", min_s)
+    sub(/s$/, "", max_s)
+    sub(/s$/, "", std_s)
+    last_min = min_s
+    last_max = max_s
+    last_std = std_s
+    last_window = window
+    if (max_gap == "" || max_s + 0 > max_gap + 0) {
+      max_gap = max_s
+    }
+  }
+  END {
+    if (last_window != "") {
+      printf "last_min_s=%s last_max_s=%s last_std_s=%s last_window=%s max_gap_s=%s",
+        last_min, last_max, last_std, last_window, max_gap
+    }
+  }
+' "$HZ_LOG")"
 estimated_rx_hz=""
 if [ -n "$status_hz" ]; then
   estimated_rx_hz="$(awk -v r="$status_hz" -v n="$STATUS_EVERY_N" 'BEGIN { printf "%.2f", r * n }')"
@@ -166,6 +190,7 @@ echo "[com-perf] graph:"
 cat "$GRAPH_LOG"
 echo "[com-perf] status_hz=${status_hz:-NA}"
 echo "[com-perf] estimated_mcu_target_rx_hz=${estimated_rx_hz:-NA}"
+echo "[com-perf] hz_stats=${hz_stats:-NA}"
 echo "[com-perf] last_summary=${summary:-NA}"
 echo "[com-perf] hz_tail:"
 tail -n 12 "$HZ_LOG"
