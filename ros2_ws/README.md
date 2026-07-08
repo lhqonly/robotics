@@ -252,6 +252,23 @@ bridge：
 STAIRCASE_BAUDS="921600 2000000" tools/run-com-staircase.sh baud_sweep
 ```
 
+要把 UART read 低延迟候选也纳入同一个阶梯，设置
+`STAIRCASE_UART_READ_POLL_YIELDS`。例如同时比较默认等待策略和 `taskYIELD`
+快速轮询 4 次：
+
+```bash
+STAIRCASE_UART_READ_POLL_YIELDS="0 4" \
+tools/run-com-staircase.sh poll_sweep
+```
+
+也可以同时扫波特率和 UART polling 候选：
+
+```bash
+STAIRCASE_BAUDS="921600 2000000" \
+STAIRCASE_UART_READ_POLL_YIELDS="0 4" \
+tools/run-com-staircase.sh baud_poll_sweep
+```
+
 阶梯跑完后，可以把 summary 转成表格或 CSV：
 
 ```bash
@@ -276,8 +293,8 @@ ST-LINK/串口状态）：
 tools/com-status-report.sh morning_$(date +%Y%m%d_%H%M)
 ```
 
-报告会写到 `log/handoff/<tag>.md`，里面汇总当前 git 版本、SWD 状态、串口设备、
-最近 no-flash 指标、静态内存矩阵、栈候选和未解决项。
+报告会写到 `log/handoff/<tag>.md`，里面汇总当前 git 版本、最近提交、SWD 状态、
+串口设备、最近 no-flash 指标、静态内存矩阵、栈候选和未解决项。
 
 烧录并启动 bridge 后，可以用 SWD 粗测本地 tick 档位：
 

@@ -96,7 +96,13 @@ usb_snapshot() {
 
 serial_lsof() {
   if command -v lsof >/dev/null; then
-    lsof /dev/ttyUSB0 /dev/ttyACM0 2>/dev/null || echo "no ttyUSB0/ttyACM0 lsof users"
+    local out
+    out="$(lsof /dev/ttyUSB0 /dev/ttyACM0 2>/dev/null || true)"
+    if [ -n "$out" ]; then
+      printf '%s\n' "$out"
+    else
+      echo "no ttyUSB0/ttyACM0 lsof users"
+    fi
   else
     echo "lsof not found"
   fi
@@ -105,8 +111,12 @@ serial_lsof() {
 git_branch="$(git -C "$ROOT" branch --show-current 2>/dev/null || echo unknown)"
 git_rev="$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 git_status="$(git -C "$ROOT" status --short 2>/dev/null || true)"
+git_recent="$(git -C "$ROOT" log --oneline -8 2>/dev/null || true)"
 if [ -z "$git_status" ]; then
   git_status="clean"
+fi
+if [ -z "$git_recent" ]; then
+  git_recent="unknown"
 fi
 
 latest_sampler="$(latest_file "$COM_LOGDIR" '*.sampler.log')"
@@ -178,6 +188,12 @@ serial_users="$(serial_lsof)"
   echo "- 仓库版本：branch=$git_branch rev=$git_rev"
   echo "- 工作区状态：$git_status"
   echo "- 串口设备：$serial_status"
+  echo
+  echo "## 最近提交"
+  echo
+  echo '```text'
+  printf '%s\n' "$git_recent"
+  echo '```'
   echo
   echo "## USB/串口占用"
   echo
