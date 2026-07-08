@@ -240,6 +240,16 @@ FORMAT=csv tools/summarize-com-staircase.sh log/com-staircase/<tag>.summary.log
 如果某个阶段用 `MICROROS_AGENT_VERBOSITY=6` 跑过，表格里还会带
 `wire_kbit_s` 和 `wire_baud_util_pct`，方便把通信频率、丢包和串口占用放在一起看。
 
+要生成一份当前通信验证交接报告（不会烧录、不会启动 ROS 节点，只读取已有日志并探测
+ST-LINK/串口状态）：
+
+```bash
+tools/com-status-report.sh morning_$(date +%Y%m%d_%H%M)
+```
+
+报告会写到 `log/handoff/<tag>.md`，里面汇总当前 git 版本、SWD 状态、串口设备、
+最近 no-flash 指标、静态内存矩阵、栈候选和未解决项。
+
 烧录并启动 bridge 后，可以用 SWD 粗测本地 tick 档位：
 
 ```bash
