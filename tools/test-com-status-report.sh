@@ -28,6 +28,14 @@ assert_contains "$report" "status=skipped reason=COM_STATUS_PROBE_STLINK=0" \
   "ST-LINK skip marker"
 assert_contains "$report" "## micro-ROS 配置快照" \
   "micro-ROS config section"
+assert_contains "$report" "## 固件静态内存矩阵" \
+  "firmware size matrix section"
+assert_contains "$report" "## micro-ROS 栈候选" \
+  "micro-ROS stack candidates section"
+assert_contains "$report" "## executor spin timeout 候选" \
+  "executor spin-timeout candidates section"
+assert_contains "$report" "## linker heap/MSP 预留候选" \
+  "linker heap/MSP reserve candidates section"
 assert_contains "$report" "meta_stream_history=2" \
   "micro-ROS stream history"
 assert_contains "$report" "generated_stream_history=in:2/out:2" \
