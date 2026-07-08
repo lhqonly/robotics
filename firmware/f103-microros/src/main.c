@@ -431,7 +431,9 @@ static void LedTask(void *arg)
  * micro-ROS 任务栈:rcl→rmw→xrce 调用链较深。早期按 05 文档 T8 建议从 ~2500 words
  *   起测,现已基于 gdb 栈水位和硬件验收收敛到 1024 words。
  * 控制任务栈:128 words(=512B),<=1kHz latest-target 消费骨架。
- * LED 任务栈:64 words(=256B),只翻 GPIO + delay,够用。 */
+ * LED 任务栈:64 words(=256B),只翻 GPIO + delay,够用。
+ * Idle 栈:configMINIMAL_STACK_SIZE=96 words;按 2026-07-08 HWM used≈24 words
+ *   保留约 72 words 裕度,省 128B SRAM。 */
 #define MICROROS_TASK_STACK_WORDS  768u    /* 3KB。2026-07-08 真机 HWM:
                                             * total=1024 words, used≈484, free≈540。
                                             * 降到 768 后仍按该样本保留约 284 words(>1KB)

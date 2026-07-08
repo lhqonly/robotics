@@ -30,7 +30,11 @@ extern uint32_t SystemCoreClock;
 #define configCPU_CLOCK_HZ                      ( SystemCoreClock )
 #define configTICK_RATE_HZ                      ( ( TickType_t ) 1000 )
 #define configMAX_PRIORITIES                    ( 5 )
-#define configMINIMAL_STACK_SIZE                ( ( uint16_t ) 128 )   /* words = 512B */
+#define configMINIMAL_STACK_SIZE                ( ( uint16_t ) 96 )    /* words = 384B.
+                                                                       * 2026-07-08 HWM:
+                                                                       * idle used≈24/free≈104
+                                                                       * at 128 words; 96 keeps
+                                                                       * ~72 words margin. */
 #define configMAX_TASK_NAME_LEN                 ( 12 )
 #define configUSE_16_BIT_TICKS                  0
 #define configIDLE_SHOULD_YIELD                 1
