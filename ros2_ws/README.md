@@ -349,6 +349,19 @@ STAIRCASE_EXECUTOR_SPIN_TIMEOUT_US="1000 500 200 100" \
 tools/run-com-staircase.sh spin_timeout_sweep
 ```
 
+要比较 TIM2 本地闭环中断优先级，设置
+`STAIRCASE_CONTROL_TIMER_IRQ_PRIORITIES`。例如同时比较高优先级 `4` 和
+FreeRTOS syscall 边界附近的 `5`：
+
+```bash
+STAIRCASE_CONTROL_TIMER_IRQ_PRIORITIES="4 5" \
+tools/run-com-staircase.sh irq_priority_sweep
+```
+
+这些维度可以组合使用；矩阵会展开成
+`latest_<loop>hz_<baud>baud_irqp<prio>_poll<n>_spin<us>us_200hz_be_n40`
+这样的阶段名。
+
 阶梯跑完后，可以把 summary 转成表格或 CSV：
 
 ```bash
@@ -356,9 +369,10 @@ tools/summarize-com-staircase.sh log/com-staircase/<tag>.summary.log
 FORMAT=csv tools/summarize-com-staircase.sh log/com-staircase/<tag>.summary.log
 ```
 
-表格会从 stage 名拆出 `loop_hz`、`baud`、`uart_read_poll_yields`、
-`executor_spin_timeout_us`、`pc_cmd_hz`、`qos`、`status_every_n`，方便横向比较
-1/2/5/10kHz、921600/2Mbps、UART polling 和 executor spin timeout 候选。
+表格会从 stage 名拆出 `loop_hz`、`baud`、`timer_irq_priority`、
+`uart_read_poll_yields`、`executor_spin_timeout_us`、`pc_cmd_hz`、`qos`、
+`status_every_n`，方便横向比较 1/2/5/10kHz、921600/2Mbps、TIM2 IRQ
+优先级、UART polling 和 executor spin timeout 候选。
 表格还会给每个已知 profile 标出 `verdict/reason`：baseline 按 20Hz reliable
 smoke 判断，latest-target 阶段按 200Hz 目标接收率、gap 和 lost/duplicate 判断；
 未知 fallback 阶段标 `INFO`。

@@ -69,21 +69,21 @@ test_staircase_summary() {
 
   summary="$TMPDIR/staircase.summary.log"
   printf '%s\n' \
-    'METRICS latest_10khz_921600baud_poll0_spin100_200hz_be_n40 status_hz=5 sampler_hz=5 sampler_target_rx_hz=200.0 sampler_p95_gap_s=0.051 sampler_p99_gap_s=0.056 sampler_max_gap_s=0.061 sampler_zero_gap_count=0 sampler_seq_rate_hz=5 seq_delta_avg=40 seq_delta_min=40 seq_delta_max=40 pc_target_rate_hz=199.9 pc_target_window_hz=200.1 pc_wire_gap_p95_ms=5.0 pc_wire_gap_p99_ms=6.0 pc_wire_gap_max_ms=8.0 wire_kbit_s=90.77 wire_baud_util_pct=9.85 tx_kbit_s=48 rx_kbit_s=42 lost=0 duplicate=0 inflight=0' \
+    'METRICS latest_10khz_921600baud_irqp4_poll0_spin100_200hz_be_n40 status_hz=5 sampler_hz=5 sampler_target_rx_hz=200.0 sampler_p95_gap_s=0.051 sampler_p99_gap_s=0.056 sampler_max_gap_s=0.061 sampler_zero_gap_count=0 sampler_seq_rate_hz=5 seq_delta_avg=40 seq_delta_min=40 seq_delta_max=40 pc_target_rate_hz=199.9 pc_target_window_hz=200.1 pc_wire_gap_p95_ms=5.0 pc_wire_gap_p99_ms=6.0 pc_wire_gap_max_ms=8.0 wire_kbit_s=90.77 wire_baud_util_pct=9.85 tx_kbit_s=48 rx_kbit_s=42 lost=0 duplicate=0 inflight=0' \
     >"$summary"
 
   csv="$(FORMAT=csv "$ROOT/tools/summarize-com-staircase.sh" "$summary")"
   assert_contains "$csv" \
-    'pc_wire_gap_p95_ms,pc_wire_gap_p99_ms,pc_wire_gap_max_ms' \
-    'staircase csv header includes PC publish gap fields'
+    'baud,timer_irq_priority,uart_read_poll_yields' \
+    'staircase csv header includes timer IRQ priority field'
   assert_contains "$csv" \
-    'latest_10khz_921600baud_poll0_spin100_200hz_be_n40,PASS,-,10000,921600,0,100,200,best_effort,40,5,5,200.0,0.051,0.056,0.061,0,5,40,40,40,199.9,200.1,5.0,6.0,8.0,90.77,9.85,48,42,0,0,0' \
+    'latest_10khz_921600baud_irqp4_poll0_spin100_200hz_be_n40,PASS,-,10000,921600,4,0,100,200,best_effort,40,5,5,200.0,0.051,0.056,0.061,0,5,40,40,40,199.9,200.1,5.0,6.0,8.0,90.77,9.85,48,42,0,0,0' \
     'staircase csv parses metadata and metrics'
 
   md="$("$ROOT/tools/summarize-com-staircase.sh" "$summary")"
-  assert_contains "$md" 'PC gap p95/p99/max ms' \
-    'staircase markdown header includes PC publish gap fields'
-  assert_contains "$md" '| latest_10khz_921600baud_poll0_spin100_200hz_be_n40 | PASS | - | 10000 | 921600 | 0 | 100 | 200 | best_effort | 40 | 5 | 5 | 200.0 | 0.051 | 0.056 | 0.061 | 0 | 5 | 40/40/40 | 199.9 / 200.1 | 5.0/6.0/8.0 | 90.77 | 9.85 | 0 | 0 | 0 |' \
+  assert_contains "$md" 'timer IRQ prio' \
+    'staircase markdown header includes timer IRQ priority field'
+  assert_contains "$md" '| latest_10khz_921600baud_irqp4_poll0_spin100_200hz_be_n40 | PASS | - | 10000 | 921600 | 4 | 0 | 100 | 200 | best_effort | 40 | 5 | 5 | 200.0 | 0.051 | 0.056 | 0.061 | 0 | 5 | 40/40/40 | 199.9 / 200.1 | 5.0/6.0/8.0 | 90.77 | 9.85 | 0 | 0 | 0 |' \
     'staircase markdown parses metadata and metrics'
 }
 

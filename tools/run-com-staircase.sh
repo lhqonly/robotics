@@ -32,7 +32,7 @@ LATEST_WARMUP_SECONDS="${LATEST_WARMUP_SECONDS:-5}"
 LATEST_HZ_SECONDS="${LATEST_HZ_SECONDS:-50}"
 LATEST_STATUS_EVERY_N="${LATEST_STATUS_EVERY_N:-40}"
 STAIRCASE_BAUDS="${STAIRCASE_BAUDS:-921600}"
-STAIRCASE_CONTROL_TIMER_IRQ_PRIORITY="${STAIRCASE_CONTROL_TIMER_IRQ_PRIORITY:-4}"
+STAIRCASE_CONTROL_TIMER_IRQ_PRIORITIES="${STAIRCASE_CONTROL_TIMER_IRQ_PRIORITIES:-${STAIRCASE_CONTROL_TIMER_IRQ_PRIORITY:-4}}"
 STAIRCASE_UART_READ_POLL_YIELDS="${STAIRCASE_UART_READ_POLL_YIELDS:-0}"
 STAIRCASE_EXECUTOR_SPIN_TIMEOUT_US="${STAIRCASE_EXECUTOR_SPIN_TIMEOUT_US:-1000}"
 
@@ -216,14 +216,15 @@ run_baseline_flash_stage() {
 run_latest_flash_stage() {
   local hz="$1"
   local baud="$2"
-  local poll_yields="$3"
-  local spin_timeout_us="$4"
-  run_stage "latest_${hz}hz_${baud}baud_poll${poll_yields}_spin${spin_timeout_us}us_200hz_be_n${LATEST_STATUS_EVERY_N}" \
+  local irq_priority="$3"
+  local poll_yields="$4"
+  local spin_timeout_us="$5"
+  run_stage "latest_${hz}hz_${baud}baud_irqp${irq_priority}_poll${poll_yields}_spin${spin_timeout_us}us_200hz_be_n${LATEST_STATUS_EVERY_N}" \
     BUILD_FIRMWARE="$BUILD_FIRMWARE" \
     FLASH_FIRMWARE="$FLASH_FIRMWARE" \
     BAUD="$baud" \
     CONTROL_LOOP_HZ="$hz" \
-    CONTROL_TIMER_IRQ_PRIORITY="$STAIRCASE_CONTROL_TIMER_IRQ_PRIORITY" \
+    CONTROL_TIMER_IRQ_PRIORITY="$irq_priority" \
     UART_READ_POLL_YIELDS="$poll_yields" \
     EXECUTOR_SPIN_TIMEOUT_US="$spin_timeout_us" \
     CMD_RATE_HZ=200 \
@@ -254,16 +255,18 @@ run_no_flash_smoke() {
 }
 
 record "staircase tag_prefix=$TAG_PREFIX logdir=$LOGDIR"
-record "mode build_firmware=$BUILD_FIRMWARE flash_firmware=$FLASH_FIRMWARE dry_run=$DRY_RUN staircase_bauds=$STAIRCASE_BAUDS staircase_control_timer_irq_priority=$STAIRCASE_CONTROL_TIMER_IRQ_PRIORITY staircase_uart_read_poll_yields=$STAIRCASE_UART_READ_POLL_YIELDS staircase_executor_spin_timeout_us=$STAIRCASE_EXECUTOR_SPIN_TIMEOUT_US"
+record "mode build_firmware=$BUILD_FIRMWARE flash_firmware=$FLASH_FIRMWARE dry_run=$DRY_RUN staircase_bauds=$STAIRCASE_BAUDS staircase_control_timer_irq_priorities=$STAIRCASE_CONTROL_TIMER_IRQ_PRIORITIES staircase_uart_read_poll_yields=$STAIRCASE_UART_READ_POLL_YIELDS staircase_executor_spin_timeout_us=$STAIRCASE_EXECUTOR_SPIN_TIMEOUT_US"
 
 failures=0
 if check_stlink_ready; then
   run_baseline_flash_stage || failures=$((failures + 1))
   for hz in 1000 2000 5000 10000; do
     for baud in $STAIRCASE_BAUDS; do
-      for poll_yields in $STAIRCASE_UART_READ_POLL_YIELDS; do
-        for spin_timeout_us in $STAIRCASE_EXECUTOR_SPIN_TIMEOUT_US; do
-          run_latest_flash_stage "$hz" "$baud" "$poll_yields" "$spin_timeout_us" || failures=$((failures + 1))
+      for irq_priority in $STAIRCASE_CONTROL_TIMER_IRQ_PRIORITIES; do
+        for poll_yields in $STAIRCASE_UART_READ_POLL_YIELDS; do
+          for spin_timeout_us in $STAIRCASE_EXECUTOR_SPIN_TIMEOUT_US; do
+            run_latest_flash_stage "$hz" "$baud" "$irq_priority" "$poll_yields" "$spin_timeout_us" || failures=$((failures + 1))
+          done
         done
       done
     done
