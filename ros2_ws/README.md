@@ -608,6 +608,7 @@ max <= 50ms。改过解析工具后可以离线跑：
 tools/test-com-wire-budget.sh
 tools/test-com-perf-contract.sh
 tools/test-com-summary-parsers.sh
+tools/test-firmware-size-report.sh
 ```
 
 终端 3：查看通信结果。
