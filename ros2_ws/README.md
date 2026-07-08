@@ -157,7 +157,20 @@ ros2 run exo_cmd exo_cmd_node --ros-args \
   -p cmd_rate_hz:=200.0 \
   -p qos_depth:=1 \
   -p qos_reliability:=best_effort \
+  -p tracking_mode:=sampled \
+  -p status_every_n:=5 \
   --log-level fatal
+```
+
+同样也可以通过 launch 运行：
+
+```bash
+ros2 launch com_bringup pc_cmd.launch.py \
+  cmd_rate_hz:=200 \
+  qos_depth:=1 \
+  qos_reliability:=best_effort \
+  tracking_mode:=sampled \
+  status_every_n:=5
 ```
 
 烧录并启动 bridge 后，可以用 SWD 粗测本地 tick 档位：

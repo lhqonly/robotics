@@ -26,6 +26,9 @@ def generate_launch_description():
     cmd_rate_hz = LaunchConfiguration('cmd_rate_hz')
     qos_depth = LaunchConfiguration('qos_depth')
     qos_reliability = LaunchConfiguration('qos_reliability')
+    tracking_mode = LaunchConfiguration('tracking_mode')
+    status_every_n = LaunchConfiguration('status_every_n')
+    sample_window = LaunchConfiguration('sample_window')
 
     return LaunchDescription([
         DeclareLaunchArgument(
@@ -44,6 +47,18 @@ def generate_launch_description():
             'qos_reliability',
             default_value='reliable',
             description="QoS reliability: 'reliable' or 'best_effort'."),
+        DeclareLaunchArgument(
+            'tracking_mode',
+            default_value='echo',
+            description="Link monitor mode: 'echo' or 'sampled'."),
+        DeclareLaunchArgument(
+            'status_every_n',
+            default_value='1',
+            description='In sampled mode, track one status for every N commands.'),
+        DeclareLaunchArgument(
+            'sample_window',
+            default_value='4096',
+            description='Recent sent seq window for sampled status matching.'),
 
         Node(
             package='exo_cmd',
@@ -54,6 +69,9 @@ def generate_launch_description():
                 'cmd_rate_hz': ParameterValue(cmd_rate_hz, value_type=float),
                 'qos_depth': ParameterValue(qos_depth, value_type=int),
                 'qos_reliability': qos_reliability,
+                'tracking_mode': tracking_mode,
+                'status_every_n': ParameterValue(status_every_n, value_type=int),
+                'sample_window': ParameterValue(sample_window, value_type=int),
                 'sweep_period_s': 0.005,
                 'rtt_warn_ms': 10.0,
                 'rtt_deadline_ms': 50.0,

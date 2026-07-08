@@ -321,3 +321,31 @@ def test_link_health_message_matches_tracker_snapshot():
     assert msg.rtt_p95_ms == 20.0
     # Header stamp is wall-clock (diagnostic only); just assert it is set.
     assert msg.header.stamp.sec != 0 or msg.header.stamp.nanosec != 0
+
+
+def test_sampled_tracking_only_tracks_every_nth_command():
+    """
+    sampled mode publishes every command but only tracks every Nth status sample.
+
+    This matches firmware EXO_STATUS_EVERY_N: commands 0..3 update latest target
+    but are not expected to echo; command 4 is tracked and can match.
+    """
+    sent_cmds = []
+    with make_node(tracking_mode='sampled', status_every_n=5,
+                   link_health_period_s=0.0, summary_period_s=0.0) as node:
+        node._pub.publish = sent_cmds.append
+        for _ in range(5):
+            node._on_timer()
+
+        assert [m.header.seq for m in sent_cmds] == [0, 1, 2, 3, 4]
+        c = node._tracker.counters()
+        assert c['sent'] == 0
+        assert c['inflight'] == 0
+
+        node._on_status(make_status(seq=4, payload=4))
+        c = node._tracker.counters()
+        assert c['sent'] == 1
+        assert c['matched'] == 1
+        assert c['lost'] == 0
+        assert c['inflight'] == 0
+        assert node._tracker.reconciles()

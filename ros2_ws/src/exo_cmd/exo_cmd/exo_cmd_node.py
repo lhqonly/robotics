@@ -30,6 +30,7 @@ This node makes no assumption about WHO sends mcu_status: in Phase A it is the
 local loopback_node, in Phase B it is the STM32 micro-ROS firmware.
 """
 
+from collections import deque
 import random
 import time
 
@@ -99,6 +100,9 @@ class ExoCmdNode(Node):
         # Reliable is the safety/acceptance default. best_effort is a performance
         # experiment mode for latest-only high-rate command/status streams.
         self.declare_parameter('qos_reliability', 'reliable')
+        self.declare_parameter('tracking_mode', 'echo')
+        self.declare_parameter('status_every_n', 1)
+        self.declare_parameter('sample_window', 4096)
 
         rtt_warn_ms = self.get_parameter('rtt_warn_ms').value
         rtt_deadline_ms = self.get_parameter('rtt_deadline_ms').value
@@ -117,11 +121,23 @@ class ExoCmdNode(Node):
         cmd_rate_hz = float(self.get_parameter('cmd_rate_hz').value)
         qos_depth = int(self.get_parameter('qos_depth').value)
         qos_reliability = self.get_parameter('qos_reliability').value
+        self._tracking_mode = (
+            self.get_parameter('tracking_mode').value.strip().lower())
+        self._status_every_n = int(self.get_parameter('status_every_n').value)
+        self._sample_window = int(self.get_parameter('sample_window').value)
 
         if cmd_rate_hz <= 0.0:
             self.get_logger().fatal(
                 'invalid cmd_rate_hz %.3f: must be > 0' % cmd_rate_hz)
             raise ValueError('cmd_rate_hz must be > 0')
+        if self._tracking_mode not in ('echo', 'sampled'):
+            raise ValueError(
+                "tracking_mode must be 'echo' or 'sampled', got %r"
+                % self._tracking_mode)
+        if self._status_every_n < 1:
+            raise ValueError('status_every_n must be >= 1')
+        if self._sample_window < 1:
+            raise ValueError('sample_window must be >= 1')
 
         self._heartbeat_period_s = 1.0 / cmd_rate_hz
         try:
@@ -156,6 +172,11 @@ class ExoCmdNode(Node):
             # §7.2 constraint rtt_warn_ms < rtt_deadline_ms violated: fail loud.
             self.get_logger().fatal('invalid link-health params: %s' % exc)
             raise
+        self._wire_seq = start_seq
+        self._wire_send_count = 0
+        self._sampled_sends = {}
+        self._sampled_order = deque()
+        self._sampled_seen = set()
 
         # Callback groups (task ⑤): rx (echo subscription) gets its OWN group so
         # on_status -- which timestamps the safety-critical RTT -- can run
@@ -198,8 +219,11 @@ class ExoCmdNode(Node):
                settled_window))
         self.get_logger().info(
             'executor_threads=%d (0 = auto / os.cpu_count()), '
-            'qos_depth=%d qos_reliability=%s'
-            % (self.executor_threads, qos_depth, qos_reliability))
+            'qos_depth=%d qos_reliability=%s tracking_mode=%s '
+            'status_every_n=%d sample_window=%d'
+            % (self.executor_threads, qos_depth, qos_reliability,
+               self._tracking_mode, self._status_every_n,
+               self._sample_window))
         self.get_logger().info(
             'crc_enabled=%s (application self-check, non-blocking; §7.9), '
             'link_health %s @ %.2f Hz'
@@ -254,6 +278,15 @@ class ExoCmdNode(Node):
             else:
                 log.info(ev.msg)
 
+    def _remember_sampled_send(self, seq: int, now_s: float) -> None:
+        """Remember recent wire sends so sampled statuses can compute RTT."""
+        self._sampled_sends[seq] = now_s
+        self._sampled_order.append(seq)
+        while len(self._sampled_order) > self._sample_window:
+            old = self._sampled_order.popleft()
+            self._sampled_sends.pop(old, None)
+            self._sampled_seen.discard(old)
+
     # ----- timers / callbacks ------------------------------------------------
     def _on_timer(self):
         # §7.1: the SAME monotonic instant feeds the tracker (seconds) and the
@@ -261,7 +294,14 @@ class ExoCmdNode(Node):
         # seconds form passed to on_send is derived from it so RTT pairs cleanly.
         now_ns = self._now_ns()
         now_s = now_ns / 1e9
-        seq, events = self._tracker.on_send(now_s)
+        if self._tracking_mode == 'sampled':
+            seq = self._wire_seq
+            self._wire_seq = (self._wire_seq + 1) % (2 ** 32)
+            self._wire_send_count += 1
+            self._remember_sampled_send(seq, now_s)
+            events = []
+        else:
+            seq, events = self._tracker.on_send(now_s)
         msg = ExoCmd()
         msg.header.seq = seq
         msg.header.stamp_mono_ns = now_ns
@@ -294,8 +334,27 @@ class ExoCmdNode(Node):
                     'crc_mismatch_count=%d)'
                     % (msg.header.seq, msg.header.crc, expected,
                        self._tracker.crc_mismatch_count))
-        events = self._tracker.on_echo(msg.header.seq, self._now())
+        if self._tracking_mode == 'sampled':
+            events = self._on_sampled_status(msg)
+        else:
+            events = self._tracker.on_echo(msg.header.seq, self._now())
         self._emit(events)
+
+    def _on_sampled_status(self, msg: ExoStatus):
+        now = self._now()
+        seq = msg.header.seq
+        t_send = self._sampled_sends.get(seq)
+        if t_send is None:
+            self.get_logger().warn(
+                'sampled status seq=%d not in recent send window=%d'
+                % (seq, self._sample_window))
+            return []
+        events = []
+        if seq not in self._sampled_seen:
+            events.extend(self._tracker.on_send_seq(seq, t_send))
+            self._sampled_seen.add(seq)
+        events.extend(self._tracker.on_echo(seq, now))
+        return events
 
     def _on_sweep(self):
         # §7.3/M3: settle every entry past its deadline as LOST.
