@@ -311,6 +311,18 @@ END_AT="tomorrow 09:00" INTERVAL_SECONDS=1800 \
 tools/overnight-com-watch.sh overnight_$(date +%Y%m%d_%H%M)
 ```
 
+默认 `WIRE_EVERY_N=0`，不会开 micro-ROS Agent `-v6`，日志比较小。如果想每隔几轮
+额外采一次同 tag 的串口线速统计，可以打开周期采样：
+
+```bash
+END_AT="tomorrow 09:00" INTERVAL_SECONDS=1800 \
+WIRE_EVERY_N=6 WIRE_AGENT_VERBOSITY=6 \
+tools/overnight-com-watch.sh overnight_wire_$(date +%Y%m%d_%H%M)
+```
+
+注意：`-v6` 会大量打印 micro-ROS Agent 串口帧日志，可能给 20Hz 健康判据引入额外
+长尾；它适合低频诊断线速，不适合作为每轮 baseline。
+
 日志会写到 `log/overnight-com-watch/<tag>.log`，滚动汇总表会写到
 `log/overnight-com-watch/<tag>.summary.md` 和 `.csv`。每轮通信指标仍写入
 `log/com-perf/`，每轮交接报告写入 `log/handoff/`。

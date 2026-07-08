@@ -13,6 +13,8 @@ END_AT="${END_AT:-tomorrow 09:00}"
 RUN_SECONDS="${RUN_SECONDS:-18}"
 WARMUP_SECONDS="${WARMUP_SECONDS:-5}"
 HZ_SECONDS="${HZ_SECONDS:-10}"
+WIRE_EVERY_N="${WIRE_EVERY_N:-0}"
+WIRE_AGENT_VERBOSITY="${WIRE_AGENT_VERBOSITY:-6}"
 
 mkdir -p "$LOGDIR"
 LOG="$LOGDIR/$TAG_PREFIX.log"
@@ -38,17 +40,22 @@ if [ -z "$end_epoch" ]; then
   exit 1
 fi
 
-log "start tag_prefix=$TAG_PREFIX end_at=$END_AT interval_s=$INTERVAL_SECONDS"
+log "start tag_prefix=$TAG_PREFIX end_at=$END_AT interval_s=$INTERVAL_SECONDS wire_every_n=$WIRE_EVERY_N"
 iteration=0
 while [ "$(date +%s)" -lt "$end_epoch" ]; do
   iteration=$((iteration + 1))
   tag="${TAG_PREFIX}_$(printf '%03d' "$iteration")"
-  log "iteration=$iteration smoke tag=$tag"
+  agent_verbosity=1
+  if [ "$WIRE_EVERY_N" -gt 0 ] 2>/dev/null && [ $((iteration % WIRE_EVERY_N)) -eq 0 ]; then
+    agent_verbosity="$WIRE_AGENT_VERBOSITY"
+  fi
+  log "iteration=$iteration smoke tag=$tag agent_verbosity=$agent_verbosity"
 
   if BUILD_FIRMWARE=0 FLASH_FIRMWARE=0 RESET_TARGET=0 \
       RUN_SECONDS="$RUN_SECONDS" \
       WARMUP_SECONDS="$WARMUP_SECONDS" \
       HZ_SECONDS="$HZ_SECONDS" \
+      MICROROS_AGENT_VERBOSITY="$agent_verbosity" \
       "$ROOT/tools/run-com-perf.sh" "$tag" >>"$LOG" 2>&1; then
     log "iteration=$iteration smoke=ok"
   else
