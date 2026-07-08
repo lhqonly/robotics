@@ -248,6 +248,18 @@ tools/measure-stack-hwm.sh firmware/f103-microros/build/f103-microros.elf
 tools/firmware-size-report.sh firmware/f103-microros/build/f103-microros.elf
 ```
 
+要比较 1/2/5/10kHz、reliable/best-effort 等固件 profile 的静态
+Flash/RAM，不需要连接硬件，可以跑：
+
+```bash
+tools/firmware-size-matrix.sh current
+```
+
+结果会写到 `log/firmware-size-matrix/current.md` 和
+`log/firmware-size-matrix/current.csv`；中间构建目录在
+`firmware/f103-microros/build-size-matrix/`。这只做编译和 size 统计，
+不会烧录、不会碰 ST-LINK/SWD。
+
 终端 3：查看通信结果。
 
 ```bash
