@@ -151,7 +151,7 @@ uint64_t dwt_now_ns(void)
  *    「CYCCNT 硬件已回绕、下一 tick 还没把 hi+1」的最长 1ms 窗口。窗口内若只用 (hi<<32)|low,
  *    会用旧 hi 配回绕后的小 low,得到比回绕前小约 2^32 cycle(~59.65s)的值 → stamp 倒退。
  *    10Hz 发包每个回绕点约 1% 命中,长跑跨多次回绕统计上必中。修复:dwt_now_ns 读取点
- *    额外读 tick 钩子暴露的基准 g_dwt_last_cyccnt,若当前 low < last 即判定「自上次 tick 后
+ *    额外读 tick 钩子发布快照里的 last 基准,若当前 low < last 即判定「自上次 tick 后
  *    已回绕但 hi 未记」,本地把 hi+1 再合成。前提「1ms << 59.65s ⇒ 两 tick 间最多回绕一次」
  *    保证补偿量恒为 +1。
  *

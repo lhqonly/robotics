@@ -19,7 +19,7 @@
  *
  *   正确做法(本模块):由 **FreeRTOS tick 钩子 vApplicationTickHook(1kHz=1ms,远 << 59.65s)**
  *   维护 64 位 cycle 累加——每 tick 读一次 CYCCNT,与上次 tick 比,检测回绕(本次 < 上次 ⇒ 高位 +1),
- *   把高 32 位累加进 g_dwt_cyccnt_hi。tick 周期(1ms)远小于回绕周期(59.65s),两次采样间最多
+ *   把高 32 位累加进双缓冲快照。tick 周期(1ms)远小于回绕周期(59.65s),两次采样间最多
  *   回绕一次、绝不漏检。dwt_now_ns() 读「(hi<<32)|当前 CYCCNT 低位」并补偿「硬件已回绕、
  *   tick 尚未把 hi+1」的最长 1ms 滞后窗口(否则该窗口内会用旧 hi 配回绕后小低位 → stamp 倒退),
  *   全程无锁(单写者 tick 钩子 + 双缓冲快照发布 + 单向补偿,详见 dwt_time.c)。
