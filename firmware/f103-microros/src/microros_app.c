@@ -58,6 +58,10 @@
 #  define EXO_QOS_BEST_EFFORT 0
 #endif
 
+#ifndef EXO_CONTROL_LOOP_HZ
+#  define EXO_CONTROL_LOOP_HZ 1000u
+#endif
+
 /* ===== MCU 本地控制基线 =====
  * 第一阶段只做 1kHz 调度骨架:通信回调更新 latest target,本地控制 task 每 1ms
  * 读取一次最新目标。这里不驱动电机,只验证"本地闭环频率"与"ROS 通信频率"解耦。
@@ -78,23 +82,24 @@ void com_control_task(void *arg)
 {
     (void)arg;
     TickType_t last = xTaskGetTickCount();
-    const TickType_t period = pdMS_TO_TICKS(1u);
+    const TickType_t period = pdMS_TO_TICKS(
+        (1000u + EXO_CONTROL_LOOP_HZ - 1u) / EXO_CONTROL_LOOP_HZ);
 
     for (;;) {
-        uint32_t seq;
-        int32_t payload;
-
         vTaskDelayUntil(&last, period);
-        taskENTER_CRITICAL();
-        seq = g_control_latest_seq;
-        payload = g_control_latest_payload;
-        taskEXIT_CRITICAL();
-
-        /* Phase-1 baseline: consume latest target without motor output. */
-        (void)seq;
-        (void)payload;
-        g_control_tick_count++;
+        com_control_tick_isr();
     }
+}
+
+void com_control_tick_isr(void)
+{
+    uint32_t seq = g_control_latest_seq;
+    int32_t payload = g_control_latest_payload;
+
+    /* Phase baseline: consume latest target without motor output. */
+    (void)seq;
+    (void)payload;
+    g_control_tick_count++;
 }
 
 uint32_t com_control_tick_count(void)

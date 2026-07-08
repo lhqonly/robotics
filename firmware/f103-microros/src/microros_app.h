@@ -17,6 +17,7 @@
  * arg 未用。 */
 void microros_app_task(void *arg);
 void com_control_task(void *arg);
+void com_control_tick_isr(void);
 
 /* GDB/验收探针:不走串口,避免污染 XRCE 帧流。 */
 uint32_t com_control_tick_count(void);

@@ -9,7 +9,7 @@
  *     transport 层(src/microros_transport.c)的 write/read 回调底座。
  *   - 任务模型:T4 的「echo + 临时 DBG 探针」AppTask 已删除,改为
  *       microros_app_task(src/microros_app.c):rclc 双向闭环 node_com_mcu 节点;
- *       com_control_task(src/microros_app.c):1kHz 本地控制基线(消费最新目标,暂不驱动电机);
+ *       com_control_task/TIM2(src/microros_app.c):本地控制基线(消费最新目标,暂不驱动电机);
  *       + 一个极小 LedTask 做 liveness 心跳。
  *   - 串口归 micro-ROS(XRCE-DDS over serial);仅上电横幅/建链失败用明文自检串。
  *
@@ -106,6 +106,10 @@ int clock_gettime(clockid_t clk_id, struct timespec *tp)
 #  define EXO_UART_BAUD 921600u
 #endif
 #define USART1_BRR_VALUE    ((uint32_t)((72000000u + (EXO_UART_BAUD / 2u)) / EXO_UART_BAUD))
+
+#ifndef EXO_CONTROL_LOOP_HZ
+#  define EXO_CONTROL_LOOP_HZ 1000u
+#endif
 
 static volatile uint8_t rx_dma_buf[RX_DMA_BUF_SIZE] __attribute__((aligned(4)));
 static          uint8_t tx_dma_buf[TX_DMA_BUF_SIZE] __attribute__((aligned(4)));
@@ -291,6 +295,28 @@ static void USART1_Init(void)
     NVIC_EnableIRQ(USART1_IRQn);
 }
 
+#if EXO_CONTROL_LOOP_HZ > 1000u
+/* ===== TIM2 高频本地控制 tick =====
+ * FreeRTOS tick=1kHz,无法表达 2/5/10kHz。高频基线改用 TIM2 ISR;ISR 只调用
+ * com_control_tick_isr() 做 latest-target 采样/计数,不调用 FreeRTOS API。 */
+static void ControlTimer_Init(void)
+{
+    RCC->APB1ENR |= RCC_APB1ENR_TIM2EN;
+    (void)RCC->APB1ENR;
+
+    TIM2->CR1 = 0;
+    TIM2->PSC = 71u;  /* APB1 prescaler=2 => TIM2CLK=72MHz,PSC 71 => 1MHz */
+    TIM2->ARR = (uint16_t)((1000000u / EXO_CONTROL_LOOP_HZ) - 1u);
+    TIM2->EGR = TIM_EGR_UG;
+    TIM2->SR = 0;
+    TIM2->DIER = TIM_DIER_UIE;
+
+    NVIC_SetPriority(TIM2_IRQn, 5);  /* 最高可被 FreeRTOS critical section 屏蔽的优先级 */
+    NVIC_EnableIRQ(TIM2_IRQn);
+    TIM2->CR1 = TIM_CR1_CEN;
+}
+#endif
+
 /* ===== TX:用 DMA 发送一段(<= TX_DMA_BUF_SIZE)。阻塞等待上一次发完。 =====
  * 本卡自检/回显数据量小,简单实现:拷进 tx_dma_buf,重设 Ch7,等 TC。
  * 注:这是 T4 骨架的发送原语;T5 的 transport write 回调会有自己的实现。 */
@@ -402,7 +428,7 @@ static void LedTask(void *arg)
 /* ===== 静态 task 资源(configSUPPORT_STATIC_ALLOCATION=1) =====
  * micro-ROS 任务栈:rcl→rmw→xrce 调用链较深。早期按 05 文档 T8 建议从 ~2500 words
  *   起测,现已基于 gdb 栈水位和硬件验收收敛到 1024 words。
- * 控制任务栈:128 words(=512B),1kHz latest-target 消费骨架。
+ * 控制任务栈:128 words(=512B),<=1kHz latest-target 消费骨架。
  * LED 任务栈:64 words(=256B),只翻 GPIO + delay,够用。 */
 #define MICROROS_TASK_STACK_WORDS  1024u   /* 4KB。gdb 实测 rcl_init+create_session 全程栈最深仅用 ~235 words
                                             * (早期 2048-word 栈 HWM 余 1813),4KB 仍保留约 3KB 栈余量;
@@ -414,8 +440,10 @@ static void LedTask(void *arg)
 
 static StaticTask_t microros_task_tcb;
 static StackType_t  microros_task_stack[MICROROS_TASK_STACK_WORDS];
+#if EXO_CONTROL_LOOP_HZ <= 1000u
 static StaticTask_t control_task_tcb;
 static StackType_t  control_task_stack[CONTROL_TASK_STACK_WORDS];
+#endif
 static StaticTask_t led_task_tcb;
 static StackType_t  led_task_stack[LED_TASK_STACK_WORDS];
 static StaticTask_t idle_task_tcb;
@@ -457,10 +485,14 @@ int main(void)
      * 污染 XRCE 帧流,agent 无法建链)。固件存活靠 LED 心跳(LedTask)观察,不靠串口文本。
      * 原 boot banner 已移除(2026-06-20:实测 banner 文本混进 XRCE 流导致 agent 收不到 session)。 */
 
-    /* 控制任务优先级 3,高于通信任务:本地闭环不被 ROS 通信阻塞。
-     * micro-ROS 应用任务优先级 2;LED 心跳任务优先级 1,更低。 */
+    /* 控制基线高于通信任务:本地闭环不被 ROS 通信阻塞。
+     * <=1kHz 用 FreeRTOS task;>1kHz 用 TIM2 ISR。micro-ROS 优先级 2;LED 优先级 1。 */
+#if EXO_CONTROL_LOOP_HZ <= 1000u
     xTaskCreateStatic(com_control_task, "ctrl", CONTROL_TASK_STACK_WORDS, NULL,
                       3 /*prio*/, control_task_stack, &control_task_tcb);
+#else
+    ControlTimer_Init();
+#endif
     xTaskCreateStatic(microros_app_task, "uros", MICROROS_TASK_STACK_WORDS, NULL,
                       2 /*prio*/, microros_task_stack, &microros_task_tcb);
     xTaskCreateStatic(LedTask, "led", LED_TASK_STACK_WORDS, NULL,
@@ -502,7 +534,11 @@ T8_PROBE_NOINLINE uint32_t t8_probe_microros_stack_hwm_words(void)
 
 T8_PROBE_NOINLINE uint32_t t8_probe_control_stack_hwm_words(void)
 {
+#if EXO_CONTROL_LOOP_HZ <= 1000u
     return (uint32_t)uxTaskGetStackHighWaterMark((TaskHandle_t)&control_task_tcb);
+#else
+    return 0u;  /* TIM2 ISR mode has no control task stack. */
+#endif
 }
 
 T8_PROBE_NOINLINE uint32_t t8_probe_led_stack_hwm_words(void)
