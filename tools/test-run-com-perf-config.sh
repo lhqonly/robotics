@@ -32,4 +32,34 @@ assert_contains "$SCRIPT" 'SUMMARY_PERIOD_S=5.0' \
 assert_contains "$SCRIPT" 'LINK_HEALTH_PERIOD_S=5.0' \
   "latest-target link health period auto-default"
 
+latest_config="$(
+  PRINT_CONFIG_ONLY=1 \
+    QOS_RELIABILITY=best_effort \
+    TRACKING_MODE=sampled \
+    STATUS_EVERY_N=40 \
+    "$SCRIPT" latest_config_test
+)"
+printf '%s\n' "$latest_config" | grep -Fq \
+  'summary_period_s=5.0 link_health_period_s=5.0' || {
+    echo "FAIL: latest-target print-config did not auto-default diagnostics" >&2
+    printf '%s\n' "$latest_config" >&2
+    exit 1
+  }
+
+override_config="$(
+  PRINT_CONFIG_ONLY=1 \
+    QOS_RELIABILITY=best_effort \
+    TRACKING_MODE=sampled \
+    STATUS_EVERY_N=40 \
+    SUMMARY_PERIOD_S=2.0 \
+    LINK_HEALTH_PERIOD_S=3.0 \
+    "$SCRIPT" override_config_test
+)"
+printf '%s\n' "$override_config" | grep -Fq \
+  'summary_period_s=2.0 link_health_period_s=3.0' || {
+    echo "FAIL: print-config did not preserve explicit diagnostic periods" >&2
+    printf '%s\n' "$override_config" >&2
+    exit 1
+  }
+
 echo "PASS: run-com-perf config checks"

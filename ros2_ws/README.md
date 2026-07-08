@@ -261,6 +261,13 @@ PC 命令发送日志，可用 `LOG_SENT_COMMANDS=true` 临时打开；正式 20
 当脚本识别到 `best_effort + sampled + status_every_n>1` 的 latest-target
 profile，且你没有显式设置 `SUMMARY_PERIOD_S` / `LINK_HEALTH_PERIOD_S` 时，
 会自动把二者默认到 5s，和 `pc_latest_target.launch.py` 保持一致。
+只想确认脚本最终会采用哪些参数、不访问串口和 ST-LINK 时，可以用：
+
+```bash
+PRINT_CONFIG_ONLY=1 QOS_RELIABILITY=best_effort TRACKING_MODE=sampled \
+STATUS_EVERY_N=40 tools/run-com-perf.sh config_preview
+```
+
 脚本默认 `SAMPLE_WINDOW=1024`，在 200Hz 下约覆盖 5.1s、1000Hz 下约覆盖
 1.0s，远大于当前 `rtt_deadline_ms=120ms`；需要更长 sampled 匹配窗口时可覆盖
 `SAMPLE_WINDOW=<n>`。
