@@ -513,6 +513,11 @@ serial_users="$(serial_lsof)"
     printf '%s\n' "$overnight_live_summary" |
       markdown_section_body_from_text "## Verdict Summary"
     echo
+    echo "### Failure Events"
+    echo
+    printf '%s\n' "$overnight_live_summary" |
+      markdown_section_body_from_text "## Failure Events"
+    echo
     printf '%s\n' "$overnight_live_summary" |
       markdown_table_from_text '| Tag |'
   else
