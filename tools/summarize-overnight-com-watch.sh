@@ -54,6 +54,42 @@ if [ "$FORMAT" = "csv" ]; then
   exit 0
 fi
 
+perf_csv="$(PERF_EXPECTED_RATE_HZ="$PERF_EXPECTED_RATE_HZ" \
+  FORMAT=csv "$ROOT/tools/summarize-com-perf.sh" "${tags[@]}")"
+
+print_verdict_summary() {
+  printf '%s\n' "$perf_csv" |
+    awk -F, '
+      NR == 1 {next}
+      {
+        total += 1
+        verdict = $2
+        reason = $3
+        verdicts[verdict] += 1
+        if (reason != "" && reason != "-") {
+          split(reason, parts, ";")
+          for (i in parts) {
+            if (parts[i] != "") {
+              reasons[parts[i]] += 1
+            }
+          }
+        }
+      }
+      END {
+        printf "- samples: %d\n", total
+        printf "- PASS/WARN/FAIL/INFO: %d/%d/%d/%d\n", verdicts["PASS"] + 0, verdicts["WARN"] + 0, verdicts["FAIL"] + 0, verdicts["INFO"] + 0
+        summary = ""
+        for (reason in reasons) {
+          item = reason "=" reasons[reason]
+          if (summary == "") summary = item
+          else summary = summary ", " item
+        }
+        if (summary == "") summary = "-"
+        printf "- reasons: %s\n", summary
+      }
+    '
+}
+
 rel_watch_log="${WATCH_LOG#$ROOT/}"
 echo "# Overnight Communication Watch Summary"
 echo
@@ -66,6 +102,10 @@ echo
 echo '```text'
 grep -E '^\[[^]]+\] (start|iteration=|sleep_s=|final_report|done)' "$WATCH_LOG" || true
 echo '```'
+echo
+echo "## Verdict Summary"
+echo
+print_verdict_summary
 echo
 echo "## Communication Samples"
 echo

@@ -125,6 +125,10 @@ test_overnight_summary() {
   md="$(LOGDIR="$TMPDIR/com-perf" "$ROOT/tools/summarize-overnight-com-watch.sh" "$watch_log")"
   assert_contains "$md" '- smoke samples: 2' \
     'overnight markdown counts smoke samples'
+  assert_contains "$md" '- PASS/WARN/FAIL/INFO: 2/0/0/0' \
+    'overnight markdown includes verdict summary'
+  assert_contains "$md" '- reasons: -' \
+    'overnight markdown includes empty reason summary'
   assert_contains "$md" '| sample | PASS | - | 19.997 | 20.001' \
     'overnight markdown includes summarized sample row'
 }
