@@ -17,6 +17,7 @@ FIRMWARE_ELF="$ROOT/firmware/f103-microros/build/f103-microros.elf"
 MICROROS_META="$ROOT/firmware/f103-microros/colcon.meta"
 MICROROS_UXR_CONFIG="$ROOT/firmware/f103-microros/ThirdParty/microros/include/uxr/client/config.h"
 MICROROS_RMW_CONFIG="$ROOT/firmware/f103-microros/ThirdParty/microros/include/rmw_microxrcedds_c/config.h"
+COM_STATUS_PROBE_STLINK="${COM_STATUS_PROBE_STLINK:-1}"
 
 mkdir -p "$OUTDIR"
 
@@ -191,6 +192,10 @@ EOF
 }
 
 probe_stlink() {
+  if [ "$COM_STATUS_PROBE_STLINK" = "0" ]; then
+    echo "status=skipped reason=COM_STATUS_PROBE_STLINK=0"
+    return 0
+  fi
   if ! command -v st-info >/dev/null; then
     echo "status=unknown reason=st-info-not-found"
     return 0
