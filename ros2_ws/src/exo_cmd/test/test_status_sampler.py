@@ -1,5 +1,5 @@
 from exo_cmd.link_health import SEQ_MODULUS
-from exo_cmd.status_sampler import StatusStats, parse_args
+from exo_cmd.status_sampler import parse_args, StatusStats
 import pytest
 
 
