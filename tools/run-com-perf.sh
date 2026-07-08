@@ -17,6 +17,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TAG="${1:-com_perf}"
 LOGDIR="${LOGDIR:-$ROOT/log/com-perf}"
 
+SUMMARY_PERIOD_S_SET="${SUMMARY_PERIOD_S+x}"
+LINK_HEALTH_PERIOD_S_SET="${LINK_HEALTH_PERIOD_S+x}"
+
 DEV="${DEV:-/dev/ttyUSB0}"
 BAUD="${BAUD:-921600}"
 CMD_RATE_HZ="${CMD_RATE_HZ:-20}"
@@ -74,6 +77,17 @@ case "$QOS_RELIABILITY" in
     exit 1
     ;;
 esac
+
+if [ "$QOS_RELIABILITY" = "best_effort" ] &&
+    [ "$TRACKING_MODE" = "sampled" ] &&
+    [ "$STATUS_EVERY_N" -gt 1 ]; then
+  if [ -z "$SUMMARY_PERIOD_S_SET" ]; then
+    SUMMARY_PERIOD_S=5.0
+  fi
+  if [ -z "$LINK_HEALTH_PERIOD_S_SET" ]; then
+    LINK_HEALTH_PERIOD_S=5.0
+  fi
+fi
 
 mkdir -p "$LOGDIR"
 CMD_LOG="$LOGDIR/$TAG.cmd.log"
