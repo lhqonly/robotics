@@ -282,6 +282,9 @@ RUNS=2 tools/run-pc-scheduler-sweep.sh pc_sched_custom_$(date +%Y%m%d_%H%M)
 
 `chrt -b 0` 通常不需要额外权限；`chrt -f/-r` 这类实时调度通常需要 root 或
 `CAP_SYS_NICE`，建议只在明确授权的测试机上使用。
+调度 sweep 默认会继续跑完所有 case，并用 metrics 表里的 `PASS/WARN/FAIL` 表示
+候选好坏；如果要让任一失败 case 使脚本整体返回非 0，追加
+`FAIL_ON_CASE_ERROR=1`。
 
 要按阶梯一次跑完整验证矩阵，用：
 

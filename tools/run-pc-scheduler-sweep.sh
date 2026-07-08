@@ -11,6 +11,7 @@ METRICS_MD="$LOGDIR/$TAG_PREFIX.metrics.md"
 METRICS_CSV="$LOGDIR/$TAG_PREFIX.metrics.csv"
 
 DRY_RUN="${DRY_RUN:-0}"
+FAIL_ON_CASE_ERROR="${FAIL_ON_CASE_ERROR:-0}"
 RUNS="${RUNS:-1}"
 TASKSET_CPUS="${TASKSET_CPUS:-2}"
 PC_SCHEDULER_CASES="${PC_SCHEDULER_CASES:-}"
@@ -104,7 +105,7 @@ run_case() {
   return "$status"
 }
 
-record "pc_scheduler_sweep tag_prefix=$TAG_PREFIX runs=$RUNS dry_run=$DRY_RUN"
+record "pc_scheduler_sweep tag_prefix=$TAG_PREFIX runs=$RUNS dry_run=$DRY_RUN fail_on_case_error=$FAIL_ON_CASE_ERROR"
 record "profile cmd_rate_hz=$CMD_RATE_HZ qos=$QOS_RELIABILITY depth=$QOS_DEPTH tracking=$TRACKING_MODE status_every_n=$STATUS_EVERY_N run_seconds=$RUN_SECONDS warmup_seconds=$WARMUP_SECONDS hz_seconds=$HZ_SECONDS"
 record "logdir=$LOGDIR com_perf_logdir=$COM_PERF_LOGDIR"
 : >"$LOGDIR/$TAG_PREFIX.tags"
@@ -146,6 +147,6 @@ if [ -s "$LOGDIR/$TAG_PREFIX.tags" ]; then
 fi
 
 record "DONE failures=$failures summary=$SUMMARY"
-if [ "$failures" -ne 0 ]; then
+if [ "$failures" -ne 0 ] && [ "$FAIL_ON_CASE_ERROR" = "1" ]; then
   exit 1
 fi
