@@ -16,9 +16,20 @@ HZ_SECONDS="${HZ_SECONDS:-10}"
 
 mkdir -p "$LOGDIR"
 LOG="$LOGDIR/$TAG_PREFIX.log"
+SUMMARY_MD="$LOGDIR/$TAG_PREFIX.summary.md"
+SUMMARY_CSV="$LOGDIR/$TAG_PREFIX.summary.csv"
 
 log() {
   printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S %Z')" "$*" | tee -a "$LOG"
+}
+
+write_summary() {
+  if "$ROOT/tools/summarize-overnight-com-watch.sh" "$LOG" >"$SUMMARY_MD" 2>>"$LOG" &&
+      FORMAT=csv "$ROOT/tools/summarize-overnight-com-watch.sh" "$LOG" >"$SUMMARY_CSV" 2>>"$LOG"; then
+    log "summary=ok markdown=${SUMMARY_MD#$ROOT/} csv=${SUMMARY_CSV#$ROOT/}"
+  else
+    log "summary=fail"
+  fi
 }
 
 end_epoch="$(date -d "$END_AT" +%s 2>/dev/null || true)"
@@ -49,6 +60,7 @@ while [ "$(date +%s)" -lt "$end_epoch" ]; do
   else
     log "iteration=$iteration report=fail status=$?"
   fi
+  write_summary
 
   now="$(date +%s)"
   next=$((now + INTERVAL_SECONDS))
@@ -62,4 +74,5 @@ done
 final_tag="${TAG_PREFIX}_final"
 log "final_report tag=$final_tag"
 "$ROOT/tools/com-status-report.sh" "$final_tag" >>"$LOG" 2>&1 || true
+write_summary
 log "done log=$LOG"

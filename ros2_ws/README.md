@@ -308,7 +308,8 @@ END_AT="tomorrow 09:00" INTERVAL_SECONDS=1800 \
 tools/overnight-com-watch.sh overnight_$(date +%Y%m%d_%H%M)
 ```
 
-日志会写到 `log/overnight-com-watch/<tag>.log`，每轮通信指标仍写入
+日志会写到 `log/overnight-com-watch/<tag>.log`，滚动汇总表会写到
+`log/overnight-com-watch/<tag>.summary.md` 和 `.csv`。每轮通信指标仍写入
 `log/com-perf/`，每轮交接报告写入 `log/handoff/`。
 
 要把某次 overnight watcher 的所有轮次汇总成表：
