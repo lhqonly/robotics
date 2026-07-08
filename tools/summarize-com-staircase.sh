@@ -109,8 +109,9 @@ awk -v format="$FORMAT" '
 
   function profile_verdict(stage, meta, target_rx_hz, seq_rate_hz,
       seq_delta_min, seq_delta_max, p99_gap_s, max_gap_s, lost, duplicate,
-      inflight,    expected_hz, min_ratio, max_ratio, max_p99_gap,
-      max_max_gap, observed_hz) {
+      inflight, pc_target_window_hz, pc_wire_gap_p99_ms, pc_wire_gap_max_ms,
+      expected_hz, min_ratio, max_ratio, max_p99_gap, max_max_gap,
+      observed_hz, period_ms, pc_p99_limit_ms, pc_max_limit_ms) {
     reasons = ""
     verdict = "PASS"
 
@@ -123,6 +124,9 @@ awk -v format="$FORMAT" '
     max_ratio = 1.10
     max_p99_gap = 0.50
     max_max_gap = 1.00
+    period_ms = 1000.0 / expected_hz
+    pc_p99_limit_ms = period_ms * 4.0
+    pc_max_limit_ms = period_ms * 10.0
 
     if (expected_hz <= 20) {
       max_p99_gap = 0.10
@@ -150,6 +154,22 @@ awk -v format="$FORMAT" '
     if (!is_missing(max_gap_s) && max_gap_s + 0 > max_max_gap) {
       verdict = "WARN"
       add_reason("max_gap_high")
+    }
+    if (!is_missing(pc_target_window_hz) &&
+        (pc_target_window_hz + 0 < expected_hz * min_ratio ||
+         pc_target_window_hz + 0 > expected_hz * max_ratio)) {
+      verdict = "WARN"
+      add_reason("pc_target_rate_out_of_band")
+    }
+    if (!is_missing(pc_wire_gap_p99_ms) &&
+        pc_wire_gap_p99_ms + 0 > pc_p99_limit_ms) {
+      verdict = "WARN"
+      add_reason("pc_wire_gap_p99_high")
+    }
+    if (!is_missing(pc_wire_gap_max_ms) &&
+        pc_wire_gap_max_ms + 0 > pc_max_limit_ms) {
+      verdict = "WARN"
+      add_reason("pc_wire_gap_max_high")
     }
 
     if (meta["status_every_n"] == 1 &&
@@ -210,7 +230,8 @@ awk -v format="$FORMAT" '
     inflight = metric("inflight")
     verdict_csv = profile_verdict(stage, meta, target_rx_hz, seq_rate_hz,
       seq_delta_min, seq_delta_max, p99_gap_s, max_gap_s, lost, duplicate,
-      inflight)
+      inflight, pc_target_window_hz, pc_wire_gap_p99_ms,
+      pc_wire_gap_max_ms)
     verdict = substr(verdict_csv, 1, index(verdict_csv, ",") - 1)
     reason = substr(verdict_csv, index(verdict_csv, ",") + 1)
 
