@@ -63,6 +63,13 @@ printf '%s\n' "$unresolved" | grep -Fq -- "SWD 仍需恢复" || {
   echo "FAIL: unresolved summary missing SWD blocker" >&2
   exit 1
 }
+if find "$ROOT/log/overnight-com-watch" -maxdepth 1 -type f -name '*.summary.md' \
+    -print0 2>/dev/null | xargs -0r grep -q '^| .* | FAIL |'; then
+  printf '%s\n' "$unresolved" | grep -Fq -- "overnight reliable/full-echo" || {
+    echo "FAIL: unresolved summary missing overnight failure item" >&2
+    exit 1
+  }
+fi
 
 if find "$ROOT/log/overnight-com-watch" -maxdepth 1 -type f -name '*.log' | grep -q .; then
   assert_contains "$report" "### Verdict Summary" \
