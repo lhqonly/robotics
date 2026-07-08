@@ -166,6 +166,26 @@ latest_stack_md="$(latest_file "$STACK_LOGDIR" '*.md')"
 latest_spin_timeout_md="$(latest_file "$SPIN_TIMEOUT_LOGDIR" '*.md')"
 latest_watch_summary="$(latest_file "$WATCH_LOGDIR" '*.summary.md')"
 latest_scheduler_metrics="$(latest_file "$SCHED_LOGDIR" '*.metrics.md')"
+latest_is_scheduler_experiment=0
+case "${latest_tag:-}" in
+  scheduler_*|pc_sched_*|latest_gate_*)
+    latest_is_scheduler_experiment=1
+    ;;
+esac
+
+scheduler_comparison_tags=""
+for scheduler_tag in latest_gate_taskset_20hz_smoke scheduler_chrt_batch_smoke; do
+  if [ -f "$COM_LOGDIR/$scheduler_tag.cmd.log" ] &&
+      [ -f "$COM_LOGDIR/$scheduler_tag.sampler.log" ]; then
+    scheduler_comparison_tags="$scheduler_comparison_tags $scheduler_tag"
+  fi
+done
+scheduler_comparison_md=""
+if [ -n "$scheduler_comparison_tags" ] &&
+    [ -x "$ROOT/tools/summarize-com-perf.sh" ]; then
+  scheduler_comparison_md="$(cd "$ROOT" && PERF_EXPECTED_RATE_HZ=20 \
+    tools/summarize-com-perf.sh $scheduler_comparison_tags 2>/dev/null || true)"
+fi
 
 sampler_summary=""
 if [ -f "$latest_sampler" ]; then
@@ -296,6 +316,10 @@ serial_users="$(serial_lsof)"
   echo "- LinkHealth：${link_summary:-unknown}"
   echo "- PC publish gap p95/p99/max ms：${pc_wire_gap_p95_ms:-unknown}/${pc_wire_gap_p99_ms:-unknown}/${pc_wire_gap_max_ms:-unknown}"
   echo "- same-tag wire：${wire_metrics:-unknown}"
+  if [ "$latest_is_scheduler_experiment" -eq 1 ]; then
+    echo
+    echo "说明：latest tag 是调度/健康门槛实验样本，只代表最后一次运行；PC 调度结论请看下面的 sweep/短测对照表。"
+  fi
   echo
   echo "## 线速预算外推"
   echo
@@ -325,6 +349,16 @@ serial_users="$(serial_lsof)"
   echo "来源：$(relpath "$latest_scheduler_metrics")"
   echo
   markdown_table_from_prefix "$latest_scheduler_metrics" '| Tag |'
+  echo
+  echo "当前低权限候选优先观察 \`taskset -c 2\`：已有 sweep 中 baseline 出现 lost/duplicate，taskset 样本 clean；\`chrt -b 0\` 可作为对照，但当前短测 PC publish gap 长尾更大。"
+  if [ -n "$scheduler_comparison_md" ]; then
+    echo
+    echo "### 调度短测对照"
+    echo
+    echo "判读：这里的 PASS 只表示短测未丢包/不跳号；调度优先级主要看 PC publish gap 的 p99/max 长尾和 sweep 中的 lost/duplicate。"
+    echo
+    printf '%s\n' "$scheduler_comparison_md"
+  fi
   echo
   echo "## 已知关键样本"
   echo
