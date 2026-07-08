@@ -111,6 +111,17 @@ def test_wire_gap_stats_report_publish_jitter_window():
         assert max_ms == pytest.approx(100.0)
 
 
+def test_wire_gap_stats_window_is_bounded():
+    """PC publish jitter diagnostics keep a fixed-size recent window."""
+    with make_node(link_health_period_s=0.0, summary_period_s=0.0) as node:
+        for i in range(4100):
+            node._remember_wire_gap(float(i))
+
+        assert node._wire_gap_window.maxlen == 4096
+        assert len(node._wire_gap_window) == 4096
+        assert node._wire_gap_window[0] == pytest.approx(1.0)
+
+
 # --------------------------------------------------------------------------
 # payload / seq decoupling: the tracker pairs on header.seq, never payload.
 # --------------------------------------------------------------------------
