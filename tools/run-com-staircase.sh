@@ -60,6 +60,15 @@ extract_summary_counter() {
     cut -d= -f2
 }
 
+extract_key_value() {
+  local line="$1"
+  local key="$2"
+  printf '%s\n' "$line" |
+    tr ' ' '\n' |
+    awk -F= -v k="$key" '$1 == k {print $2}' |
+    tail -1
+}
+
 value_or_na() {
   local value="$1"
   if [ -n "$value" ]; then
@@ -77,6 +86,7 @@ record_stage_metrics() {
   local sampler_zero_gap_count sampler_seq_rate_hz sampler_seq_delta_avg
   local sampler_seq_delta_min sampler_seq_delta_max
   local pc_target_rate_hz pc_target_window_hz last_summary
+  local wire_metrics wire_kbit_s wire_baud_util_pct tx_kbit_s rx_kbit_s
   local lost duplicate inflight
 
   if [ ! -f "$stage_log" ]; then
@@ -104,13 +114,18 @@ record_stage_metrics() {
   pc_target_rate_hz="$(extract_com_perf_metric "$stage_log" pc_target_rate_hz)"
   pc_target_window_hz="$(
     extract_com_perf_metric "$stage_log" pc_target_window_hz)"
+  wire_metrics="$(extract_com_perf_metric "$stage_log" wire_metrics)"
+  wire_kbit_s="$(extract_key_value "$wire_metrics" total_serial_kbit_s)"
+  wire_baud_util_pct="$(extract_key_value "$wire_metrics" baud_util_pct)"
+  tx_kbit_s="$(extract_key_value "$wire_metrics" tx_serial_kbit_s)"
+  rx_kbit_s="$(extract_key_value "$wire_metrics" rx_serial_kbit_s)"
   last_summary="$(grep -F '[com-perf] last_summary=' "$stage_log" |
     tail -1 || true)"
   lost="$(extract_summary_counter "$last_summary" lost)"
   duplicate="$(extract_summary_counter "$last_summary" duplicate)"
   inflight="$(extract_summary_counter "$last_summary" inflight)"
 
-  record "METRICS $tag status_hz=$(value_or_na "$status_hz") sampler_hz=$(value_or_na "$sampler_hz") sampler_target_rx_hz=$(value_or_na "$sampler_target_rx_hz") sampler_p95_gap_s=$(value_or_na "$sampler_p95_gap_s") sampler_p99_gap_s=$(value_or_na "$sampler_p99_gap_s") sampler_max_gap_s=$(value_or_na "$sampler_max_gap_s") sampler_zero_gap_count=$(value_or_na "$sampler_zero_gap_count") sampler_seq_rate_hz=$(value_or_na "$sampler_seq_rate_hz") seq_delta_avg=$(value_or_na "$sampler_seq_delta_avg") seq_delta_min=$(value_or_na "$sampler_seq_delta_min") seq_delta_max=$(value_or_na "$sampler_seq_delta_max") pc_target_rate_hz=$(value_or_na "$pc_target_rate_hz") pc_target_window_hz=$(value_or_na "$pc_target_window_hz") lost=$(value_or_na "$lost") duplicate=$(value_or_na "$duplicate") inflight=$(value_or_na "$inflight")"
+  record "METRICS $tag status_hz=$(value_or_na "$status_hz") sampler_hz=$(value_or_na "$sampler_hz") sampler_target_rx_hz=$(value_or_na "$sampler_target_rx_hz") sampler_p95_gap_s=$(value_or_na "$sampler_p95_gap_s") sampler_p99_gap_s=$(value_or_na "$sampler_p99_gap_s") sampler_max_gap_s=$(value_or_na "$sampler_max_gap_s") sampler_zero_gap_count=$(value_or_na "$sampler_zero_gap_count") sampler_seq_rate_hz=$(value_or_na "$sampler_seq_rate_hz") seq_delta_avg=$(value_or_na "$sampler_seq_delta_avg") seq_delta_min=$(value_or_na "$sampler_seq_delta_min") seq_delta_max=$(value_or_na "$sampler_seq_delta_max") pc_target_rate_hz=$(value_or_na "$pc_target_rate_hz") pc_target_window_hz=$(value_or_na "$pc_target_window_hz") wire_kbit_s=$(value_or_na "$wire_kbit_s") wire_baud_util_pct=$(value_or_na "$wire_baud_util_pct") tx_kbit_s=$(value_or_na "$tx_kbit_s") rx_kbit_s=$(value_or_na "$rx_kbit_s") lost=$(value_or_na "$lost") duplicate=$(value_or_na "$duplicate") inflight=$(value_or_na "$inflight")"
 }
 
 check_stlink_ready() {

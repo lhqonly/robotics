@@ -229,6 +229,9 @@ tools/summarize-com-staircase.sh log/com-staircase/<tag>.summary.log
 FORMAT=csv tools/summarize-com-staircase.sh log/com-staircase/<tag>.summary.log
 ```
 
+如果某个阶段用 `MICROROS_AGENT_VERBOSITY=6` 跑过，表格里还会带
+`wire_kbit_s` 和 `wire_baud_util_pct`，方便把通信频率、丢包和串口占用放在一起看。
+
 烧录并启动 bridge 后，可以用 SWD 粗测本地 tick 档位：
 
 ```bash

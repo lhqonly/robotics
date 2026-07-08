@@ -31,10 +31,10 @@ awk -v format="$FORMAT" '
 
   BEGIN {
     if (format == "csv") {
-      print "stage,status_hz,sampler_hz,target_rx_hz,p95_gap_s,p99_gap_s,max_gap_s,zero_gap_count,seq_rate_hz,seq_delta_avg,seq_delta_min,seq_delta_max,pc_target_rate_hz,pc_target_window_hz,lost,duplicate,inflight"
+      print "stage,status_hz,sampler_hz,target_rx_hz,p95_gap_s,p99_gap_s,max_gap_s,zero_gap_count,seq_rate_hz,seq_delta_avg,seq_delta_min,seq_delta_max,pc_target_rate_hz,pc_target_window_hz,wire_kbit_s,wire_baud_util_pct,tx_kbit_s,rx_kbit_s,lost,duplicate,inflight"
     } else {
-      print "| Stage | status Hz | sampler Hz | target rx Hz | p95 gap s | p99 gap s | max gap s | zero gaps | seq Hz | seq delta avg/min/max | PC target Hz | lost | duplicate | inflight |"
-      print "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"
+      print "| Stage | status Hz | sampler Hz | target rx Hz | p95 gap s | p99 gap s | max gap s | zero gaps | seq Hz | seq delta avg/min/max | PC target Hz | wire kbit/s | baud util % | lost | duplicate | inflight |"
+      print "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"
     }
   }
 
@@ -53,22 +53,26 @@ awk -v format="$FORMAT" '
     seq_delta_max = metric("seq_delta_max")
     pc_target_rate_hz = metric("pc_target_rate_hz")
     pc_target_window_hz = metric("pc_target_window_hz")
+    wire_kbit_s = metric("wire_kbit_s")
+    wire_baud_util_pct = metric("wire_baud_util_pct")
+    tx_kbit_s = metric("tx_kbit_s")
+    rx_kbit_s = metric("rx_kbit_s")
     lost = metric("lost")
     duplicate = metric("duplicate")
     inflight = metric("inflight")
 
     if (format == "csv") {
-      printf "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n",
+      printf "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n",
         stage, status_hz, sampler_hz, target_rx_hz, p95_gap_s, p99_gap_s,
         max_gap_s, zero_gap_count, seq_rate_hz, seq_delta_avg, seq_delta_min,
-        seq_delta_max, pc_target_rate_hz, pc_target_window_hz, lost, duplicate,
-        inflight
+        seq_delta_max, pc_target_rate_hz, pc_target_window_hz, wire_kbit_s,
+        wire_baud_util_pct, tx_kbit_s, rx_kbit_s, lost, duplicate, inflight
     } else {
-      printf "| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s/%s/%s | %s / %s | %s | %s | %s |\n",
+      printf "| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s/%s/%s | %s / %s | %s | %s | %s | %s | %s |\n",
         stage, status_hz, sampler_hz, target_rx_hz, p95_gap_s, p99_gap_s,
         max_gap_s, zero_gap_count, seq_rate_hz, seq_delta_avg, seq_delta_min,
-        seq_delta_max, pc_target_rate_hz, pc_target_window_hz, lost, duplicate,
-        inflight
+        seq_delta_max, pc_target_rate_hz, pc_target_window_hz, wire_kbit_s,
+        wire_baud_util_pct, lost, duplicate, inflight
     }
   }
 ' "$SUMMARY"
