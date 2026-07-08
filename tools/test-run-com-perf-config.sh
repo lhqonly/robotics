@@ -4,6 +4,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPT="$ROOT/tools/run-com-perf.sh"
 
+bash -n "$SCRIPT"
+
 assert_contains() {
   local file="$1"
   local needle="$2"
