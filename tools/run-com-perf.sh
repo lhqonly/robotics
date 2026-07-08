@@ -42,6 +42,7 @@ BUILD_FIRMWARE="${BUILD_FIRMWARE:-1}"
 FLASH_FIRMWARE="${FLASH_FIRMWARE:-1}"
 KEEP_BRIDGE="${KEEP_BRIDGE:-0}"
 MICROROS_AGENT_VERBOSITY="${MICROROS_AGENT_VERBOSITY:-1}"
+FLASH_TIMEOUT_SECONDS="${FLASH_TIMEOUT_SECONDS:-90}"
 
 case "$QOS_RELIABILITY" in
   reliable) EXO_QOS_BEST_EFFORT=OFF ;;
@@ -86,15 +87,17 @@ echo "[com-perf] logs: $LOGDIR/$TAG.*.log"
 
 flash_firmware() {
   local bin="$1"
-  if st-flash --connect-under-reset write "$bin" 0x08000000; then
+  if timeout "$FLASH_TIMEOUT_SECONDS" \
+      st-flash --connect-under-reset write "$bin" 0x08000000; then
     return 0
   fi
 
-  echo "[com-perf] WARN: st-flash failed once; reset-halt and retry" >&2
+  echo "[com-perf] WARN: st-flash failed or timed out once; reset-halt and retry" >&2
   openocd -f interface/stlink.cfg -f target/stm32f1x.cfg \
     -c 'init; reset halt; shutdown' >"$OPENOCD_LOG" 2>&1 || true
   sleep 1
-  st-flash --connect-under-reset write "$bin" 0x08000000
+  timeout "$FLASH_TIMEOUT_SECONDS" \
+    st-flash --connect-under-reset write "$bin" 0x08000000
 }
 
 if [ "$BUILD_FIRMWARE" = "1" ]; then
