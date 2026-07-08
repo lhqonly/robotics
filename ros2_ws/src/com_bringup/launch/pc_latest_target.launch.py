@@ -48,7 +48,7 @@ def generate_launch_description():
             description='MCU status decimation factor used by sampled monitor.'),
         DeclareLaunchArgument(
             'sample_window',
-            default_value='4096',
+            default_value='1024',
             description='Recent sent seq window for sampled status matching.'),
         DeclareLaunchArgument(
             'rtt_warn_ms',
