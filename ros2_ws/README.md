@@ -606,6 +606,7 @@ max <= 50ms。改过解析工具后可以离线跑：
 
 ```bash
 tools/test-com-wire-budget.sh
+tools/test-control-loop-config.sh
 tools/test-com-perf-contract.sh
 tools/test-com-summary-parsers.sh
 tools/test-com-staircase-dry-run.sh

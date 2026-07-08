@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 tests=(
   "tools/test-control-target-model.sh"
+  "tools/test-control-loop-config.sh"
   "tools/test-dwt-snapshot-model.sh"
   "tools/test-microros-config.sh"
   "tools/test-com-wire-budget.sh"
