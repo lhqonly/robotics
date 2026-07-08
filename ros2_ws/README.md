@@ -173,6 +173,21 @@ ros2 launch com_bringup pc_cmd.launch.py \
   status_every_n:=40
 ```
 
+如果要一键复现某个真机通信 profile，可以用压测脚本。它会编译/烧录固件、
+重启 bridge、跑 PC node、采样 `/com/tp_mcu_status`，最后打印状态频率、
+按 `status_every_n` 反推的 MCU 目标接收频率，以及最后一条 LinkHealth summary：
+
+```bash
+CMD_RATE_HZ=200 \
+QOS_RELIABILITY=best_effort \
+QOS_DEPTH=1 \
+TRACKING_MODE=sampled \
+STATUS_EVERY_N=40 \
+tools/run-com-perf.sh n40_200hz
+```
+
+脚本默认跑完会停止本次 bridge；如果希望保留 bridge，追加 `KEEP_BRIDGE=1`。
+
 烧录并启动 bridge 后，可以用 SWD 粗测本地 tick 档位：
 
 ```bash
