@@ -504,9 +504,9 @@ tools/agent-wire-stats.sh log/com-perf/wirestats_debug.bridge.log
 帧长和线速占用，用来判断 baudrate/消息瘦身/状态降频是否值得做；链路正确性仍以
 `status_sampler` 和 LinkHealth 为准。
 
-`run-com-perf.sh` 会对通信串口加本地 lock，避免 overnight watcher、scheduler sweep
-和手动验证同时抢 `/dev/ttyUSB0`。默认抢不到会直接退出并提示 `serial device is busy`；
-如果希望排队等待，可以设置：
+`run-bridge.sh` 和 `run-com-perf.sh` 会对通信串口加同一把本地 lock，避免
+overnight watcher、scheduler sweep、手动 bridge 和手动验证同时抢 `/dev/ttyUSB0`。
+默认抢不到会直接退出并提示串口忙；如果希望排队等待，可以设置：
 
 ```bash
 SERIAL_LOCK_WAIT_SECONDS=120 BUILD_FIRMWARE=0 FLASH_FIRMWARE=0 \

@@ -183,7 +183,7 @@ for pid in $(lsof -t "$DEV" 2>/dev/null || true); do
 done
 sleep 1
 
-MICROROS_AGENT_VERBOSITY="$MICROROS_AGENT_VERBOSITY" \
+RUN_BRIDGE_LOCK_HELD=1 MICROROS_AGENT_VERBOSITY="$MICROROS_AGENT_VERBOSITY" \
   setsid "$ROOT/tools/run-bridge.sh" "$DEV" "$BAUD" >"$BRIDGE_LOG" 2>&1 &
 BRIDGE_PID=$!
 
