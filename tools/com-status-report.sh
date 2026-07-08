@@ -374,7 +374,8 @@ if [ -n "$wire_budget_source" ] && [ -f "$wire_budget_source" ] &&
     --cmd-hz 200,1000 \
     --status-every-n 1,10,40 \
     --baud 921600,2000000 \
-    --max-baud-util-pct 30 2>/dev/null || true)"
+    --max-baud-util-pct 30 \
+    --show-wire-time 2>/dev/null || true)"
 fi
 
 recovery_sampler="$COM_LOGDIR/noflash_recovery_20hz_after_200hz.sampler.log"

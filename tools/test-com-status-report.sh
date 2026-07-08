@@ -44,6 +44,10 @@ assert_contains "$report" "## overnight no-flash 趋势" \
   "overnight section"
 assert_contains "$report" "## staircase 阶梯汇总" \
   "staircase section"
+if find "$ROOT/log/com-perf" -maxdepth 1 -type f -name '*.wire.log' | grep -q .; then
+  assert_contains "$report" "full echo wire ms" \
+    "wire-time budget columns"
+fi
 assert_contains "$report" "## 未解决项" \
   "unresolved section"
 
