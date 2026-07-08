@@ -516,6 +516,17 @@ tools/firmware-spin-timeout-sweep.sh current_spin
 输出 `log/firmware-spin-timeout-sweep/current_spin.md` 和 `.csv`。这只说明候选
 可编译且静态预算 OK；是否改善 RTT/gap 长尾必须上板实测。
 
+要比较 linker 里 newlib heap 和 MSP/ISR 栈的链接期预留，也可以离线跑：
+
+```bash
+tools/firmware-linker-reserve-sweep.sh current_reserve
+```
+
+默认会比较 `512+1024B` 基线和 `0+512B`、`0+768B`、`256+512B`
+候选。`heap0_stack512` 在 10kHz/best-effort/status_every_40 静态 profile
+里可把静态 RAM 从约 13.9KB 降到约 12.9KB，但它只说明链接期预算可过；
+是否安全必须等 SWD 恢复后确认 MSP/ISR 栈余量，以及 newlib malloc 失败路径。
+
 固件 DWT timestamp 的双缓冲快照算法可以在 PC 上跑模型测试，不需要连接硬件：
 
 ```bash

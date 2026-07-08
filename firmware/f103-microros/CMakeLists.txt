@@ -33,6 +33,8 @@ set(EXO_CONTROL_TASK_STACK_WORDS "128" CACHE STRING "1kHz control task stack wor
 set(EXO_LED_TASK_STACK_WORDS "64" CACHE STRING "LED heartbeat task stack words")
 set(EXO_MINIMAL_STACK_WORDS "96" CACHE STRING "FreeRTOS idle/minimal stack words")
 set(EXO_UART_READ_POLL_YIELDS "0" CACHE STRING "taskYIELD polls before 1-tick UART read sleep")
+set(EXO_NEWLIB_HEAP_BYTES "512" CACHE STRING "Link-time newlib heap reserve bytes")
+set(EXO_MSP_STACK_BYTES "1024" CACHE STRING "Link-time MSP/ISR stack reserve bytes")
 
 # ---- 路径 ----
 set(TP        ${CMAKE_SOURCE_DIR}/ThirdParty)
@@ -137,6 +139,8 @@ target_link_options(${PROJECT_NAME}.elf PRIVATE
     -Wl,--gc-sections
     -Wl,-Map=${CMAKE_BINARY_DIR}/output.map
     -Wl,--print-memory-usage
+    -Wl,--defsym=_Min_Heap_Size=${EXO_NEWLIB_HEAP_BYTES}
+    -Wl,--defsym=_Min_Stack_Size=${EXO_MSP_STACK_BYTES}
     --specs=nano.specs            # newlib-nano,省 Flash/RAM
     --specs=nosys.specs           # 无 OS syscalls 桩(_sbrk 等弱实现)
     -Wl,--no-warn-rwx-segments

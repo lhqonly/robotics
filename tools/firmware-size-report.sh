@@ -30,6 +30,12 @@ ram_bytes=$((data + bss))
 printf 'flash_bytes=%d ram_static_bytes=%d data_bytes=%d bss_bytes=%d\n' \
   "$flash_bytes" "$ram_bytes" "$data" "$bss"
 
+user_heap_stack_bytes="$(
+  arm-none-eabi-objdump -h "$ELF" |
+    awk '$2 == "._user_heap_stack" {print strtonum("0x" $3)}'
+)"
+printf 'linker_user_heap_stack_bytes=%d\n' "${user_heap_stack_bytes:-0}"
+
 echo
 echo "static_task_stacks:"
 arm-none-eabi-nm -S --size-sort "$ELF" |

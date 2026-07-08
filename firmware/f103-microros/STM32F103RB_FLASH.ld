@@ -14,9 +14,10 @@ _estack = ORIGIN(RAM) + LENGTH(RAM);
 
 /* C 运行时下界保护(链接期检查,不实际占用,除非真用到):
  * Min_Heap = newlib malloc 用的堆(本工程几乎不用,留 512B 兜底 sbrk);
- * Min_Stack = MSP 最小栈余量(ISR + scheduler 启动前)。 */
-_Min_Heap_Size  = 0x200;   /* 512 B */
-_Min_Stack_Size = 0x400;   /* 1 KB  */
+ * Min_Stack = MSP 最小栈余量(ISR + scheduler 启动前)。
+ * CMake 可用 --defsym 覆盖这两个值做 SRAM 预留 sweep;这里保留默认值。 */
+PROVIDE(_Min_Heap_Size  = 0x200);   /* 512 B */
+PROVIDE(_Min_Stack_Size = 0x400);   /* 1 KB  */
 
 MEMORY
 {
