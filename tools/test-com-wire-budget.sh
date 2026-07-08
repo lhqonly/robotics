@@ -37,6 +37,15 @@ wire_time="$("$ROOT/tools/com-wire-budget.py" \
   --baud 921600,2000000 \
   --show-wire-time)"
 
+repeated_args="$("$ROOT/tools/com-wire-budget.py" \
+  --wire-log "$WIRE_LOG" \
+  --cmd-hz 200 \
+  --cmd-hz 500 \
+  --status-every 20 \
+  --status-every 40 \
+  --baud 921600 \
+  --baud 2000000)"
+
 assert_contains() {
   local haystack="$1"
   local needle="$2"
@@ -58,6 +67,8 @@ assert_contains "$wire_time" "| cmd Hz | status every N | status Hz | baud | tx 
 assert_contains "$wire_time" "| 200.00 | 40 | 5.00 | 921600 | 88.60 | 2.17 | 90.77 | 9.85 | 0.481 | 0.470 | 0.951 |"
 assert_contains "$wire_time" "| 200.00 | 40 | 5.00 | 2000000 | 88.60 | 2.17 | 90.77 | 4.54 | 0.222 | 0.217 | 0.438 |"
 assert_contains "$wire_time" "Wire-time columns are UART serialization lower bounds"
+assert_contains "$repeated_args" "| 500.00 | 20 | 25.00 | 921600 | 221.50 | 10.84 | 232.34 | 25.21 |"
+assert_contains "$repeated_args" "| 500.00 | 40 | 12.50 | 2000000 | 221.50 | 5.42 | 226.92 | 11.35 |"
 
 row_count="$(grep -c '^| [0-9]' <<<"$matrix")"
 if [ "$row_count" -ne 8 ]; then

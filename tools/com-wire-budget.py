@@ -33,6 +33,22 @@ def parse_int_list(raw: str) -> list[int]:
     return values
 
 
+def flatten_float_lists(values: list[list[float]] | None,
+                        default: str) -> list[float]:
+    """Flatten repeated argparse list options, preserving legacy defaults."""
+    if values is None:
+        return parse_float_list(default)
+    return [item for group in values for item in group]
+
+
+def flatten_int_lists(values: list[list[int]] | None,
+                      default: str) -> list[int]:
+    """Flatten repeated argparse list options, preserving legacy defaults."""
+    if values is None:
+        return parse_int_list(default)
+    return [item for group in values for item in group]
+
+
 def parse_metrics(path: Path) -> dict[str, float]:
     metrics: dict[str, float] = {}
     for line in path.read_text(encoding="utf-8").splitlines():
@@ -70,20 +86,34 @@ def main() -> int:
     parser.add_argument(
         "--cmd-hz",
         type=parse_float_list,
-        default=parse_float_list("200"),
-        help="Target command rates, comma/space separated. Default: 200.",
+        action="append",
+        default=None,
+        help=(
+            "Target command rates, comma/space separated. May be repeated. "
+            "Default: 200."
+        ),
     )
     parser.add_argument(
         "--status-every-n",
+        "--status-every",
+        dest="status_every_n",
         type=parse_int_list,
-        default=parse_int_list("40"),
-        help="Status decimation factors, comma/space separated. Default: 40.",
+        action="append",
+        default=None,
+        help=(
+            "Status decimation factors, comma/space separated. May be "
+            "repeated. Default: 40."
+        ),
     )
     parser.add_argument(
         "--baud",
         type=parse_float_list,
-        default=parse_float_list("921600"),
-        help="UART baud rates, comma/space separated. Default: 921600.",
+        action="append",
+        default=None,
+        help=(
+            "UART baud rates, comma/space separated. May be repeated. "
+            "Default: 921600."
+        ),
     )
     parser.add_argument(
         "--max-baud-util-pct",
@@ -107,6 +137,9 @@ def main() -> int:
         ),
     )
     args = parser.parse_args()
+    cmd_hz_values = flatten_float_lists(args.cmd_hz, "200")
+    status_every_n_values = flatten_int_lists(args.status_every_n, "40")
+    baud_values = flatten_float_lists(args.baud, "921600")
 
     tx_kbit_s = args.tx_kbit_s
     rx_kbit_s = args.rx_kbit_s
@@ -126,9 +159,11 @@ def main() -> int:
         )
     if args.baseline_cmd_hz <= 0 or args.baseline_status_hz <= 0:
         raise SystemExit("ERROR: baseline rates must be > 0")
-    if any(cmd_hz <= 0 for cmd_hz in args.cmd_hz) or \
-            any(status_every_n < 1 for status_every_n in args.status_every_n) or \
-            any(baud <= 0 for baud in args.baud):
+    invalid_cmd_hz = any(cmd_hz <= 0 for cmd_hz in cmd_hz_values)
+    invalid_status_every = any(
+        status_every_n < 1 for status_every_n in status_every_n_values)
+    invalid_baud = any(baud <= 0 for baud in baud_values)
+    if invalid_cmd_hz or invalid_status_every or invalid_baud:
         raise SystemExit("ERROR: cmd-hz/baud must be > 0 and status-every-n >= 1")
     if args.max_baud_util_pct is not None and args.max_baud_util_pct <= 0:
         raise SystemExit("ERROR: --max-baud-util-pct must be > 0")
@@ -192,15 +227,15 @@ def main() -> int:
     print("| " + " | ".join(headers) + " |")
     print("|" + "|".join(aligns) + "|")
     over_budget = False
-    for cmd_hz in args.cmd_hz:
-        for status_every_n in args.status_every_n:
+    for cmd_hz in cmd_hz_values:
+        for status_every_n in status_every_n_values:
             projected_status_hz = cmd_hz / status_every_n
             projected_tx_kbit_s = tx_bits_per_cmd * cmd_hz / 1000.0
             projected_rx_kbit_s = (
                 rx_bits_per_status * projected_status_hz / 1000.0
             )
             projected_total_kbit_s = projected_tx_kbit_s + projected_rx_kbit_s
-            for baud in args.baud:
+            for baud in baud_values:
                 projected_util = projected_total_kbit_s * 1000.0 * 100.0 / baud
                 row = [
                     fmt(cmd_hz),
