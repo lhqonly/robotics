@@ -434,12 +434,25 @@ static void LedTask(void *arg)
  * LED 任务栈:64 words(=256B),只翻 GPIO + delay,够用。
  * Idle 栈:configMINIMAL_STACK_SIZE=96 words;按 2026-07-08 HWM used≈24 words
  *   保留约 72 words 裕度,省 128B SRAM。 */
-#define MICROROS_TASK_STACK_WORDS  768u    /* 3KB。2026-07-08 真机 HWM:
+#ifndef EXO_MICROROS_TASK_STACK_WORDS
+#  define EXO_MICROROS_TASK_STACK_WORDS 768u
+#endif
+#ifndef EXO_CONTROL_TASK_STACK_WORDS
+#  define EXO_CONTROL_TASK_STACK_WORDS 128u
+#endif
+#ifndef EXO_LED_TASK_STACK_WORDS
+#  define EXO_LED_TASK_STACK_WORDS 64u
+#endif
+
+#define MICROROS_TASK_STACK_WORDS  EXO_MICROROS_TASK_STACK_WORDS
+                                           /* Default 3KB。2026-07-08 真机 HWM:
                                             * total=1024 words, used≈484, free≈540。
                                             * 降到 768 后仍按该样本保留约 284 words(>1KB)
                                             * 余量,同时省 1KB SRAM。 */
-#define CONTROL_TASK_STACK_WORDS   128u    /* = 512B,1kHz local control baseline */
-#define LED_TASK_STACK_WORDS       64u     /* = 256B */
+#define CONTROL_TASK_STACK_WORDS   EXO_CONTROL_TASK_STACK_WORDS
+                                           /* Default 512B,1kHz local control baseline */
+#define LED_TASK_STACK_WORDS       EXO_LED_TASK_STACK_WORDS
+                                           /* Default 256B */
 
 static StaticTask_t microros_task_tcb;
 static StackType_t  microros_task_stack[MICROROS_TASK_STACK_WORDS];

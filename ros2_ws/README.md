@@ -271,6 +271,16 @@ tools/firmware-size-matrix.sh current
 `firmware/f103-microros/build-size-matrix/`。这只做编译和 size 统计，
 不会烧录、不会碰 ST-LINK/SWD。
 
+要比较 micro-ROS 任务栈候选大小的静态 RAM 收益，也不需要连接硬件：
+
+```bash
+tools/firmware-stack-sweep.sh current_stack
+```
+
+默认会在 10kHz/best-effort/status_every_40 profile 下比较 768/704/640 words，
+输出 `log/firmware-stack-sweep/current_stack.md` 和 `.csv`。这只是静态编译
+候选，不能替代上板后的 `tools/measure-stack-hwm.sh` 水位复测。
+
 要估算 micro-ROS Agent debug log 里的串口字节率和波特率占用，需要 bridge 用
 `-v6` 生成 `SerialAgentLinux.cpp send_message/recv_message` 行：
 

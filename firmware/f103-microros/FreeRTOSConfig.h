@@ -30,7 +30,12 @@ extern uint32_t SystemCoreClock;
 #define configCPU_CLOCK_HZ                      ( SystemCoreClock )
 #define configTICK_RATE_HZ                      ( ( TickType_t ) 1000 )
 #define configMAX_PRIORITIES                    ( 5 )
-#define configMINIMAL_STACK_SIZE                ( ( uint16_t ) 96 )    /* words = 384B.
+#ifndef EXO_MINIMAL_STACK_WORDS
+#  define EXO_MINIMAL_STACK_WORDS 96u
+#endif
+
+#define configMINIMAL_STACK_SIZE                ( ( uint16_t ) EXO_MINIMAL_STACK_WORDS )
+                                                                       /* default words = 384B.
                                                                        * 2026-07-08 HWM:
                                                                        * idle used≈24/free≈104
                                                                        * at 128 words; 96 keeps

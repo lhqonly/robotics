@@ -26,6 +26,10 @@ option(EXO_QOS_BEST_EFFORT "Use best-effort QoS for ExoCmd/ExoStatus perf tests"
 set(EXO_UART_BAUD "921600" CACHE STRING "USART1 baud rate for the micro-ROS serial link")
 set(EXO_CONTROL_LOOP_HZ "1000" CACHE STRING "Local MCU control-loop baseline frequency")
 set(EXO_STATUS_EVERY_N "1" CACHE STRING "Publish one MCU status for every N received PC commands")
+set(EXO_MICROROS_TASK_STACK_WORDS "768" CACHE STRING "micro-ROS task stack words")
+set(EXO_CONTROL_TASK_STACK_WORDS "128" CACHE STRING "1kHz control task stack words")
+set(EXO_LED_TASK_STACK_WORDS "64" CACHE STRING "LED heartbeat task stack words")
+set(EXO_MINIMAL_STACK_WORDS "96" CACHE STRING "FreeRTOS idle/minimal stack words")
 
 # ---- 路径 ----
 set(TP        ${CMAKE_SOURCE_DIR}/ThirdParty)
@@ -46,6 +50,10 @@ endif()
 add_compile_definitions(EXO_UART_BAUD=${EXO_UART_BAUD})
 add_compile_definitions(EXO_CONTROL_LOOP_HZ=${EXO_CONTROL_LOOP_HZ})
 add_compile_definitions(EXO_STATUS_EVERY_N=${EXO_STATUS_EVERY_N})
+add_compile_definitions(EXO_MICROROS_TASK_STACK_WORDS=${EXO_MICROROS_TASK_STACK_WORDS})
+add_compile_definitions(EXO_CONTROL_TASK_STACK_WORDS=${EXO_CONTROL_TASK_STACK_WORDS})
+add_compile_definitions(EXO_LED_TASK_STACK_WORDS=${EXO_LED_TASK_STACK_WORDS})
+add_compile_definitions(EXO_MINIMAL_STACK_WORDS=${EXO_MINIMAL_STACK_WORDS})
 
 # ---- micro-ROS 静态库(T5)----
 # [MICROROS-INCLUDE] / [MICROROS-LIB]:libmicroros.a + 其 include/ 由主 agent 用
