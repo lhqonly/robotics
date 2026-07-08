@@ -62,6 +62,14 @@
 #  define EXO_CONTROL_LOOP_HZ 1000u
 #endif
 
+#ifndef EXO_STATUS_EVERY_N
+#  define EXO_STATUS_EVERY_N 1u
+#endif
+
+#if EXO_STATUS_EVERY_N < 1u
+#  error "EXO_STATUS_EVERY_N must be >= 1"
+#endif
+
 /* ===== MCU 本地控制基线 =====
  * 第一阶段只做 1kHz 调度骨架:通信回调更新 latest target,本地控制 task 每 1ms
  * 读取一次最新目标。这里不驱动电机,只验证"本地闭环频率"与"ROS 通信频率"解耦。
@@ -151,6 +159,7 @@ static rclc_executor_t      g_executor;           /* 单线程 executor */
 /* 消息体:sub 收的 ExoCmd、pub 发的 ExoStatus,各一个(header 16B + payload 4B = 20B)。静态。 */
 static exo_msgs__msg__ExoCmd    g_msg_cmd;         /* 订阅回调写入 */
 static exo_msgs__msg__ExoStatus g_msg_status;      /* 回填后发布 */
+static uint32_t g_cmd_rx_count = 0u;                /* 收到的 PC 命令计数,用于状态降频 */
 
 /* CRC 自检失败计数(§7.9,crc_enabled 时收到 cmd 的 crc 与重算不符则 +1,不阻断)。
  * volatile + used:保留为可观测探针(调试器/将来诊断 topic 可读),不让编译器优化掉。 */
@@ -200,6 +209,7 @@ static void cmd_heartbeat_callback(const void *msgin)
 #endif
 
     /* ---- 回填 ExoStatus(§1.2 / H1)---- */
+    g_cmd_rx_count++;
     g_msg_status.header.seq = m->header.seq;   /* 原样回填 seq(§7.6 配对,精确相等) */
     g_msg_status.payload    = m->payload;      /* ★bit-exact 原样回填 payload(H1:零变换) */
     com_control_update_target(m->header.seq, m->payload);
@@ -217,9 +227,12 @@ static void cmd_heartbeat_callback(const void *msgin)
     g_msg_status.header.crc = 0u;              /* crc 关:置 0,收侧不校验(§7.9) */
 #endif
 
-    /* 发布回 mcu_status。RELIABLE 下 rcl_publish 把消息交给 XRCE reliable stream;
-     * 失败不致命(下一拍心跳还会来),故用软检查,不 fail_stop。 */
-    (void)rcl_publish(&g_pub_status, &g_msg_status, NULL);
+    /* 发布回 mcu_status。默认 EXO_STATUS_EVERY_N=1 保持每条命令回一次状态;
+     * 压测/真实控制可设为 5/10:每条命令仍更新 latest target,但只按比例回状态,
+     * 避免 PC 200Hz 目标下发被同频状态回传拖住串口 reliable stream。 */
+    if ((g_cmd_rx_count % EXO_STATUS_EVERY_N) == 0u) {
+        (void)rcl_publish(&g_pub_status, &g_msg_status, NULL);
+    }
 }
 
 /* ===== 建立 micro-ROS 实体(节点/pub/sub/executor),RELIABLE QoS ===== */

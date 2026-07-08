@@ -138,6 +138,28 @@ cmake -S firmware/f103-microros -B firmware/f103-microros/build \
   -DEXO_CONTROL_LOOP_HZ=10000
 ```
 
+真实控制链路压测时，可以让 MCU 仍接收每条 PC 目标，但降低状态回传频率。
+例如 PC 200Hz 下发、MCU 每 5 条回一次状态，状态 topic 约为 40Hz：
+
+```bash
+cmake -S firmware/f103-microros -B firmware/f103-microros/build \
+  -DEXO_STATUS_EVERY_N=5
+```
+
+如果要测试 latest-target 语义，通常还要同时切到 best-effort：
+
+```bash
+cmake -S firmware/f103-microros -B firmware/f103-microros/build \
+  -DEXO_QOS_BEST_EFFORT=ON \
+  -DEXO_STATUS_EVERY_N=5
+
+ros2 run exo_cmd exo_cmd_node --ros-args \
+  -p cmd_rate_hz:=200.0 \
+  -p qos_depth:=1 \
+  -p qos_reliability:=best_effort \
+  --log-level fatal
+```
+
 烧录并启动 bridge 后，可以用 SWD 粗测本地 tick 档位：
 
 ```bash
