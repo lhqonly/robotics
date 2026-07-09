@@ -33,6 +33,10 @@ assert_contains "$SCRIPT" 'LINK_HEALTH_PERIOD_S=5.0' \
   "latest-target link health period auto-default"
 assert_contains "$SCRIPT" 'qos_incompatibility=' \
   "QoS incompatibility metric output"
+assert_contains "$SCRIPT" 'pc_cmd_catchup_events=' \
+  "PC catch-up event metric output"
+assert_contains "$SCRIPT" 'pc_cmd_catchup_extra=' \
+  "PC catch-up extra command metric output"
 assert_contains "$SCRIPT" 'ros2 topic info -v "$topic"' \
   "topic endpoint QoS graph snapshot"
 

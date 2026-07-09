@@ -402,7 +402,10 @@ BOOT0/RESET、SWDIO/SWCLK/NRST 和共地。需要给自动化 gate 用时可加
 阶梯的目的不是让 PC/ROS 直接跑 1/2/5/10kHz，而是验证“MCU 本地闭环频率提高后，
 200Hz PC latest-target 通信是否仍然稳定”。因此收益判断主要看每档的
 `sampler_target_rx_hz` 是否接近 200Hz、`pc_wire_gap_p99/max_ms` 是否收敛、
-`lost/duplicate` 是否为 0，以及状态回传 gap 是否没有长尾失控。
+`lost/duplicate` 是否为 0，以及状态回传 gap 是否没有长尾失控。高频 latest-target
+还会在 `run-com-perf.sh` 输出 `pc_cmd_catchup_events` 和
+`pc_cmd_catchup_extra`：它们表示 PC timer 晚到后靠 `cmd_catchup_max` 补发的次数
+和额外命令数。这个值越低，说明 200Hz 发包越接近稳定定时，而不是靠 burst 追平。
 
 ```bash
 DRY_RUN=1 tools/run-com-staircase.sh dryrun

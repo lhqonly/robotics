@@ -207,6 +207,8 @@ class ExoCmdNode(Node):
         self._next_cmd_due_s = self._start_s + self._heartbeat_period_s
         self._wire_seq = start_seq
         self._wire_send_count = 0
+        self._cmd_catchup_events = 0
+        self._cmd_catchup_extra = 0
         self._last_summary_s = self._start_s
         self._last_summary_wire_count = 0
         self._last_summary_sent_count = 0
@@ -337,6 +339,8 @@ class ExoCmdNode(Node):
         self._sampled_order.clear()
         self._sampled_seen.clear()
         self._wire_send_count = 0
+        self._cmd_catchup_events = 0
+        self._cmd_catchup_extra = 0
         self._last_summary_wire_count = 0
         self._last_summary_sent_count = 0
         self._last_summary_matched_count = 0
@@ -439,6 +443,9 @@ class ExoCmdNode(Node):
     # ----- timers / callbacks ------------------------------------------------
     def _on_timer(self):
         count = self._due_command_count(self._now())
+        if count > 1:
+            self._cmd_catchup_events += 1
+            self._cmd_catchup_extra += count - 1
         for _ in range(count):
             self._publish_command()
         self._next_cmd_due_s += count * self._heartbeat_period_s
@@ -563,13 +570,15 @@ class ExoCmdNode(Node):
                 'wire_window_hz=%.3f sent_window_hz=%.3f '
                 'matched_window_hz=%.3f target_window_hz=%.3f '
                 'wire_gap_avg_ms=%.3f wire_gap_p95_ms=%.3f '
-                'wire_gap_p99_ms=%.3f wire_gap_max_ms=%.3f'
+                'wire_gap_p99_ms=%.3f wire_gap_max_ms=%.3f '
+                'cmd_catchup_events=%d cmd_catchup_extra=%d'
                 % (s['sent'], s['matched'], s['lost'], s['duplicate'],
                    s['inflight'], s['stale_duplicate'],
                    self._wire_send_count, wire_rate_hz, sent_rate_hz,
                    matched_rate_hz, target_rate_hz, window_wire_rate_hz,
                    window_sent_hz, window_matched_hz, window_target_hz,
-                   gap_avg_ms, gap_p95_ms, gap_p99_ms, gap_max_ms))
+                   gap_avg_ms, gap_p95_ms, gap_p99_ms, gap_max_ms,
+                   self._cmd_catchup_events, self._cmd_catchup_extra))
         if s['reconciles']:
             self.get_logger().info(line)
         else:

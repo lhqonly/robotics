@@ -61,6 +61,8 @@ assert_contains "$report" "## overnight no-flash 趋势" \
   "overnight section"
 assert_contains "$report" "## 最新 topic endpoint QoS" \
   "topic endpoint QoS section"
+assert_contains "$report" "PC catch-up events/extra" \
+  "PC catch-up metric in latest communication section"
 assert_contains "$report" "duplicate node warning" \
   "duplicate node warning field"
 assert_contains "$report" "## 通信优化推荐" \

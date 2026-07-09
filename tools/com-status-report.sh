@@ -535,6 +535,8 @@ fi
 pc_wire_gap_p95_ms="$(metric_from_line "$link_summary" wire_gap_p95_ms)"
 pc_wire_gap_p99_ms="$(metric_from_line "$link_summary" wire_gap_p99_ms)"
 pc_wire_gap_max_ms="$(metric_from_line "$link_summary" wire_gap_max_ms)"
+pc_cmd_catchup_events="$(metric_from_line "$link_summary" cmd_catchup_events)"
+pc_cmd_catchup_extra="$(metric_from_line "$link_summary" cmd_catchup_extra)"
 latest_contract=""
 if [ -n "$latest_tag" ]; then
   latest_contract="$(perf_contract_for_tag "$latest_tag")"
@@ -699,6 +701,7 @@ serial_users="$(serial_lsof)"
   echo "- sampler：${sampler_summary:-unknown}"
   echo "- LinkHealth：${link_summary:-unknown}"
   echo "- PC publish gap p95/p99/max ms：${pc_wire_gap_p95_ms:-unknown}/${pc_wire_gap_p99_ms:-unknown}/${pc_wire_gap_max_ms:-unknown}"
+  echo "- PC catch-up events/extra：${pc_cmd_catchup_events:-unknown}/${pc_cmd_catchup_extra:-unknown}"
   echo "- same-tag wire：${wire_metrics:-unknown}"
   echo "- perf contract：${latest_contract:-unknown}"
   if [ "$latest_is_scheduler_experiment" -eq 1 ]; then

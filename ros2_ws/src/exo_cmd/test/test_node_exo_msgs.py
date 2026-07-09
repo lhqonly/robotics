@@ -464,6 +464,8 @@ def test_cmd_catchup_publishes_one_extra_when_late():
 
         assert [m.header.seq for m in sent_cmds] == [0, 1]
         assert node._wire_send_count == 2
+        assert node._cmd_catchup_events == 1
+        assert node._cmd_catchup_extra == 1
         assert node._tracker.counters()['sent'] == 2
         assert node._tracker.counters()['inflight'] == 2
 
