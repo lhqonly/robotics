@@ -92,6 +92,7 @@ run_case() {
   local label="$1"
   local prefix="$2"
   local run_index="$3"
+  local case_executor_threads="${4:-$EXECUTOR_THREADS}"
   local safe_label tag console_log status stage_ros_domain_id
 
   safe_label="$(sanitize_label "$label")"
@@ -102,10 +103,10 @@ run_case() {
     stage_ros_domain_id=$((PC_SCHEDULER_ROS_DOMAIN_BASE + case_index))
   fi
   case_index=$((case_index + 1))
-  record "START label=$label run=$run_index tag=$tag prefix=${prefix:-none} stage_ros_domain_id=$stage_ros_domain_id"
+  record "START label=$label run=$run_index tag=$tag prefix=${prefix:-none} executor_threads=$case_executor_threads stage_ros_domain_id=$stage_ros_domain_id"
 
   if [ "$DRY_RUN" = "1" ]; then
-    record "DRY_RUN tag=$tag PC_LAUNCH_PREFIX=${prefix:-} EXECUTOR_THREADS=$EXECUTOR_THREADS ROS_DOMAIN_ID=$stage_ros_domain_id"
+    record "DRY_RUN tag=$tag PC_LAUNCH_PREFIX=${prefix:-} EXECUTOR_THREADS=$case_executor_threads ROS_DOMAIN_ID=$stage_ros_domain_id"
     return 0
   fi
 
@@ -128,7 +129,7 @@ run_case() {
     SUMMARY_PERIOD_S="$SUMMARY_PERIOD_S" \
     LINK_HEALTH_PERIOD_S="$LINK_HEALTH_PERIOD_S" \
     STARTUP_GRACE_S="$STARTUP_GRACE_S" \
-    EXECUTOR_THREADS="$EXECUTOR_THREADS" \
+    EXECUTOR_THREADS="$case_executor_threads" \
     REQUIRE_CORE_METRICS="$REQUIRE_CORE_METRICS" \
     REQUIRE_HEALTH_PASS="$REQUIRE_HEALTH_PASS" \
     PC_LAUNCH_PREFIX="$prefix" \
@@ -159,20 +160,39 @@ while IFS= read -r case_line; do
     \#*) continue ;;
     *'|'*) ;;
     *)
-      record "FAIL invalid_case='$case_line' expected='label|prefix'"
+      record "FAIL invalid_case='$case_line' expected='label|prefix[|executor_threads]'"
       failures=$((failures + 1))
       continue
       ;;
   esac
   label="${case_line%%|*}"
-  prefix="${case_line#*|}"
+  rest="${case_line#*|}"
+  if [ "$rest" = "$case_line" ]; then
+    prefix=""
+    case_executor_threads="$EXECUTOR_THREADS"
+  elif [[ "$rest" == *"|"* ]]; then
+    prefix="${rest%%|*}"
+    case_executor_threads="${rest#*|}"
+  else
+    prefix="$rest"
+    case_executor_threads="$EXECUTOR_THREADS"
+  fi
   if [ -z "$label" ]; then
     record "FAIL invalid_case='$case_line' reason=empty_label"
     failures=$((failures + 1))
     continue
   fi
+  if [ -z "$case_executor_threads" ]; then
+    case_executor_threads="$EXECUTOR_THREADS"
+  fi
+  if ! [[ "$case_executor_threads" =~ ^[0-9]+$ ]]; then
+    record "FAIL invalid_case='$case_line' reason=executor_threads_must_be_nonnegative_integer"
+    failures=$((failures + 1))
+    continue
+  fi
   for run_index in $(seq 1 "$RUNS"); do
-    run_case "$label" "$prefix" "$run_index" || failures=$((failures + 1))
+    run_case "$label" "$prefix" "$run_index" "$case_executor_threads" ||
+      failures=$((failures + 1))
   done
 done < <(case_lines)
 

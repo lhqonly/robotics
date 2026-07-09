@@ -354,10 +354,11 @@ PC timer 补发标成 WARN；不设置这两个变量时只展示补发计数，
 `CMD_CATCHUP_MAX=1` 单独跑一轮；latest-target 控制默认优先压低 burst 长尾。
 
 如果要比较更具体的调度策略，可以用多行 `PC_SCHEDULER_CASES`。每行格式为
-`label|launch_prefix`，空 prefix 用 `label|`：
+`label|launch_prefix[|executor_threads]`，空 prefix 用 `label|`。第三列可选；
+不写时继承全局 `EXECUTOR_THREADS`，写了就只覆盖当前 case：
 
 ```bash
-PC_SCHEDULER_CASES=$'default|\ntaskset_cpu2|taskset -c 2\nbatch|chrt -b 0' \
+PC_SCHEDULER_CASES=$'default|\nthreads2||2\ntaskset_cpu2_threads2|taskset -c 2|2\nbatch|chrt -b 0' \
 RUNS=2 tools/run-pc-scheduler-sweep.sh pc_sched_custom_$(date +%Y%m%d_%H%M)
 ```
 
