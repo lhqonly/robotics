@@ -32,14 +32,33 @@ run_cycle() {
     "$ROOT/tools/run-com-validation-cycle.sh" "$tag" >/dev/null
 }
 
-run_cycle dry_ok SWD_STATUS_OVERRIDE=ok
+fake_recommend="$TMPDIR/fake-recommend-staircase-command.sh"
+cat >"$fake_recommend" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [ "${FORMAT:-markdown}" = "cases" ]; then
+  printf '%s\n' 'default|' 'threads2||2'
+else
+  echo "fake recommendation"
+fi
+EOF
+chmod +x "$fake_recommend"
+
+run_cycle dry_ok SWD_STATUS_OVERRIDE=ok RECOMMEND_STAIRCASE_CMD="$fake_recommend"
 ok_log="$TMPDIR/logs/dry_ok.log"
 assert_contains "$ok_log" "SWD_STATUS=ok" \
   "SWD OK status is recorded"
 assert_contains "$ok_log" "PATH full_staircase" \
   "SWD OK selects full staircase"
-assert_contains "$ok_log" "DRY_RUN $ROOT/tools/run-com-staircase.sh dry_ok" \
-  "full staircase command is recorded"
+assert_contains "$ok_log" "STAIRCASE_PC_LAUNCH_PREFIX_CASES_SOURCE=recommended" \
+  "SWD OK uses recommended PC cases"
+assert_contains "$ok_log" "STAIRCASE_PC_CASE default|" \
+  "recommended default PC case is recorded"
+assert_contains "$ok_log" "STAIRCASE_PC_CASE threads2||2" \
+  "recommended executor thread PC case is recorded"
+assert_contains "$ok_log" \
+  "DRY_RUN STAIRCASE_PC_LAUNCH_PREFIX_CASES=recommended $ROOT/tools/run-com-staircase.sh dry_ok" \
+  "full staircase command with recommended cases is recorded"
 assert_contains "$ok_log" \
   "DRY_RUN $ROOT/tools/check-com-staircase-contract.py $ROOT/log/com-staircase/dry_ok.metrics.csv" \
   "staircase contract command is recorded"

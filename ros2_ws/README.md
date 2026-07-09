@@ -376,6 +376,7 @@ tools/run-com-validation-cycle.sh validation_$(date +%Y%m%d_%H%M)
 
 这个入口会先运行只读 SWD 诊断。日志里如果出现 `PATH full_staircase`，说明
 `SWD_STATUS=ok`，脚本会继续跑完整 1/2/5/10kHz × 921600/2000000 staircase，
+并优先通过 `tools/recommend-staircase-command.sh` 带上当前最佳 PC scheduler case，
 再用 `tools/check-com-staircase-contract.py` 做上板验收检查；如果出现
 `PATH no_flash_fallback`，说明当前不能可靠烧录/访问 target，脚本会自动跑
 no-flash smoke 和 `tools/com-status-report.sh`，保留串口/ROS 侧证据和未解决项，

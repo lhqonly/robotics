@@ -51,4 +51,15 @@ assert_contains "$out" "'threads2||2'" \
 assert_contains "$out" "tools/run-com-staircase.sh 'staircase_demo'" \
   "staircase command tag"
 
+cases_out="$TMPDIR/cases.txt"
+FORMAT=cases \
+  SCHEDULER_CSV="$TMPDIR/scheduler.metrics.csv" \
+  SUMMARY="$TMPDIR/scheduler.summary.log" \
+  "$ROOT/tools/recommend-staircase-command.sh" >"$cases_out"
+
+assert_contains "$cases_out" "default|" \
+  "cases output includes default comparison"
+assert_contains "$cases_out" "threads2||2" \
+  "cases output includes selected executor thread case"
+
 echo "PASS: recommended staircase command tests"

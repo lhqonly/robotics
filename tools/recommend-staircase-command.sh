@@ -8,6 +8,7 @@ SCHEDULER_CSV="${SCHEDULER_CSV:-}"
 SUMMARY="${SUMMARY:-}"
 STAIRCASE_BAUDS="${STAIRCASE_BAUDS:-921600 2000000}"
 TAG_PREFIX="${TAG_PREFIX:-staircase_$(date +%Y%m%d_%H%M)}"
+FORMAT="${FORMAT:-markdown}"
 
 latest_file() {
   local dir="$1"
@@ -124,6 +125,15 @@ if [ "$label" = "default" ] && [ -z "$prefix" ] && [ "$executor_threads" = "0" ]
   staircase_cases=("default|")
 else
   staircase_cases=("default|" "$selected_case")
+fi
+
+if [ "$FORMAT" = "cases" ]; then
+  printf '%s\n' "${staircase_cases[@]}"
+  exit 0
+fi
+if [ "$FORMAT" != "markdown" ]; then
+  echo "ERROR: FORMAT must be markdown or cases, got '$FORMAT'" >&2
+  exit 1
 fi
 
 printf '# Recommended Communication Staircase Command\n\n'

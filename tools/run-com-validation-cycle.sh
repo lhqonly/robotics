@@ -11,12 +11,14 @@ FAIL_ON_ERROR="${FAIL_ON_ERROR:-0}"
 SWD_STATUS_OVERRIDE="${SWD_STATUS_OVERRIDE:-}"
 RUN_NO_FLASH_ON_SWD_FAIL="${RUN_NO_FLASH_ON_SWD_FAIL:-1}"
 RUN_STACK_HWM_ON_CONTRACT_PASS="${RUN_STACK_HWM_ON_CONTRACT_PASS:-0}"
+USE_RECOMMENDED_STAIRCASE_CASES="${USE_RECOMMENDED_STAIRCASE_CASES:-1}"
 NOFLASH_RUN_SECONDS="${NOFLASH_RUN_SECONDS:-18}"
 NOFLASH_WARMUP_SECONDS="${NOFLASH_WARMUP_SECONDS:-5}"
 NOFLASH_HZ_SECONDS="${NOFLASH_HZ_SECONDS:-10}"
 
 DIAGNOSE_CMD="${DIAGNOSE_CMD:-$ROOT/tools/diagnose-swd.sh}"
 STAIRCASE_CMD="${STAIRCASE_CMD:-$ROOT/tools/run-com-staircase.sh}"
+RECOMMEND_STAIRCASE_CMD="${RECOMMEND_STAIRCASE_CMD:-$ROOT/tools/recommend-staircase-command.sh}"
 COM_PERF_CMD="${COM_PERF_CMD:-$ROOT/tools/run-com-perf.sh}"
 CONTRACT_CMD="${CONTRACT_CMD:-$ROOT/tools/check-com-staircase-contract.py}"
 STATUS_REPORT_CMD="${STATUS_REPORT_CMD:-$ROOT/tools/com-status-report.sh}"
@@ -71,12 +73,40 @@ status=0
 contract_status=0
 if [ "$swd_status" = "ok" ]; then
   record "PATH full_staircase"
-  if run_or_record "$STAIRCASE_CMD" "$TAG"; then
-    :
+  recommended_cases=""
+  if [ "$USE_RECOMMENDED_STAIRCASE_CASES" = "1" ] &&
+      [ -x "$RECOMMEND_STAIRCASE_CMD" ]; then
+    if recommended_cases="$(FORMAT=cases "$RECOMMEND_STAIRCASE_CMD" 2>/dev/null)"; then
+      record "STAIRCASE_PC_LAUNCH_PREFIX_CASES_SOURCE=recommended"
+      printf '%s\n' "$recommended_cases" |
+        sed 's/^/STAIRCASE_PC_CASE /' | tee -a "$LOG" >/dev/null
+    else
+      record "WARN recommended staircase cases unavailable; using run-com-staircase defaults"
+      recommended_cases=""
+    fi
   else
-    status=$?
-    record "ERROR staircase_status=$status"
+    record "STAIRCASE_PC_LAUNCH_PREFIX_CASES_SOURCE=default"
   fi
+  if [ -n "$recommended_cases" ]; then
+    if [ "$DRY_RUN" = "1" ]; then
+      record "DRY_RUN STAIRCASE_PC_LAUNCH_PREFIX_CASES=recommended $STAIRCASE_CMD $TAG"
+      :
+    else
+      record "RUN STAIRCASE_PC_LAUNCH_PREFIX_CASES=recommended $STAIRCASE_CMD $TAG"
+      if env STAIRCASE_PC_LAUNCH_PREFIX_CASES="$recommended_cases" \
+          "$STAIRCASE_CMD" "$TAG"; then
+        :
+      else
+        status=$?
+        record "ERROR staircase_status=$status"
+      fi
+    fi
+  elif run_or_record "$STAIRCASE_CMD" "$TAG"; then
+      :
+    else
+      status=$?
+      record "ERROR staircase_status=$status"
+    fi
   metrics_csv="$ROOT/log/com-staircase/$TAG.metrics.csv"
   if [ "$DRY_RUN" = "1" ]; then
     record "DRY_RUN $CONTRACT_CMD $metrics_csv > $CONTRACT_LOG"
