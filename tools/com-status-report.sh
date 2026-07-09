@@ -694,6 +694,17 @@ if [ -x "$ROOT/tools/com-wire-budget.py" ]; then
     --show-wire-time 2>/dev/null || true)"
 fi
 
+motor_telemetry_sweep=""
+motor_telemetry_sweep_status="missing_tool"
+if [ -x "$ROOT/tools/motor-m2-telemetry-sweep.py" ]; then
+  if motor_telemetry_sweep="$(cd "$ROOT" && \
+      tools/motor-m2-telemetry-sweep.py --pass-only 2>&1)"; then
+    motor_telemetry_sweep_status="ok"
+  else
+    motor_telemetry_sweep_status="failed"
+  fi
+fi
+
 motor_generated_headers="missing"
 if [ -d "$ROOT/firmware/f103-microros/ThirdParty/microros/include/exo_motor_msgs" ]; then
   motor_generated_headers="present"
@@ -894,6 +905,38 @@ preflight_commands="$(printf '%s\n' "$staircase_preflight" |
   else
     echo "- missing motor wire budget: tools/com-wire-budget.py unavailable"
   fi
+  echo
+  echo "### M2 motor telemetry period sweep"
+  echo
+  if [ "$motor_telemetry_sweep_status" = "ok" ] &&
+      [ -n "$motor_telemetry_sweep" ]; then
+    printf '%s\n' "$motor_telemetry_sweep" |
+      awk '
+        /^# / || /^- / || /^## Fastest Passing/ || /^## Sweep Rows/ {
+          print
+          next
+        }
+        /^\|/ {
+          print
+          rows++
+          if (rows >= 13) {
+            exit
+          }
+        }
+      '
+    echo
+    echo "- 说明：这里只展示 \`--pass-only\` 摘要的前几行；完整矩阵请直接运行 \`tools/motor-m2-telemetry-sweep.py\`。"
+  else
+    echo "- telemetry sweep status: $motor_telemetry_sweep_status"
+    if [ -n "$motor_telemetry_sweep" ]; then
+      echo '```text'
+      printf '%s\n' "$motor_telemetry_sweep"
+      echo '```'
+    fi
+  fi
+  echo
+  echo "- 解读：\`state20_health200_2000000\` 是 M2 真机首轮 first_smoke；\`state500_health1000_921600\` 只是 921600 low_telemetry_candidate，静态 margin 约 0.09%，不能当作 runtime PASS。"
+  echo "- 边界：\`PASS_STATIC\` 只代表 CDR/XRCE 静态 UART 预算；不覆盖 Agent 建链、ROS graph、target→state 闭环、reconnect/soak、\`/com/tp_mcu_status\` 并发挤压或长尾调度。"
   echo
   echo "## 线速预算外推"
   echo
@@ -1120,7 +1163,7 @@ preflight_commands="$(printf '%s\n' "$staircase_preflight" |
   echo "2. 若 \`SWD_STATUS\` 不是 \`ok\`，按诊断输出检查线缆、供电、BOOT/RESET、SWDIO/SWCLK/NRST、usbip 独占和 ST-LINK 连接状态。"
   echo "3. SWD 恢复后先生成推荐阶梯命令：\`tools/recommend-staircase-command.sh\`，再执行其中的 \`tools/run-com-staircase.sh ...\` 和匹配的 \`tools/check-com-staircase-contract.py ...\`。"
   echo "   若要把 921600/2Mbps 串口占用收益也纳入验收，生成推荐命令时用：\`STAIRCASE_CONTRACT_ARGS=\"--max-pc-catchup-events 0 --max-pc-catchup-extra 0 --max-wire-baud-util-pct 30\" tools/recommend-staircase-command.sh\`。"
-  echo "4. M2 motor 真机首轮先生成推荐命令：\`tools/recommend-motor-m2-smoke-command.sh\`。默认使用 2Mbps 烧 \`EXO_MOTOR_ROS_ENTITIES=ON\` 固件，启动 micro-ROS Agent，确认 \`/motor/tp_joint_target\`、\`/motor/tp_joint_state\`、\`/motor/tp_motor_health\` 和 \`/com/tp_mcu_status\` 同时可见，并把证据保存到 \`log/motor-m2-smoke/<tag>/\`。"
+  echo "4. M2 motor 真机首轮先生成推荐命令：\`tools/recommend-motor-m2-smoke-command.sh\`。默认使用 2Mbps 烧 \`EXO_MOTOR_ROS_ENTITIES=ON\` 固件；若要跑 921600 对比，先看 \`tools/motor-m2-telemetry-sweep.py --pass-only\`，使用低遥测候选而不是默认 20ms/200ms。启动 micro-ROS Agent，确认 \`/motor/tp_joint_target\`、\`/motor/tp_joint_state\`、\`/motor/tp_motor_health\` 和 \`/com/tp_mcu_status\` 同时可见，并把证据保存到 \`log/motor-m2-smoke/<tag>/\`。"
   echo "5. M2 motor topic 闭环按推荐命令执行：发空 \`frame_id\` 的 \`/motor/tp_joint_target\`，检查 \`JointState.last_target_seq\`；停止发布后检查 TTL stale；再注入非空 \`frame_id\` 确认被拒绝且 executor 不掉线。"
   echo "6. M2 evidence 判定：确认 \`evidence.env\` 的硬件状态字段并设置 \`sample_only=false\` 后运行 \`tools/check-motor-m2-smoke-evidence.py log/motor-m2-smoke/<tag>\`；rate 与 stack 输出会自动解析，不要把只有 \`/com\` 的证据当作 M2 PASS。"
   echo "7. 高频 profile 跑通后读栈水位：\`tools/measure-stack-hwm.sh firmware/f103-microros/build/f103-microros.elf\`，motor-enabled 构建需额外记录 \`firmware/f103-microros/build-motor/f103-microros.elf\` 的 size report。"
