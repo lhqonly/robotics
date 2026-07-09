@@ -145,6 +145,71 @@ graph_qos_snapshot() {
   ' "$file"
 }
 
+status_every_from_cmd_log() {
+  local file="$1"
+  if [ ! -f "$file" ]; then
+    return 0
+  fi
+  grep 'status_every_n=' "$file" |
+    head -1 |
+    awk '{
+      for (idx = 1; idx <= NF; idx++) {
+        if ($idx ~ /^status_every_n=/) {
+          split($idx, parts, "=")
+          print parts[2]
+          exit
+        }
+      }
+    }'
+}
+
+expected_cmd_hz_from_summary() {
+  local summary="$1"
+  local expected
+  expected="$(metric_from_line "$summary" target_rate_hz)"
+  if ! awk -v value="${expected:-0}" 'BEGIN {exit !((value + 0) > 0)}'; then
+    expected="$(metric_from_line "$summary" wire_rate_hz)"
+  fi
+  printf '%s' "$expected"
+}
+
+perf_contract_for_tag() {
+  local tag="$1"
+  local cmd_log="$COM_LOGDIR/$tag.cmd.log"
+  local summary expected_cmd_hz status_every_n
+  if [ -z "$tag" ] || [ ! -f "$cmd_log" ] ||
+      [ ! -x "$ROOT/tools/check-com-perf-contract.sh" ]; then
+    return 0
+  fi
+  summary="$(grep 'link-health summary' "$cmd_log" | tail -1 || true)"
+  expected_cmd_hz="$(expected_cmd_hz_from_summary "$summary")"
+  status_every_n="$(status_every_from_cmd_log "$cmd_log")"
+  (cd "$ROOT" && EXPECTED_CMD_RATE_HZ="${expected_cmd_hz:-20}" \
+    STATUS_EVERY_N="${status_every_n:-1}" \
+    tools/check-com-perf-contract.sh "$tag" 2>&1 || true)
+}
+
+latest_passing_perf_tag() {
+  local max_logs="${1:-30}"
+  local path tag contract
+  find "$COM_LOGDIR" -maxdepth 1 -type f -name '*.cmd.log' -printf '%T@ %p\n' 2>/dev/null |
+    sort -nr |
+    awk -v max="$max_logs" 'NR <= max {sub(/^[^ ]+ /, ""); print}' |
+    while read -r path; do
+      tag="$(tag_from_log_file "$path")"
+      if [ ! -f "$COM_LOGDIR/$tag.sampler.log" ]; then
+        continue
+      fi
+      contract="$(perf_contract_for_tag "$tag")"
+      case "$contract" in
+        PASS\ tag=*)
+          printf '%s\n' "$tag"
+          break
+          ;;
+      esac
+    done
+}
+
 firmware_ram_categories() {
   if [ ! -f "$FIRMWARE_ELF" ]; then
     echo "-"
@@ -421,28 +486,33 @@ pc_wire_gap_p95_ms="$(metric_from_line "$link_summary" wire_gap_p95_ms)"
 pc_wire_gap_p99_ms="$(metric_from_line "$link_summary" wire_gap_p99_ms)"
 pc_wire_gap_max_ms="$(metric_from_line "$link_summary" wire_gap_max_ms)"
 latest_contract=""
-latest_expected_cmd_hz="$(metric_from_line "$link_summary" target_rate_hz)"
-if ! awk -v value="${latest_expected_cmd_hz:-0}" 'BEGIN {exit !((value + 0) > 0)}'; then
-  latest_expected_cmd_hz="$(metric_from_line "$link_summary" wire_rate_hz)"
+if [ -n "$latest_tag" ]; then
+  latest_contract="$(perf_contract_for_tag "$latest_tag")"
 fi
-latest_status_every_n=""
-if [ -f "$latest_cmd" ]; then
-  latest_status_every_n="$(grep 'status_every_n=' "$latest_cmd" |
-    head -1 |
-    awk '{
-      for (idx = 1; idx <= NF; idx++) {
-        if ($idx ~ /^status_every_n=/) {
-          split($idx, parts, "=")
-          print parts[2]
-          exit
-        }
-      }
-    }')"
-fi
-if [ -n "$latest_tag" ] && [ -x "$ROOT/tools/check-com-perf-contract.sh" ]; then
-  latest_contract="$(cd "$ROOT" && EXPECTED_CMD_RATE_HZ="${latest_expected_cmd_hz:-20}" \
-    STATUS_EVERY_N="${latest_status_every_n:-1}" \
-    tools/check-com-perf-contract.sh "$latest_tag" 2>&1 || true)"
+latest_pass_tag="$(latest_passing_perf_tag 30)"
+latest_pass_cmd=""
+latest_pass_sampler=""
+latest_pass_hz=""
+latest_pass_graph=""
+latest_pass_contract=""
+latest_pass_sampler_summary=""
+latest_pass_status_hz=""
+latest_pass_link_summary=""
+if [ -n "$latest_pass_tag" ]; then
+  latest_pass_cmd="$COM_LOGDIR/$latest_pass_tag.cmd.log"
+  latest_pass_sampler="$COM_LOGDIR/$latest_pass_tag.sampler.log"
+  latest_pass_hz="$COM_LOGDIR/$latest_pass_tag.hz.log"
+  latest_pass_graph="$COM_LOGDIR/$latest_pass_tag.graph.log"
+  latest_pass_contract="$(perf_contract_for_tag "$latest_pass_tag")"
+  if [ -f "$latest_pass_sampler" ]; then
+    latest_pass_sampler_summary="$(grep 'status_sampler:' "$latest_pass_sampler" | tail -1 || true)"
+  fi
+  if [ -f "$latest_pass_hz" ]; then
+    latest_pass_status_hz="$(awk '/average rate:/ {rate=$3} END {print rate}' "$latest_pass_hz")"
+  fi
+  if [ -f "$latest_pass_cmd" ]; then
+    latest_pass_link_summary="$(grep 'link-health summary' "$latest_pass_cmd" | tail -1 || true)"
+  fi
 fi
 wire_metrics=""
 if [ -f "$latest_wire" ]; then
@@ -561,6 +631,7 @@ serial_users="$(serial_lsof)"
   echo "- graph/QoS：$(relpath "$latest_graph")"
   echo "- same-tag wire stats：$(relpath "$latest_wire")"
   echo "- latest standalone wire stats：$(relpath "$latest_any_wire")"
+  echo "- latest PASS baseline tag：${latest_pass_tag:-unknown}"
   echo "- size matrix：$(relpath "$latest_size_md")"
   echo "- stack sweep：$(relpath "$latest_stack_md")"
   echo "- spin timeout sweep：$(relpath "$latest_spin_timeout_md")"
@@ -582,6 +653,23 @@ serial_users="$(serial_lsof)"
   if [ "$latest_is_scheduler_experiment" -eq 1 ]; then
     echo
     echo "说明：latest tag 是调度/健康门槛实验样本，只代表最后一次运行；PC 调度结论请看下面的 sweep/短测对照表。"
+  fi
+  echo
+  echo "## 最近 PASS 通信基线"
+  echo
+  if [ -n "$latest_pass_tag" ]; then
+    echo "- tag：$latest_pass_tag"
+    echo "- ros2 topic hz status_hz=${latest_pass_status_hz:-unknown}"
+    echo "- sampler：${latest_pass_sampler_summary:-unknown}"
+    echo "- LinkHealth：${latest_pass_link_summary:-unknown}"
+    echo "- graph/QoS：$(relpath "$latest_pass_graph")"
+    echo "- perf contract：${latest_pass_contract:-unknown}"
+    if [ "$latest_pass_tag" != "$latest_tag" ]; then
+      echo
+      echo "说明：latest tag 可能是故意采集的失败/压力样本；这个 section 用最近一个 contract PASS 样本表示基础链路健康基线。"
+    fi
+  else
+    echo "- 未找到最近 PASS 的通信样本。"
   fi
   echo
   echo "## 最新 topic endpoint QoS"

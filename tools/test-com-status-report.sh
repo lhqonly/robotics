@@ -25,7 +25,7 @@ assert_not_contains() {
   fi
 }
 
-assert_contains "$ROOT/tools/com-status-report.sh" 'STATUS_EVERY_N="${latest_status_every_n:-1}"' \
+assert_contains "$ROOT/tools/com-status-report.sh" 'STATUS_EVERY_N="${status_every_n:-1}"' \
   "perf contract status decimation env"
 
 OUTDIR="$TMPDIR" COM_STATUS_PROBE_STLINK=0 \
@@ -59,6 +59,10 @@ assert_contains "$report" "## 最新 topic endpoint QoS" \
   "topic endpoint QoS section"
 assert_contains "$report" "graph/QoS" \
   "graph QoS source"
+assert_contains "$report" "## 最近 PASS 通信基线" \
+  "latest PASS communication baseline section"
+assert_contains "$report" "latest PASS baseline tag" \
+  "latest PASS baseline source"
 assert_contains "$report" "latest watch summary" \
   "latest watch summary source"
 assert_contains "$report" "long overnight summary" \
