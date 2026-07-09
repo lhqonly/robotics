@@ -43,6 +43,10 @@ assert_contains "$report" "## micro-ROS 配置快照" \
   "micro-ROS config section"
 assert_contains "$report" "## 固件静态内存矩阵" \
   "firmware size matrix section"
+assert_contains "$report" "### 当前 ELF ROSIDL metadata 拆分" \
+  "current ELF ROSIDL metadata breakdown section"
+assert_contains "$report" "toplevel_type_raw_source" \
+  "current ELF ROSIDL metadata raw source row"
 assert_contains "$report" "## micro-ROS 栈候选" \
   "micro-ROS stack candidates section"
 assert_contains "$report" "## 固件优化推荐" \

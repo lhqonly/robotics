@@ -264,6 +264,26 @@ firmware_ram_category_symbols() {
     '
 }
 
+firmware_rosidl_metadata_breakdown() {
+  if [ ! -f "$FIRMWARE_ELF" ]; then
+    echo "-"
+    return 0
+  fi
+  if [ ! -x "$ROOT/tools/firmware-size-report.sh" ]; then
+    echo "-"
+    return 0
+  fi
+
+  local size_report
+  size_report="$(CATEGORY_LIMIT=5 "$ROOT/tools/firmware-size-report.sh" "$FIRMWARE_ELF" 2>/dev/null || true)"
+  printf '%s\n' "$size_report" |
+    awk '
+      /^rosidl_type_metadata_breakdown:/ {in_section = 1; print; next}
+      in_section && NF == 0 {exit}
+      in_section {print}
+    '
+}
+
 firmware_optimization_recommendations() {
   if [ ! -x "$ROOT/tools/recommend-firmware-optimizations.sh" ]; then
     echo "-"
@@ -452,6 +472,7 @@ latest_staircase_metrics="$(latest_file "$STAIRCASE_LOGDIR" '*.metrics.md')"
 latest_staircase_contract_metrics="$(latest_file "$STAIRCASE_LOGDIR" '*.metrics.csv')"
 latest_staircase_summary="$(latest_file "$STAIRCASE_LOGDIR" '*.summary.log')"
 ram_categories="$(firmware_ram_categories)"
+rosidl_metadata_breakdown="$(firmware_rosidl_metadata_breakdown)"
 ram_category_symbols="$(firmware_ram_category_symbols)"
 firmware_optimization_recs="$(firmware_optimization_recommendations)"
 communication_optimization_recs="$(communication_optimization_recommendations)"
@@ -873,6 +894,12 @@ serial_users="$(serial_lsof)"
   echo
   echo '```text'
   printf '%s\n' "$ram_categories"
+  echo '```'
+  echo
+  echo "### 当前 ELF ROSIDL metadata 拆分"
+  echo
+  echo '```text'
+  printf '%s\n' "$rosidl_metadata_breakdown"
   echo '```'
   echo
   echo "### 当前 ELF RAM 分类大项"
