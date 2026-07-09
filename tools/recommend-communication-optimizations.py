@@ -19,7 +19,12 @@ def latest_file(directory: Path, pattern: str) -> Path | None:
     return max(files, key=lambda path: path.stat().st_mtime)
 
 
-def summary_matches_expected_profile(summary: Path) -> bool:
+def summary_matches_expected_profile(
+    summary: Path,
+    *,
+    cmd_rate_hz: int,
+    status_every_n: int,
+) -> bool:
     if not summary.exists():
         return False
     profile = ""
@@ -29,17 +34,22 @@ def summary_matches_expected_profile(summary: Path) -> bool:
     if not profile:
         return False
     required = [
-        "cmd_rate_hz=200",
+        f"cmd_rate_hz={cmd_rate_hz}",
         "cmd_catchup_max=0",
         "qos=best_effort",
         "tracking=sampled",
-        "status_every_n=40",
+        f"status_every_n={status_every_n}",
     ]
     tokens = set(profile.split())
     return all(item in tokens for item in required)
 
 
-def latest_matching_scheduler_csv(directory: Path) -> Path | None:
+def latest_matching_scheduler_csv(
+    directory: Path,
+    *,
+    cmd_rate_hz: int,
+    status_every_n: int,
+) -> Path | None:
     files = sorted(
         directory.glob("*.metrics.csv"),
         key=lambda path: path.stat().st_mtime,
@@ -47,7 +57,11 @@ def latest_matching_scheduler_csv(directory: Path) -> Path | None:
     )
     for csv_path in files:
         summary = csv_path.with_suffix("").with_suffix(".summary.log")
-        if summary_matches_expected_profile(summary):
+        if summary_matches_expected_profile(
+            summary,
+            cmd_rate_hz=cmd_rate_hz,
+            status_every_n=status_every_n,
+        ):
             return csv_path
     return None
 
@@ -195,13 +209,23 @@ def main() -> int:
     parser.add_argument("--scheduler-csv", type=Path)
     parser.add_argument("--scheduler-logdir", type=Path,
                         default=ROOT / "log/pc-scheduler-sweep")
+    parser.add_argument("--exploratory-scheduler-csv", type=Path)
     parser.add_argument("--staircase-csv", type=Path)
     parser.add_argument("--baud-util-budget-pct", type=float, default=30.0)
     args = parser.parse_args()
 
     wire_log = args.wire_log or latest_file(ROOT / "log/com-perf", "*.wire.log")
     scheduler_csv = args.scheduler_csv or latest_matching_scheduler_csv(
-        args.scheduler_logdir
+        args.scheduler_logdir,
+        cmd_rate_hz=200,
+        status_every_n=40,
+    )
+    exploratory_scheduler_csv = (
+        args.exploratory_scheduler_csv or latest_matching_scheduler_csv(
+            args.scheduler_logdir,
+            cmd_rate_hz=1000,
+            status_every_n=200,
+        )
     )
     staircase_csv = args.staircase_csv or latest_file(
         ROOT / "log/com-staircase", "*.metrics.csv"
@@ -209,18 +233,21 @@ def main() -> int:
 
     wire_metrics = metric_line(wire_log)
     scheduler_rows = read_csv(scheduler_csv)
+    exploratory_scheduler_rows = read_csv(exploratory_scheduler_csv)
     staircase_rows = read_csv(staircase_csv)
     latest_200_40_921600 = project_wire(wire_metrics, 200.0, 40, 921600)
     latest_200_40_2m = project_wire(wire_metrics, 200.0, 40, 2_000_000)
     full_echo_200_921600 = project_wire(wire_metrics, 200.0, 1, 921600)
     best_sched = best_scheduler(scheduler_rows)
     low_max_sched = lowest_max_scheduler(scheduler_rows)
+    best_exploratory_sched = best_scheduler(exploratory_scheduler_rows)
     qos_bad = qos_incompatibility(staircase_rows)
 
     print("# Communication Optimization Recommendations")
     print()
     print(f"- wire log: {relpath(wire_log)}")
     print(f"- scheduler CSV: {relpath(scheduler_csv)}")
+    print(f"- exploratory scheduler CSV: {relpath(exploratory_scheduler_csv)}")
     print(f"- staircase CSV: {relpath(staircase_csv)}")
     print()
     print("## Current Safe Recommendation")
@@ -293,6 +320,19 @@ def main() -> int:
             ))
     else:
         print("CANDIDATE pc_scheduler_best_observed unavailable=missing_scheduler_csv")
+
+    if best_exploratory_sched:
+        print(candidate_line(
+            "pc_scheduler_1000hz_exploratory",
+            tag=best_exploratory_sched.get("tag", "unknown"),
+            p99_ms=fmt(fnum(best_exploratory_sched, "pc_wire_gap_p99_ms")),
+            max_ms=fmt(fnum(best_exploratory_sched, "pc_wire_gap_max_ms")),
+            catchup_events=fmt(
+                fnum(best_exploratory_sched, "pc_cmd_catchup_events"), 0),
+            catchup_extra=fmt(
+                fnum(best_exploratory_sched, "pc_cmd_catchup_extra"), 0),
+            adoption="explore_only_not_staircase_default",
+        ))
 
     print(candidate_line(
         "qos_matching_required",

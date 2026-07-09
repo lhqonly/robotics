@@ -99,7 +99,13 @@ assert_contains "$auto" \
   "scheduler CSV: $auto_dir/old_200.metrics.csv" \
   "auto scheduler selection skips newer non-200Hz profile"
 assert_contains "$auto" \
+  "exploratory scheduler CSV: $auto_dir/new_1000.metrics.csv" \
+  "auto exploratory scheduler selection uses latest 1000Hz profile"
+assert_contains "$auto" \
   "CANDIDATE pc_scheduler_best_observed tag=old_200_threads4_r1" \
   "auto scheduler recommendation uses latest matching 200Hz profile"
+assert_contains "$auto" \
+  "CANDIDATE pc_scheduler_1000hz_exploratory tag=new_1000_threads4_r1 p99_ms=1.100 max_ms=5.000 catchup_events=0 catchup_extra=0 adoption=explore_only_not_staircase_default" \
+  "auto scheduler recommendation reports 1000Hz exploration separately"
 
 echo "PASS: communication optimization recommendation tests"
