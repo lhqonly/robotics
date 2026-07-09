@@ -2,6 +2,7 @@
 """Estimate serial utilization for command/status communication profiles."""
 
 import argparse
+import math
 from pathlib import Path
 
 
@@ -76,11 +77,16 @@ def parse_float_list(raw: str) -> list[float]:
     values: list[float] = []
     for item in raw.replace(",", " ").split():
         try:
-            values.append(float(item))
+            value = float(item)
         except ValueError as exc:
             raise argparse.ArgumentTypeError(
                 f"expected number list, got {raw!r}"
             ) from exc
+        if not math.isfinite(value):
+            raise argparse.ArgumentTypeError(
+                f"expected finite number list, got {raw!r}"
+            )
+        values.append(value)
     if not values:
         raise argparse.ArgumentTypeError("expected at least one number")
     return values
@@ -406,6 +412,11 @@ def main() -> int:
     status_every_n_values = flatten_int_lists(args.status_every_n, "40")
     baud_values = flatten_float_lists(args.baud, "921600")
 
+    if (
+        not math.isfinite(args.baseline_cmd_hz) or
+        not math.isfinite(args.baseline_status_hz)
+    ):
+        raise SystemExit("ERROR: baseline rates must be finite")
     if args.baseline_cmd_hz <= 0 or args.baseline_status_hz <= 0:
         raise SystemExit("ERROR: baseline rates must be > 0")
     invalid_cmd_hz = any(cmd_hz <= 0 for cmd_hz in cmd_hz_values)
@@ -413,13 +424,22 @@ def main() -> int:
         status_every_n < 1 for status_every_n in status_every_n_values)
     invalid_baud = any(baud <= 0 for baud in baud_values)
     if invalid_cmd_hz or invalid_status_every or invalid_baud:
-        raise SystemExit("ERROR: cmd-hz/baud must be > 0 and status-every-n >= 1")
+        raise SystemExit(
+            "ERROR: cmd-hz/baud must be > 0 and status-every-n >= 1"
+        )
+    if (
+        args.max_baud_util_pct is not None and
+        not math.isfinite(args.max_baud_util_pct)
+    ):
+        raise SystemExit("ERROR: --max-baud-util-pct must be finite")
     if args.max_baud_util_pct is not None and args.max_baud_util_pct <= 0:
         raise SystemExit("ERROR: --max-baud-util-pct must be > 0")
     if args.fail_on_over_budget and args.max_baud_util_pct is None:
         raise SystemExit(
             "ERROR: --fail-on-over-budget requires --max-baud-util-pct"
         )
+    if not math.isfinite(args.xrce_overhead_bytes):
+        raise SystemExit("ERROR: --xrce-overhead-bytes must be finite")
     if args.profile == "motor-m2":
         return run_motor_m2_profile(
             args, cmd_hz_values, baud_values)

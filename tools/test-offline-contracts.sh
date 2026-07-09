@@ -10,6 +10,7 @@ tests=(
   "tools/test-microros-config.sh"
   "tools/test-microros-motor-config.sh"
   "tools/test-com-wire-budget.sh"
+  "tools/test-motor-m2-telemetry-sweep.sh"
   "tools/test-communication-optimization-recommendations.sh"
   "tools/test-com-perf-contract.sh"
   "tools/test-com-summary-parsers.sh"

@@ -96,6 +96,9 @@ assert_contains "$synthetic" \
   'Run staircase with `STAIRCASE_BAUDS="921600 2000000"` and include the best PC scheduler case plus M2 motor topics.' \
   "synthetic runtime gate includes motor topics"
 assert_contains "$synthetic" \
+  "tools/motor-m2-telemetry-sweep.py --pass-only" \
+  "synthetic runtime gate includes M2 telemetry sweep"
+assert_contains "$synthetic" \
   "tools/check-com-staircase-contract.py <metrics.csv> --max-pc-catchup-events 0 --max-pc-catchup-extra 0" \
   "synthetic runtime gate includes acceptance command"
 

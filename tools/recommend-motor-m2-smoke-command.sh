@@ -62,6 +62,18 @@ validate_periods() {
   fi
 }
 
+validate_positive_integer_list() {
+  local label="$1"
+  local raw="$2"
+  local item
+  for item in $raw; do
+    if ! [[ "$item" =~ ^[0-9]+$ ]] || (( item <= 0 )); then
+      echo "ERROR: $label must contain positive integer baud values" >&2
+      exit 1
+    fi
+  done
+}
+
 rate_min_from_hz() {
   local hz="$1"
   awk -v hz="$hz" 'BEGIN { printf "%.6f", hz * 0.90 }'
@@ -85,6 +97,8 @@ rate_timeout_from_period_ms() {
 
 elf="$M2_MOTOR_BUILD_DIR/f103-microros.elf"
 bin="$M2_MOTOR_BUILD_DIR/f103-microros.bin"
+validate_positive_integer_list "M2_MOTOR_BAUD" "$M2_MOTOR_BAUD"
+validate_positive_integer_list "M2_MOTOR_REQUIRE_BUDGET_BAUDS" "$M2_MOTOR_REQUIRE_BUDGET_BAUDS"
 validate_periods
 M2_MOTOR_STATE_HZ="$(hz_from_period_ms "$M2_MOTOR_STATE_PERIOD_MS")"
 M2_MOTOR_HEALTH_HZ="$(hz_from_period_ms "$M2_MOTOR_HEALTH_PERIOD_MS")"

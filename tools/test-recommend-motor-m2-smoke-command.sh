@@ -159,6 +159,10 @@ grep -Fq "ERROR: M2_MOTOR_STATE_PERIOD_MS must be an integer in [10, 1000]" <<<"
 set +e
 bad_health_out="$(M2_MOTOR_HEALTH_PERIOD_MS=0 "$ROOT/tools/recommend-motor-m2-smoke-command.sh" 2>&1 >/dev/null)"
 bad_health_rc=$?
+bad_baud_out="$(M2_MOTOR_BAUD=foo "$ROOT/tools/recommend-motor-m2-smoke-command.sh" 2>&1 >/dev/null)"
+bad_baud_rc=$?
+bad_budget_baud_out="$(M2_MOTOR_REQUIRE_BUDGET_BAUDS='921600 nope' "$ROOT/tools/recommend-motor-m2-smoke-command.sh" 2>&1 >/dev/null)"
+bad_budget_baud_rc=$?
 bad_order_out="$(M2_MOTOR_STATE_PERIOD_MS=1000 M2_MOTOR_HEALTH_PERIOD_MS=100 "$ROOT/tools/recommend-motor-m2-smoke-command.sh" 2>&1 >/dev/null)"
 bad_order_rc=$?
 bad_text_out="$(M2_MOTOR_STATE_PERIOD_MS=20abc "$ROOT/tools/recommend-motor-m2-smoke-command.sh" 2>&1 >/dev/null)"
@@ -173,6 +177,24 @@ fi
 grep -Fq "ERROR: M2_MOTOR_HEALTH_PERIOD_MS must be an integer in [100, 5000]" <<<"$bad_health_out" || {
   echo "FAIL: invalid motor health period error missing" >&2
   echo "$bad_health_out" >&2
+  exit 1
+}
+if [ "$bad_baud_rc" -eq 0 ]; then
+  echo "FAIL: invalid motor baud should fail" >&2
+  exit 1
+fi
+grep -Fq "ERROR: M2_MOTOR_BAUD must contain positive integer baud values" <<<"$bad_baud_out" || {
+  echo "FAIL: invalid motor baud error missing" >&2
+  echo "$bad_baud_out" >&2
+  exit 1
+}
+if [ "$bad_budget_baud_rc" -eq 0 ]; then
+  echo "FAIL: invalid motor budget baud should fail" >&2
+  exit 1
+fi
+grep -Fq "ERROR: M2_MOTOR_REQUIRE_BUDGET_BAUDS must contain positive integer baud values" <<<"$bad_budget_baud_out" || {
+  echo "FAIL: invalid motor budget baud error missing" >&2
+  echo "$bad_budget_baud_out" >&2
   exit 1
 }
 if [ "$bad_order_rc" -eq 0 ]; then

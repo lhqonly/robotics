@@ -123,4 +123,24 @@ if "$ROOT/tools/com-wire-budget.py" \
   exit 1
 fi
 
+if "$ROOT/tools/com-wire-budget.py" \
+    --profile motor-m2 \
+    --cmd-hz nan >/tmp/com-wire-budget-nan.out 2>&1; then
+  echo "ERROR: expected nan cmd-hz to fail" >&2
+  exit 1
+fi
+assert_contains "$(cat /tmp/com-wire-budget-nan.out)" \
+  "expected finite number list"
+
+if "$ROOT/tools/com-wire-budget.py" \
+    --profile motor-m2 \
+    --cmd-hz 200 \
+    --baud 921600 \
+    --max-baud-util-pct inf >/tmp/com-wire-budget-inf.out 2>&1; then
+  echo "ERROR: expected inf max-baud-util-pct to fail" >&2
+  exit 1
+fi
+assert_contains "$(cat /tmp/com-wire-budget-inf.out)" \
+  "ERROR: --max-baud-util-pct must be finite"
+
 echo "PASS: communication wire budget tests"
