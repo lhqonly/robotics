@@ -26,6 +26,9 @@ assert_contains "$actual_out" \
   "default keep policy"
 assert_contains "$actual_out" "CANDIDATE microros_stack_min_static" \
   "stack recommendation"
+assert_contains "$actual_out" \
+  "CANDIDATE control_loop_staircase_order loops=1000,2000,5000,10000 pc_cmd_hz=200 status_every_n=40 bauds=921600,2000000" \
+  "control-loop staircase order recommendation"
 assert_contains "$actual_out" "CANDIDATE linker_reserve_min_static" \
   "linker recommendation"
 assert_contains "$actual_out" "CANDIDATE combined_stack_linker_min_static" \

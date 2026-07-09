@@ -242,6 +242,8 @@ the high-rate staircase and stack/MSP/heap checks pass on hardware.
 
 CANDIDATE tim2_high_loop_static_saving saved_bytes=$tim2_static_saving default_profile_ram=${default_ram:-NA} best_effort_10khz_ram=${best_10k_ram:-NA} adoption=already_profiled gate=run_staircase_after_swd
 
+CANDIDATE control_loop_staircase_order loops=1000,2000,5000,10000 pc_cmd_hz=200 status_every_n=40 bauds=921600,2000000 adoption=runtime_sequence gate=advance_next_loop_only_after_contract_pass
+
 CANDIDATE microros_stack_min_static words=${best_stack_words:-NA} saved_bytes=$stack_static_saving ram_static_bytes=${best_stack_ram:-NA} adoption=hold gate=measure_stack_hwm_after_high_rate margin_rule="min_free_words>=128"
 
 CANDIDATE linker_reserve_min_static case=${best_linker_case:-NA} saved_bytes=$linker_static_saving ram_static_bytes=${best_linker_ram:-NA} adoption=hold gate=verify_msp_heap_malloc_hardfault
