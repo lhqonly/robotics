@@ -596,8 +596,13 @@ tools/recommend-communication-optimizations.py
 
 ```bash
 END_AT="tomorrow 09:00" INTERVAL_SECONDS=1800 \
-tools/overnight-com-watch.sh overnight_$(date +%Y%m%d_%H%M)
+tools/start-overnight-com-watch.sh overnight_$(date +%Y%m%d_%H%M)
 ```
+
+`tools/start-overnight-com-watch.sh` 会用 detached session 启动 watcher，写入
+`log/overnight-com-watch/<tag>.pid`，并在启动后确认进程仍然存活；输出里会直接列出
+runner log、watch log 和 summary 路径。如果已有同 tag 的 pidfile 且进程仍在跑，
+它会返回 `already_running`，避免重复启动同一组夜间观察。
 
 如果要把 PC command node 绑到固定 CPU 核做长期调度对比，可把同一个
 `PC_LAUNCH_PREFIX` 传给 watcher；每一轮 no-flash smoke 都会透传给
@@ -606,7 +611,7 @@ tools/overnight-com-watch.sh overnight_$(date +%Y%m%d_%H%M)
 ```bash
 END_AT="tomorrow 09:00" INTERVAL_SECONDS=1800 \
 PC_LAUNCH_PREFIX="taskset -c 2" \
-tools/overnight-com-watch.sh overnight_taskset_$(date +%Y%m%d_%H%M)
+tools/start-overnight-com-watch.sh overnight_taskset_$(date +%Y%m%d_%H%M)
 ```
 
 默认 `WIRE_EVERY_N=0`，不会开 micro-ROS Agent `-v6`，日志比较小。如果想每隔几轮
@@ -615,7 +620,7 @@ tools/overnight-com-watch.sh overnight_taskset_$(date +%Y%m%d_%H%M)
 ```bash
 END_AT="tomorrow 09:00" INTERVAL_SECONDS=1800 \
 WIRE_EVERY_N=6 WIRE_AGENT_VERBOSITY=6 \
-tools/overnight-com-watch.sh overnight_wire_$(date +%Y%m%d_%H%M)
+tools/start-overnight-com-watch.sh overnight_wire_$(date +%Y%m%d_%H%M)
 ```
 
 注意：`-v6` 会大量打印 micro-ROS Agent 串口帧日志，可能给 20Hz 健康判据引入额外
