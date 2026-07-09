@@ -26,8 +26,20 @@ assert_contains "$actual_out" \
   "default keep policy"
 assert_contains "$actual_out" "CANDIDATE microros_stack_min_static" \
   "stack recommendation"
+assert_contains "$actual_out" \
+  "SCOPE_NOTE default_non_motor_candidates_are_not_motor_memory_conclusions" \
+  "profile scope warning"
 assert_contains "$actual_out" "stack sweep motor entities:" \
   "stack profile marker"
+assert_contains "$actual_out" \
+  "CANDIDATE tim2_high_loop_static_saving saved_bytes=" \
+  "TIM2 recommendation row"
+assert_contains "$actual_out" \
+  "profile_scope=default_non_motor" \
+  "default/non-motor profile scope marker"
+assert_contains "$actual_out" \
+  "profile_scope=motor_enabled_candidate" \
+  "motor-enabled candidate profile scope marker"
 assert_contains "$actual_out" \
   "CANDIDATE control_loop_staircase_order loops=1000,2000,5000,10000 pc_cmd_hz=200 status_every_n=40 bauds=921600,2000000" \
   "control-loop staircase order recommendation"
@@ -90,8 +102,14 @@ assert_contains "$synthetic_out" \
   "CANDIDATE tim2_high_loop_static_saving saved_bytes=1000" \
   "synthetic TIM2/static profile saving"
 assert_contains "$synthetic_out" \
+  "CANDIDATE tim2_high_loop_static_saving saved_bytes=1000 default_profile_ram=15000 best_effort_10khz_ram=14000 profile_scope=default_non_motor" \
+  "synthetic TIM2 default/non-motor scope"
+assert_contains "$synthetic_out" \
   "CANDIDATE microros_stack_min_static words=640 saved_bytes=512" \
   "synthetic stack saving"
+assert_contains "$synthetic_out" \
+  "CANDIDATE microros_stack_min_static words=640 saved_bytes=512 ram_static_bytes=13488 motor_ros_entities=ON profile_scope=motor_enabled_candidate" \
+  "synthetic stack motor scope"
 assert_contains "$synthetic_out" \
   "stack sweep motor entities: ON" \
   "synthetic stack motor marker"
@@ -102,16 +120,25 @@ assert_contains "$synthetic_out" \
   "CANDIDATE linker_reserve_min_static case=heap0_stack512 saved_bytes=1000 ram_static_bytes=13000 motor_ros_entities=ON" \
   "synthetic linker motor marker"
 assert_contains "$synthetic_out" \
+  "CANDIDATE linker_reserve_min_static case=heap0_stack512 saved_bytes=1000 ram_static_bytes=13000 motor_ros_entities=ON profile_scope=motor_enabled_candidate" \
+  "synthetic linker motor scope"
+assert_contains "$synthetic_out" \
   "CANDIDATE combined_stack_linker_min_static case=stack640_heap0_stack512 saved_bytes=1512" \
   "synthetic combined stack/linker saving"
 assert_contains "$synthetic_out" \
   "CANDIDATE combined_stack_linker_min_static case=stack640_heap0_stack512 saved_bytes=1512 baseline_ram=14000 ram_static_bytes=12488 motor_ros_entities=ON" \
   "synthetic combined motor marker"
 assert_contains "$synthetic_out" \
+  "CANDIDATE combined_stack_linker_min_static case=stack640_heap0_stack512 saved_bytes=1512 baseline_ram=14000 ram_static_bytes=12488 motor_ros_entities=ON profile_scope=motor_enabled_candidate" \
+  "synthetic combined motor scope"
+assert_contains "$synthetic_out" \
   "CANDIDATE rosidl_type_metadata bytes=3000" \
   "synthetic ROSIDL metadata bytes"
 assert_contains "$synthetic_out" \
   "CANDIDATE rosidl_raw_source_metadata bytes=1555 parent_bytes=3000" \
   "synthetic ROSIDL raw source metadata bytes"
+assert_contains "$synthetic_out" \
+  "CANDIDATE rosidl_raw_source_metadata bytes=1555 parent_bytes=3000 profile_scope=default_non_motor" \
+  "synthetic ROSIDL default/non-motor scope"
 
 echo "PASS: firmware optimization recommendation tests"

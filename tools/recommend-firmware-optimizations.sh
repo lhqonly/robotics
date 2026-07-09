@@ -249,23 +249,25 @@ the high-rate staircase and stack/MSP/heap checks pass on hardware.
 
 ## Candidates
 
-CANDIDATE tim2_high_loop_static_saving saved_bytes=$tim2_static_saving default_profile_ram=${default_ram:-NA} best_effort_10khz_ram=${best_10k_ram:-NA} adoption=already_profiled gate=run_staircase_after_swd
+SCOPE_NOTE default_non_motor_candidates_are_not_motor_memory_conclusions
 
-CANDIDATE control_loop_staircase_order loops=1000,2000,5000,10000 pc_cmd_hz=200 status_every_n=40 bauds=921600,2000000 adoption=runtime_sequence gate=advance_next_loop_only_after_contract_pass
+CANDIDATE tim2_high_loop_static_saving saved_bytes=$tim2_static_saving default_profile_ram=${default_ram:-NA} best_effort_10khz_ram=${best_10k_ram:-NA} profile_scope=default_non_motor source_csv=$(relpath "$SIZE_MATRIX_CSV") adoption=already_profiled gate=run_staircase_after_swd
 
-CANDIDATE microros_stack_min_static words=${best_stack_words:-NA} saved_bytes=$stack_static_saving ram_static_bytes=${best_stack_ram:-NA} motor_ros_entities=${best_stack_motor_entities:-NA} adoption=hold gate=measure_stack_hwm_after_high_rate margin_rule="min_free_words>=128"
+CANDIDATE control_loop_staircase_order loops=1000,2000,5000,10000 pc_cmd_hz=200 status_every_n=40 bauds=921600,2000000 profile_scope=runtime_sequence adoption=runtime_sequence gate=advance_next_loop_only_after_contract_pass
 
-CANDIDATE linker_reserve_min_static case=${best_linker_case:-NA} saved_bytes=$linker_static_saving ram_static_bytes=${best_linker_ram:-NA} motor_ros_entities=${best_linker_motor_entities:-NA} adoption=hold gate=verify_msp_heap_malloc_hardfault
+CANDIDATE microros_stack_min_static words=${best_stack_words:-NA} saved_bytes=$stack_static_saving ram_static_bytes=${best_stack_ram:-NA} motor_ros_entities=${best_stack_motor_entities:-NA} profile_scope=motor_enabled_candidate source_csv=$(relpath "$STACK_CSV") adoption=hold gate=measure_stack_hwm_after_high_rate margin_rule="min_free_words>=128"
 
-CANDIDATE combined_stack_linker_min_static case=${best_combined_case:-NA} saved_bytes=$combined_static_saving baseline_ram=${baseline_combined_ram:-NA} ram_static_bytes=${best_combined_ram:-NA} motor_ros_entities=${best_combined_motor_entities:-NA} adoption=hold gate=verify_stack_hwm_msp_heap_together
+CANDIDATE linker_reserve_min_static case=${best_linker_case:-NA} saved_bytes=$linker_static_saving ram_static_bytes=${best_linker_ram:-NA} motor_ros_entities=${best_linker_motor_entities:-NA} profile_scope=motor_enabled_candidate source_csv=$(relpath "$LINKER_CSV") adoption=hold gate=verify_msp_heap_malloc_hardfault
+
+CANDIDATE combined_stack_linker_min_static case=${best_combined_case:-NA} saved_bytes=$combined_static_saving baseline_ram=${baseline_combined_ram:-NA} ram_static_bytes=${best_combined_ram:-NA} motor_ros_entities=${best_combined_motor_entities:-NA} profile_scope=motor_enabled_candidate source_csv=$(relpath "$COMBINED_CSV") adoption=hold gate=verify_stack_hwm_msp_heap_together
 
 CANDIDATE executor_spin_timeout values="${spin_values:-NA}" saved_bytes=0 adoption=runtime_latency_only gate=compare_staircase_gap_and_cpu
 
-CANDIDATE rosidl_type_metadata bytes=${rosidl_metadata_bytes:-NA} adoption=hold gate=libmicroros_rebuild_compatibility_matrix
+CANDIDATE rosidl_type_metadata bytes=${rosidl_metadata_bytes:-NA} profile_scope=default_non_motor source_csv=$(relpath "$SIZE_MATRIX_CSV") adoption=hold gate=libmicroros_rebuild_compatibility_matrix
 
-CANDIDATE rosidl_raw_source_metadata bytes=${rosidl_raw_source_bytes:-NA} parent_bytes=${rosidl_metadata_bytes:-NA} adoption=hold gate=libmicroros_rebuild_strip_type_description_matrix
+CANDIDATE rosidl_raw_source_metadata bytes=${rosidl_raw_source_bytes:-NA} parent_bytes=${rosidl_metadata_bytes:-NA} profile_scope=default_non_motor source_csv=$(relpath "$SIZE_MATRIX_CSV") adoption=hold gate=libmicroros_rebuild_strip_type_description_matrix
 
-CANDIDATE microros_custom_pools bytes=${microros_pools_bytes:-NA} adoption=hold gate=libmicroros_rebuild_and_agent_compatibility
+CANDIDATE microros_custom_pools bytes=${microros_pools_bytes:-NA} profile_scope=default_non_motor source_csv=$(relpath "$SIZE_MATRIX_CSV") adoption=hold gate=libmicroros_rebuild_and_agent_compatibility
 
 ## Next Runtime Gates
 

@@ -49,14 +49,22 @@ assert_contains "$report" "## micro-ROS 配置快照" \
   "micro-ROS config section"
 assert_contains "$report" "## 固件静态内存矩阵" \
   "firmware size matrix section"
-assert_contains "$report" "### 当前 ELF ROSIDL metadata 拆分" \
-  "current ELF ROSIDL metadata breakdown section"
+assert_contains "$report" "### 默认/非 motor ELF RAM 分类" \
+  "default/non-motor ELF RAM category section"
+assert_contains "$report" "### 默认/非 motor ELF ROSIDL metadata 拆分" \
+  "default/non-motor ELF ROSIDL metadata breakdown section"
 assert_contains "$report" "toplevel_type_raw_source" \
-  "current ELF ROSIDL metadata raw source row"
+  "default/non-motor ELF ROSIDL metadata raw source row"
 assert_contains "$report" "## micro-ROS 栈候选" \
   "micro-ROS stack candidates section"
 assert_contains "$report" "## 固件优化推荐" \
   "firmware optimization recommendations section"
+assert_contains "$report" "profile_scope=default_non_motor" \
+  "default/non-motor firmware recommendation scope"
+assert_contains "$report" "profile_scope=motor_enabled_candidate" \
+  "motor-enabled firmware recommendation scope"
+assert_contains "$report" "不能作为 M2 motor memory conclusion" \
+  "default/non-motor memory warning"
 assert_contains "$report" "CANDIDATE microros_stack_min_static" \
   "firmware stack recommendation row"
 assert_contains "$report" "CANDIDATE rosidl_raw_source_metadata" \
@@ -106,7 +114,7 @@ assert_contains "$report" "generated exo_motor_msgs headers" \
   "M2 generated headers status"
 assert_contains "$report" "firmware/f103-microros/colcon.motor.notypedesc.meta" \
   "M2 motor meta path"
-assert_contains "$report" "### M2 motor build size" \
+assert_contains "$report" "### M2 motor build-motor size" \
   "M2 motor build size section"
 assert_contains "$report" "### M2 motor ROSIDL metadata breakdown" \
   "M2 motor ROSIDL metadata breakdown section"
@@ -116,7 +124,32 @@ assert_contains "$report" "JointState" \
   "M2 motor metadata includes JointState row"
 assert_contains "$report" "MotorHealth" \
   "M2 motor metadata includes MotorHealth row"
-assert_contains "$report" "### M2 motor memory optimization candidate" \
+motor_metadata_section="$TMPDIR/motor-metadata-section.md"
+awk '
+  /^### M2 motor ROSIDL metadata breakdown/ {in_section = 1}
+  /^### M2 motor build-motor-opt candidate size/ {in_section = 0}
+  in_section {print}
+' "$report" >"$motor_metadata_section"
+for label in JointTarget JointState MotorHealth; do
+  if ! awk -v label="$label" '
+    $1 == label {
+      for (i = 1; i <= NF; i++) {
+        if ($i == "bytes=" && (i + 1) <= NF) {
+          value = $(i + 1) + 0
+        } else if ($i ~ /^bytes=./) {
+          sub(/^bytes=/, "", $i)
+          value = $i + 0
+        }
+      }
+    }
+    END {exit !(value > 0)}
+  ' "$motor_metadata_section"; then
+    echo "FAIL: M2 metadata row $label must have nonzero bytes" >&2
+    cat "$motor_metadata_section" >&2
+    exit 1
+  fi
+done
+assert_contains "$report" "### M2 motor build-motor-opt candidate size" \
   "M2 motor optimized build size section"
 assert_contains "$report" "# M2 Motor Wire Budget Estimate" \
   "M2 motor wire budget output"
@@ -257,6 +290,43 @@ assert_contains "$no_stlink_report" "PREFLIGHT_READY=no" \
   "zero ST-LINK programmers must block staircase preflight"
 assert_contains "$no_stlink_report" "PREFLIGHT_BLOCKER=swd_not_ok:bad_no_stlink" \
   "zero ST-LINK programmers must surface preflight blocker"
+
+cat >"$fakebin/st-info" <<'EOF'
+#!/usr/bin/env bash
+echo "Found 1 stlink programmers"
+echo "  version:    V2J37S7"
+echo "  chipid:     0x0410"
+echo "  dev-type:   STM32F1xx_MD"
+EOF
+chmod +x "$fakebin/st-info"
+PATH="$fakebin:$PATH" OUTDIR="$TMPDIR" COM_STATUS_PROBE_STLINK=1 \
+  "$ROOT/tools/com-status-report.sh" status_report_swd_ok >/dev/null
+swd_ok_report="$TMPDIR/status_report_swd_ok.md"
+assert_contains "$swd_ok_report" "status=ok" \
+  "fake ST-LINK ok status"
+assert_contains "$swd_ok_report" "PREFLIGHT_READY=yes" \
+  "fake SWD ok should make staircase preflight ready"
+assert_contains "$swd_ok_report" "PREFLIGHT_BLOCKER=none" \
+  "fake SWD ok should clear preflight blocker"
+assert_not_contains "$swd_ok_report" "SWD 仍需恢复" \
+  "SWD ok report must not include stale SWD blocker"
+assert_not_contains "$swd_ok_report" "staircase preflight 未 ready" \
+  "SWD ok report must not include stale preflight blocker"
+
+ok_unresolved="$(
+  PATH="$fakebin:$PATH" OUTDIR="$TMPDIR" COM_STATUS_PROBE_STLINK=1 \
+    "$ROOT/tools/summarize-com-unresolved.sh" status_report_swd_ok_unresolved
+)"
+if printf '%s\n' "$ok_unresolved" | grep -Fq -- "SWD 仍需恢复"; then
+  echo "FAIL: SWD-ok unresolved summary must not include SWD blocker" >&2
+  printf '%s\n' "$ok_unresolved" >&2
+  exit 1
+fi
+if printf '%s\n' "$ok_unresolved" | grep -Fq -- "staircase preflight 未 ready"; then
+  echo "FAIL: SWD-ok unresolved summary must not include preflight blocker" >&2
+  printf '%s\n' "$ok_unresolved" >&2
+  exit 1
+fi
 
 unresolved="$(
   OUTDIR="$TMPDIR" COM_STATUS_PROBE_STLINK=0 \

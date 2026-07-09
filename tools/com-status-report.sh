@@ -308,7 +308,7 @@ firmware_optimization_recommendations() {
     return 0
   fi
   "$ROOT/tools/recommend-firmware-optimizations.sh" 2>/dev/null |
-    awk '/^RECOMMENDATION / || /^CANDIDATE / {print}'
+    awk '/^RECOMMENDATION / || /^CANDIDATE / || /^SCOPE_NOTE / {print}'
 }
 
 communication_optimization_recommendations() {
@@ -749,6 +749,9 @@ if [ -f "$stress_cmd" ]; then
 fi
 
 stlink_probe="$(probe_stlink)"
+stlink_status="$(printf '%s\n' "$stlink_probe" |
+  awk -F'[ =]' '/^status=/ {print $2; exit}')"
+stlink_status="${stlink_status:-unknown}"
 serial_status="$(serial_presence)"
 usb_status="$(usb_snapshot)"
 serial_users="$(serial_lsof)"
@@ -889,7 +892,7 @@ preflight_commands="$(printf '%s\n' "$staircase_preflight" |
   echo "- target frame_id 策略：MCU 只接受空 \`header.frame_id\`；订阅侧 RX buffer 按 XRCE input stream 容量绑定，非空值应被 callback 拒绝。"
   echo "- snapshot 策略：state/health telemetry 用 PRIMASK 短临界区，避免高优先级 TIM2 在结构体拷贝中间打断。"
   echo
-  echo "### M2 motor build size"
+  echo "### M2 motor build-motor size"
   echo
   echo '```text'
   printf '%s\n' "$motor_default_size"
@@ -903,7 +906,7 @@ preflight_commands="$(printf '%s\n' "$staircase_preflight" |
   printf '%s\n' "$motor_rosidl_metadata_breakdown"
   echo '```'
   echo
-  echo "### M2 motor memory optimization candidate"
+  echo "### M2 motor build-motor-opt candidate size"
   echo
   echo '```text'
   printf '%s\n' "$motor_opt_size"
@@ -1077,15 +1080,17 @@ preflight_commands="$(printf '%s\n' "$staircase_preflight" |
   echo
   echo "说明：这些值影响通信效率和 SRAM。当前默认保留 best-effort stream、\`STREAM_HISTORY=2\`、\`CREATION_MODE=bin\`，是为了支持 200Hz latest-target profile 和 vanilla agent 建链；进一步压缩需重建 libmicroros 并重跑兼容性验证。"
   echo
-  echo "### 当前 ELF RAM 分类"
+  echo "### 默认/非 motor ELF RAM 分类"
   echo
   echo "来源：$(relpath "$FIRMWARE_ELF")"
+  echo
+  echo "说明：这里是默认/非 motor ELF；带 \`profile_scope=default_non_motor\` 的推荐不能作为 M2 motor memory conclusion。M2 结论看 \`build-motor\`、\`build-motor-opt\` 和 \`motor_ros_entities=ON\` sweep。"
   echo
   echo '```text'
   printf '%s\n' "$ram_categories"
   echo '```'
   echo
-  echo "### 当前 ELF ROSIDL metadata 拆分"
+  echo "### 默认/非 motor ELF ROSIDL metadata 拆分"
   echo
   echo '```text'
   printf '%s\n' "$rosidl_metadata_breakdown"
@@ -1098,6 +1103,8 @@ preflight_commands="$(printf '%s\n' "$staircase_preflight" |
   echo '```'
   echo
   echo "## 固件优化推荐"
+  echo
+  echo "说明：\`profile_scope=default_non_motor\` 只适用于默认固件；\`profile_scope=motor_enabled_candidate\` 才能进入 M2 motor 离线候选，但仍需真机 gate。"
   echo
   echo '```text'
   printf '%s\n' "$firmware_optimization_recs"
@@ -1139,7 +1146,11 @@ preflight_commands="$(printf '%s\n' "$staircase_preflight" |
   if [ "${preflight_ready:-unknown}" != "yes" ]; then
     echo "- staircase preflight 未 ready：blocker=${preflight_blocker:-unknown}，next_action=${preflight_next_action:-unknown}。"
   fi
-  echo "- SWD 仍需恢复：当前无法 flash 新 profile，也无法读取高频运行期栈水位。"
+  if [ "$stlink_status" != "ok" ]; then
+    echo "- SWD 仍需恢复：当前无法 flash 新 profile，也无法读取高频运行期栈水位。"
+  else
+    echo "- SWD 当前为 ok；flash 与栈水位 gate 可执行，但 M2 runtime smoke 尚未完成。"
+  fi
   echo "- 10kHz/200Hz/best_effort/status_every_40 和 2Mbps profile 已能编译，但运行收益待 SWD 恢复后实测。"
   echo "- M2 motor micro-ROS 实体已完成离线接入和构建验证，但尚未完成真机 micro-ROS Agent 联通、ROS graph topic 可见性、\`/motor/tp_joint_target\` 发布到 \`/motor/tp_joint_state\` 的闭环验证。"
   echo "- M2 ON 默认静态 RAM 约 18KB，余量偏紧；\`build-motor-opt\` 的 stack/linker reserve 候选能降到约 16.6KB，但必须等 motor-enabled 栈水位、MSP/heap、reconnect soak 证据后再改默认。"
