@@ -145,6 +145,19 @@ graph_qos_snapshot() {
   ' "$file"
 }
 
+graph_duplicate_node_warning() {
+  local file="$1"
+  if [ ! -f "$file" ]; then
+    echo "unknown: missing graph log"
+    return 0
+  fi
+  if grep -q 'share an exact name' "$file"; then
+    echo "detected: ROS graph 报告了重复节点名；在 no-reset/no-flash 的 agent 重启后，这通常可能是 graph discovery 残留。除非进程/串口证据也对应异常，否则先按 graph hygiene warning 处理。"
+  else
+    echo "none"
+  fi
+}
+
 status_every_from_cmd_log() {
   local file="$1"
   if [ ! -f "$file" ]; then
@@ -407,6 +420,7 @@ ram_categories="$(firmware_ram_categories)"
 ram_category_symbols="$(firmware_ram_category_symbols)"
 microros_config="$(microros_config_summary)"
 topic_qos_snapshot="$(graph_qos_snapshot "$latest_graph")"
+duplicate_node_warning="$(graph_duplicate_node_warning "$latest_graph")"
 latest_watch_live_summary=""
 if [ -n "$latest_watch_log" ] && [ -f "$latest_watch_log" ] &&
     [ -x "$ROOT/tools/summarize-overnight-com-watch.sh" ]; then
@@ -675,6 +689,8 @@ serial_users="$(serial_lsof)"
   echo "## 最新 topic endpoint QoS"
   echo
   echo "来源：$(relpath "$latest_graph")"
+  echo
+  echo "- duplicate node warning：$duplicate_node_warning"
   echo
   echo '```text'
   printf '%s\n' "$topic_qos_snapshot"

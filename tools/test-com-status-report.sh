@@ -57,6 +57,8 @@ assert_contains "$report" "## overnight no-flash 趋势" \
   "overnight section"
 assert_contains "$report" "## 最新 topic endpoint QoS" \
   "topic endpoint QoS section"
+assert_contains "$report" "duplicate node warning" \
+  "duplicate node warning field"
 assert_contains "$report" "graph/QoS" \
   "graph QoS source"
 assert_contains "$report" "## 最近 PASS 通信基线" \
