@@ -26,6 +26,8 @@ micro-ROS 官方推荐最低 32KB RAM,F103RB 只有 20KB,**低于官方下限**(
 
 - `colcon.meta`            —— 纯 JSON,真正用于构建(JSON 不支持注释,勿加注释)。
 - `colcon.meta.annotated`  —— 带逐键注释的说明版,**仅供阅读**,勿用于构建。
+- `colcon.motor.meta`      —— M3 `/motor` topic 接入候选配置，3 pub + 2 sub，不覆盖当前 `/com` 稳定基线。
+- `colcon.motor.meta.annotated` —— motor 候选配置说明版，记录资源池扩大的理由。
 - `src/motor_control.*`    —— M2 MCU 侧 motor latest-target / TTL / 限幅 / safe-state 核心。
 
 ## M2 motor core 自测
@@ -52,6 +54,11 @@ cmake -S firmware/f103-microros -B firmware/f103-microros/build \
   -DCMAKE_BUILD_TYPE=MinSizeRel
 cmake --build firmware/f103-microros/build
 ```
+
+`/motor` micro-ROS topic 真正接入前，需要用 `colcon.motor.meta` 重建 libmicroros，并把
+`ros2_ws/src/exo_motor_msgs` 和现有 `exo_msgs` 一起喂进 micro_ros_setup 的 firmware
+workspace。不要直接手工提交 `ThirdParty/microros/include/exo_motor_msgs` 这类生成产物；
+应先用候选 meta 完成实体创建、RAM/Flash size 和真机建链验证。
 
 ## 内存模型(static memory pool / 关动态分配)
 

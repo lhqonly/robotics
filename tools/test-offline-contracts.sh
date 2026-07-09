@@ -8,6 +8,7 @@ tests=(
   "tools/test-control-loop-config.sh"
   "tools/test-dwt-snapshot-model.sh"
   "tools/test-microros-config.sh"
+  "tools/test-microros-motor-config.sh"
   "tools/test-com-wire-budget.sh"
   "tools/test-communication-optimization-recommendations.sh"
   "tools/test-com-perf-contract.sh"

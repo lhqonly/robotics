@@ -1,0 +1,79 @@
+// M3 /motor topic 接入候选 micro-ROS 静态库裁剪配置(说明版,勿直接构建)
+// 构建请使用同目录纯 JSON: colcon.motor.meta
+//
+// 与当前 colcon.meta 的区别:
+// - 当前 colcon.meta 是已验证 /com 基线:1 publisher + 1 subscription。
+// - 本文件为下一阶段 /motor topic 准备:3 publishers + 2 subscriptions。
+// - 不改 services/clients,因为 M3 只做 topic 闭环,不做调试 service。
+// - STREAM_HISTORY 先从 2 提到 4,给 JointTarget/JointState/MotorHealth 的 bin
+//   create_topic 描述留空间。若 RAM 紧张,可在实体创建已验证后再压回 2 做矩阵。
+{
+  "names": {
+
+    "tracetools": {
+      "cmake-args": [
+        "-DTRACETOOLS_DISABLED=ON",
+        "-DTRACETOOLS_STATUS_CHECKING_TOOL=OFF"
+      ]
+    },
+
+    "rcl": {
+      "cmake-args": [
+        "-DBUILD_TESTING=OFF",
+        "-DRCL_COMMAND_LINE_ENABLED=OFF",
+        "-DRCL_LOGGING_ENABLED=OFF"
+      ]
+    },
+
+    "rcutils": {
+      "cmake-args": [
+        "-DENABLE_TESTING=OFF",
+        "-DRCUTILS_NO_FILESYSTEM=ON",
+        "-DRCUTILS_NO_THREAD_SUPPORT=ON",
+        "-DRCUTILS_NO_64_ATOMIC=ON",
+        "-DRCUTILS_AVOID_DYNAMIC_ALLOCATION=ON"
+      ]
+    },
+
+    "rosidl_typesupport": {
+      "cmake-args": [
+        "-DROSIDL_TYPESUPPORT_SINGLE_TYPESUPPORT=OFF"
+      ]
+    },
+
+    "microxrcedds_client": {
+      "cmake-args": [
+        "-DUCLIENT_PIC=OFF",
+        "-DUCLIENT_PROFILE_CUSTOM_TRANSPORT=ON",
+        "-DUCLIENT_PROFILE_UDP=OFF",
+        "-DUCLIENT_PROFILE_TCP=OFF",
+        "-DUCLIENT_PROFILE_SERIAL=OFF",
+        "-DUCLIENT_PROFILE_DISCOVERY=OFF",
+        "-DUCLIENT_PROFILE_MULTITHREAD=OFF",
+        "-DUCLIENT_PROFILE_SHARED_MEMORY=OFF",
+        "-DUCLIENT_PROFILE_STREAM_FRAMING=ON",
+        "-DUCLIENT_PROFILE_MATCHING=OFF",
+        "-DUCLIENT_MAX_OUTPUT_BEST_EFFORT_STREAMS=1",
+        "-DUCLIENT_MAX_OUTPUT_RELIABLE_STREAMS=1",
+        "-DUCLIENT_MAX_INPUT_BEST_EFFORT_STREAMS=1",
+        "-DUCLIENT_MAX_INPUT_RELIABLE_STREAMS=1",
+        "-DUCLIENT_CUSTOM_TRANSPORT_MTU=128"
+      ]
+    },
+
+    "rmw_microxrcedds": {
+      "cmake-args": [
+        "-DRMW_UXRCE_MAX_NODES=1",            // node_com_mcu / node_mcu 仍是一个 MCU 节点
+        "-DRMW_UXRCE_MAX_PUBLISHERS=3",       // /com/tp_mcu_status + /motor/tp_joint_state + /motor/tp_motor_health
+        "-DRMW_UXRCE_MAX_SUBSCRIPTIONS=2",    // /com/tp_cmd_heartbeat + /motor/tp_joint_target
+        "-DRMW_UXRCE_MAX_SERVICES=0",         // M3 不做 service,调试 service 另开资源评估
+        "-DRMW_UXRCE_MAX_CLIENTS=0",
+        "-DRMW_UXRCE_MAX_HISTORY=1",          // MCU 侧继续 latest-only,避免 stale queue
+        "-DRMW_UXRCE_STREAM_HISTORY=4",       // motor 三个 topic 的 bin create 描述更大,先保守放到 4
+        "-DRMW_UXRCE_MAX_SESSIONS=1",
+        "-DRMW_UXRCE_TRANSPORT=custom",
+        "-DRMW_UXRCE_CREATION_MODE=bin"
+      ]
+    }
+  }
+}
