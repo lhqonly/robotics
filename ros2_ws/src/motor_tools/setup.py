@@ -22,6 +22,7 @@ setup(
         'console_scripts': [
             'motor_cybergear_probe = motor_tools.motor_cybergear_probe:main',
             'motor_cybergear_benchtop = motor_tools.motor_cybergear_benchtop:main',
+            'node_motor_contract_mock = motor_tools.motor_contract_mock_node:main',
         ],
     },
 )

@@ -11,6 +11,8 @@
   <maintainer email="lhqonly@users.noreply.github.com">Tom</maintainer>
   <license>MIT</license>
 
+  <depend>exo_motor_msgs</depend>
+  <exec_depend>rclpy</exec_depend>
   <exec_depend>python3-can</exec_depend>
 
   <test_depend>python3-pytest</test_depend>

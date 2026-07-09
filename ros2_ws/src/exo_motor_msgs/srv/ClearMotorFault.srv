@@ -1,0 +1,6 @@
+uint8 joint_id
+uint32 fault_mask
+---
+bool accepted
+uint32 remaining_fault_bits
+string message

@@ -1,0 +1,6 @@
+# control_mode uses the JointTarget control mode values.
+uint8 joint_id
+uint8 control_mode
+---
+bool accepted
+string message

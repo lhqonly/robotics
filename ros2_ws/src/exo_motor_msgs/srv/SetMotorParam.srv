@@ -1,0 +1,6 @@
+uint8 joint_id
+string name
+float64 value
+---
+bool accepted
+string message

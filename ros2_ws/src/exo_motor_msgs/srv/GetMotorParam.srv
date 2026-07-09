@@ -1,0 +1,7 @@
+uint8 joint_id
+string name
+---
+bool found
+float64 value
+string unit
+string message

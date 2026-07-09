@@ -17,6 +17,11 @@ Interface contract: `docs/01-ros2-microros-serial/01-接口契约.md` (v1.16).
   - `motor_cybergear_probe`: hardware-free mock state stream or guarded motor probe.
   - `motor_cybergear_benchtop`: mock target/state check; real motion is guarded until
     hardware validation is explicitly implemented.
+  - `node_motor_contract_mock`: M1 hardware-free ROS node for the `/motor/tp_*`
+    contract. Subscribes `/motor/tp_joint_target`; publishes `/motor/tp_joint_state`
+    and `/motor/tp_motor_health`.
+- **exo_motor_msgs** (ament_cmake) — vendor-neutral M1 `/motor/` msg/srv
+  interfaces shared by PC mocks, bridges, MCU firmware, and future backends.
 
 QoS for all `/com/*` topics (contract): RELIABLE / KEEP_LAST. Historical
 self-tests use depth 10; high-rate real-hardware runs use depth 1 to avoid stale
@@ -64,6 +69,41 @@ sudo apt install python3-can
 Hardware motion commands are guarded. They require explicit limits and
 `--confirm-motion`; without confirmation no enable frame is sent. Position mode sends
 a small `+position -> -position -> 0` round-trip before stop/disable.
+
+M1 motor interface self-test:
+
+```bash
+cd ~/robotics/ros2_ws
+source /opt/ros/jazzy/setup.bash
+colcon build --packages-select exo_motor_msgs motor_tools
+source install/setup.bash
+colcon test --packages-select exo_motor_msgs motor_tools --event-handlers console_direct+
+ros2 interface show exo_motor_msgs/msg/JointTarget
+ros2 interface show exo_motor_msgs/msg/JointState
+ros2 interface show exo_motor_msgs/msg/MotorHealth
+```
+
+Manual `/motor/` topic smoke test:
+
+```bash
+# terminal 1
+cd ~/robotics/ros2_ws
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+ros2 run motor_tools node_motor_contract_mock
+
+# terminal 2
+cd ~/robotics/ros2_ws
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+ros2 topic pub --once /motor/tp_joint_target exo_motor_msgs/msg/JointTarget \
+  "{seq: 1, joint_id: 1, control_mode: 4, position_rad: 0.1, velocity_rad_s: 0.0, torque_nm: 0.0, kp_nm_per_rad: 1.0, kd_nm_s_per_rad: 0.1, max_torque_nm: 0.5, max_velocity_rad_s: 0.5, max_position_rad: 0.5, min_position_rad: -0.5, ttl_us: 1000000, flags: 0}"
+ros2 topic echo /motor/tp_joint_state --once
+ros2 topic echo /motor/tp_motor_health --once
+```
+
+`micro_ros_bridge` remains a transport bridge: it forwards ROS traffic and does not
+parse or own `/motor/` business semantics.
 
 ## Common Self-Tests
 

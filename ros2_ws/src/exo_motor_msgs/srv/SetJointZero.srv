@@ -1,0 +1,5 @@
+uint8 joint_id
+bool persist
+---
+bool accepted
+string message
