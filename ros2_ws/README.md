@@ -575,6 +575,14 @@ tools/firmware-size-matrix.sh current
 `firmware/f103-microros/build-size-matrix/`。这只做编译和 size 统计，
 不会烧录、不会碰 ST-LINK/SWD。表格默认按 F103RB `Flash=131072B`、
 `SRAM=20480B`、`RAM_STATIC_WARN_BYTES=18432B` 输出 `verdict/reason` 和余量。
+要把关键 profile 的静态 Flash/RAM 预算当作门槛检查：
+
+```bash
+tools/check-firmware-size-matrix-contract.sh log/firmware-size-matrix/current.csv
+```
+
+默认检查 `default_reliable_1khz` 和 `besteffort_10000hz_status40` 都存在、
+`verdict=PASS`，且 `flash_bytes<=131072`、`ram_static_bytes<=18432`。
 
 要比较 micro-ROS 任务栈候选大小的静态 RAM 收益，也不需要连接硬件：
 

@@ -31,6 +31,10 @@ assert_contains "## Executor Spin Timeout Candidates" \
   "spin candidate section"
 assert_contains "## Linker Heap/MSP Reserve Candidates" \
   "linker candidate section"
+assert_contains "## Static Size Matrix Contract" \
+  "static size matrix contract section"
+assert_contains "firmware_size_matrix_contract" \
+  "static size matrix contract output"
 assert_contains "Do not change default micro-ROS task stack" \
   "hardware HWM guardrail"
 

@@ -6,6 +6,7 @@ ELF="${1:-$ROOT/firmware/f103-microros/build/f103-microros.elf}"
 STACK_LOGDIR="$ROOT/log/firmware-stack-sweep"
 SPIN_LOGDIR="$ROOT/log/firmware-spin-timeout-sweep"
 LINKER_LOGDIR="$ROOT/log/firmware-linker-reserve-sweep"
+SIZE_MATRIX_LOGDIR="$ROOT/log/firmware-size-matrix"
 
 latest_file() {
   local dir="$1"
@@ -50,6 +51,16 @@ ram_categories() {
 stack_md="$(latest_file "$STACK_LOGDIR" '*.md')"
 spin_md="$(latest_file "$SPIN_LOGDIR" '*.md')"
 linker_md="$(latest_file "$LINKER_LOGDIR" '*.md')"
+size_matrix_csv="$(latest_file "$SIZE_MATRIX_LOGDIR" '*.csv')"
+
+size_matrix_contract() {
+  if [ -f "$size_matrix_csv" ]; then
+    "$ROOT/tools/check-firmware-size-matrix-contract.sh" "$size_matrix_csv" 2>&1 ||
+      true
+  else
+    echo "missing_size_matrix_csv"
+  fi
+}
 
 cat <<EOF
 # Firmware Memory Optimization Snapshot
@@ -58,6 +69,7 @@ cat <<EOF
 - stack sweep: $(relpath "$stack_md")
 - spin-timeout sweep: $(relpath "$spin_md")
 - linker reserve sweep: $(relpath "$linker_md")
+- size matrix CSV: $(relpath "$size_matrix_csv")
 
 ## Current RAM Categories
 
@@ -81,6 +93,12 @@ $(first_table_rows "$spin_md" 8)
 
 \`\`\`markdown
 $(first_table_rows "$linker_md" 8)
+\`\`\`
+
+## Static Size Matrix Contract
+
+\`\`\`text
+$(size_matrix_contract)
 \`\`\`
 
 ## Guardrails
