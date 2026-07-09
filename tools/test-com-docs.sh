@@ -46,6 +46,8 @@ assert_contains "$README" "missing_required_stage" \
   "staircase contract fallback failure is documented"
 assert_contains "$README" "tools/recommend-firmware-optimizations.sh" \
   "firmware optimization recommendations command is documented"
+assert_contains "$README" "tools/firmware-combined-memory-sweep.sh" \
+  "combined firmware memory sweep command is documented"
 assert_contains "$README" "default_policy=keep_defaults_until_runtime_evidence" \
   "firmware optimization default policy is documented"
 assert_contains "$README" "tools/recommend-communication-optimizations.py" \

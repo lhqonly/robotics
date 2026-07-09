@@ -687,6 +687,21 @@ tools/firmware-linker-reserve-sweep.sh current_reserve
 里可把静态 RAM 从约 13.9KB 降到约 12.9KB，但它只说明链接期预算可过；
 是否安全必须等 SWD 恢复后确认 MSP/ISR 栈余量，以及 newlib malloc 失败路径。
 
+要看 micro-ROS 栈缩小和 linker heap/MSP reserve 缩小同时采用时的真实静态
+RAM，不要只把两个单项 saved_bytes 相加，可以离线跑 combined sweep：
+
+```bash
+tools/firmware-combined-memory-sweep.sh current_combined
+```
+
+默认会在 10kHz/best-effort/status_every_40 profile 下比较：
+`baseline=768words+512B heap+1024B MSP`、`stack640`、
+`linker_heap0_stack512` 和 `stack640_heap0_stack512`。输出在
+`log/firmware-combined-memory-sweep/current_combined.md` 和 `.csv`。
+这里的 `PASS_STATIC` 仍只代表编译和静态预算通过；combined 候选必须等 SWD
+恢复后同时验证 micro-ROS task HWM、MSP/ISR 栈余量、heap/malloc 失败路径和
+HardFault 行为。
+
 固件 DWT timestamp 的双缓冲快照算法可以在 PC 上跑模型测试，不需要连接硬件：
 
 ```bash

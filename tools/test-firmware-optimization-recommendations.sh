@@ -28,6 +28,8 @@ assert_contains "$actual_out" "CANDIDATE microros_stack_min_static" \
   "stack recommendation"
 assert_contains "$actual_out" "CANDIDATE linker_reserve_min_static" \
   "linker recommendation"
+assert_contains "$actual_out" "CANDIDATE combined_stack_linker_min_static" \
+  "combined stack/linker recommendation"
 assert_contains "$actual_out" "CANDIDATE rosidl_type_metadata" \
   "ROSIDL metadata recommendation"
 assert_contains "$actual_out" "SWD_STATUS=ok" \
@@ -54,12 +56,18 @@ case,verdict,ram_static_bytes
 default,PASS_STATIC,14000
 heap0_stack512,PASS_STATIC,13000
 EOF
+cat >"$TMPDIR/combined.csv" <<'EOF'
+case,verdict,ram_static_bytes
+baseline,PASS_STATIC,14000
+stack640_heap0_stack512,PASS_STATIC,12488
+EOF
 
 synthetic_out="$TMPDIR/synthetic.md"
 SIZE_MATRIX_CSV="$TMPDIR/size.csv" \
   STACK_CSV="$TMPDIR/stack.csv" \
   SPIN_CSV="$TMPDIR/spin.csv" \
   LINKER_CSV="$TMPDIR/linker.csv" \
+  COMBINED_CSV="$TMPDIR/combined.csv" \
   "$ROOT/tools/recommend-firmware-optimizations.sh" >"$synthetic_out"
 
 assert_contains "$synthetic_out" \
@@ -71,6 +79,9 @@ assert_contains "$synthetic_out" \
 assert_contains "$synthetic_out" \
   "CANDIDATE linker_reserve_min_static case=heap0_stack512 saved_bytes=1000" \
   "synthetic linker reserve saving"
+assert_contains "$synthetic_out" \
+  "CANDIDATE combined_stack_linker_min_static case=stack640_heap0_stack512 saved_bytes=1512" \
+  "synthetic combined stack/linker saving"
 assert_contains "$synthetic_out" \
   "CANDIDATE rosidl_type_metadata bytes=3000" \
   "synthetic ROSIDL metadata bytes"

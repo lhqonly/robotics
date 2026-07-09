@@ -6,6 +6,7 @@ ELF="${1:-$ROOT/firmware/f103-microros/build/f103-microros.elf}"
 STACK_LOGDIR="$ROOT/log/firmware-stack-sweep"
 SPIN_LOGDIR="$ROOT/log/firmware-spin-timeout-sweep"
 LINKER_LOGDIR="$ROOT/log/firmware-linker-reserve-sweep"
+COMBINED_LOGDIR="$ROOT/log/firmware-combined-memory-sweep"
 SIZE_MATRIX_LOGDIR="$ROOT/log/firmware-size-matrix"
 
 latest_file() {
@@ -51,6 +52,7 @@ ram_categories() {
 stack_md="$(latest_file "$STACK_LOGDIR" '*.md')"
 spin_md="$(latest_file "$SPIN_LOGDIR" '*.md')"
 linker_md="$(latest_file "$LINKER_LOGDIR" '*.md')"
+combined_md="$(latest_file "$COMBINED_LOGDIR" '*.md')"
 size_matrix_csv="$(latest_file "$SIZE_MATRIX_LOGDIR" '*.csv')"
 
 size_matrix_contract() {
@@ -81,6 +83,7 @@ cat <<EOF
 - stack sweep: $(relpath "$stack_md")
 - spin-timeout sweep: $(relpath "$spin_md")
 - linker reserve sweep: $(relpath "$linker_md")
+- combined memory sweep: $(relpath "$combined_md")
 - size matrix CSV: $(relpath "$size_matrix_csv")
 
 ## Current RAM Categories
@@ -107,6 +110,12 @@ $(first_table_rows "$spin_md" 8)
 $(first_table_rows "$linker_md" 8)
 \`\`\`
 
+## Combined Stack/Linker Candidates
+
+\`\`\`markdown
+$(first_table_rows "$combined_md" 8)
+\`\`\`
+
 ## Static Size Matrix Contract
 
 \`\`\`text
@@ -123,5 +132,6 @@ $(optimization_recommendations)
 
 - Do not change default micro-ROS task stack until high-rate HWM is measured on hardware.
 - Do not shrink linker heap/MSP reserve until SWD is back and malloc/MSP/HardFault behavior is verified.
+- Treat combined stack/linker savings as a single runtime gate; both HWM and MSP/heap evidence must pass together.
 - Treat ROSIDL type metadata reduction as a libmicroros rebuild matrix, not a local firmware-only flag change.
 EOF

@@ -11,6 +11,7 @@ SIZE_LOGDIR="$ROOT/log/firmware-size-matrix"
 STACK_LOGDIR="$ROOT/log/firmware-stack-sweep"
 SPIN_TIMEOUT_LOGDIR="$ROOT/log/firmware-spin-timeout-sweep"
 LINKER_RESERVE_LOGDIR="$ROOT/log/firmware-linker-reserve-sweep"
+COMBINED_MEMORY_LOGDIR="$ROOT/log/firmware-combined-memory-sweep"
 WATCH_LOGDIR="$ROOT/log/overnight-com-watch"
 SCHED_LOGDIR="$ROOT/log/pc-scheduler-sweep"
 STAIRCASE_LOGDIR="$ROOT/log/com-staircase"
@@ -433,6 +434,7 @@ latest_size_md="$(latest_file "$SIZE_LOGDIR" '*.md')"
 latest_stack_md="$(latest_file "$STACK_LOGDIR" '*.md')"
 latest_spin_timeout_md="$(latest_file "$SPIN_TIMEOUT_LOGDIR" '*.md')"
 latest_linker_reserve_md="$(latest_file "$LINKER_RESERVE_LOGDIR" '*.md')"
+latest_combined_memory_md="$(latest_file "$COMBINED_MEMORY_LOGDIR" '*.md')"
 latest_watch_summary="$(latest_file "$WATCH_LOGDIR" '*.summary.md')"
 latest_watch_log=""
 if [ -n "$latest_watch_summary" ]; then
@@ -688,6 +690,7 @@ serial_users="$(serial_lsof)"
   echo "- stack sweep：$(relpath "$latest_stack_md")"
   echo "- spin timeout sweep：$(relpath "$latest_spin_timeout_md")"
   echo "- linker reserve sweep：$(relpath "$latest_linker_reserve_md")"
+  echo "- combined memory sweep：$(relpath "$latest_combined_memory_md")"
   echo "- latest watch summary：$(relpath "$latest_watch_summary")"
   echo "- long overnight summary：$(relpath "$baseline_watch_summary")"
   echo "- PC scheduler sweep：$(relpath "$latest_scheduler_metrics")"
@@ -908,6 +911,13 @@ serial_users="$(serial_lsof)"
   first_table_rows "$latest_linker_reserve_md" 8
   echo '```'
   echo
+  echo "## combined stack/linker 内存候选"
+  echo "来源：$(relpath "$latest_combined_memory_md")"
+  echo
+  echo '```markdown'
+  first_table_rows "$latest_combined_memory_md" 8
+  echo '```'
+  echo
   echo "## 未解决项"
   echo
   echo "- SWD 仍需恢复：当前无法 flash 新 profile，也无法读取高频运行期栈水位。"
@@ -915,6 +925,7 @@ serial_users="$(serial_lsof)"
   echo "- UART read polling 候选 \`EXO_UART_READ_POLL_YIELDS=4\` 仅完成编译/size 验证，是否改善 RTT/gap 长尾待上板实测。"
   echo "- executor spin timeout 候选 \`EXO_EXECUTOR_SPIN_TIMEOUT_US=500/200/100\` 仅完成编译/size 验证，是否改善 RTT/gap 长尾待上板实测。"
   echo "- linker heap/MSP reserve 候选 \`EXO_NEWLIB_HEAP_BYTES=0\`、\`EXO_MSP_STACK_BYTES=512/768\` 仅完成静态验证；默认仍保持 512B/1024B，必须等 SWD 恢复后确认 MSP/ISR 栈和 newlib malloc 失败路径。"
+  echo "- combined stack/linker 候选不能只把单项 saved_bytes 相加后直接采用；必须跑 combined sweep，并在同一个高频 firmware profile 下同时验证 HWM、MSP/heap 和 HardFault 行为。"
   echo "- 当前 ELF 中 \`rosidl_type_metadata\` 约 2.8KB RAM，是新的内存优化重点；但 \`ROSIDL_TYPESUPPORT_SINGLE_TYPESUPPORT\` 曾是 T5 HardFault/agent 兼容修复的一部分，需用独立 libmicroros rebuild 矩阵验证后再改默认。"
   echo "- DWT snapshot 算法已有 host-side 模型测试 \`tools/test-dwt-snapshot-model.sh\`，但真实 stamp 单调性仍需 SWD 恢复后做 >60s 静默恢复对抗。"
   echo "- idle stack 96 words、micro-ROS stack 704/640 words 目前是静态候选，必须上板用 \`tools/measure-stack-hwm.sh\` 复测后再设为默认。"

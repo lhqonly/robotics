@@ -31,6 +31,8 @@ assert_contains "## Executor Spin Timeout Candidates" \
   "spin candidate section"
 assert_contains "## Linker Heap/MSP Reserve Candidates" \
   "linker candidate section"
+assert_contains "## Combined Stack/Linker Candidates" \
+  "combined stack/linker candidate section"
 assert_contains "## Static Size Matrix Contract" \
   "static size matrix contract section"
 assert_contains "firmware_size_matrix_contract" \
@@ -41,7 +43,11 @@ assert_contains "RECOMMENDATION default_policy=keep_defaults_until_runtime_evide
   "default recommendation policy"
 assert_contains "CANDIDATE linker_reserve_min_static" \
   "linker reserve recommendation"
+assert_contains "CANDIDATE combined_stack_linker_min_static" \
+  "combined stack/linker recommendation"
 assert_contains "Do not change default micro-ROS task stack" \
   "hardware HWM guardrail"
+assert_contains "combined stack/linker savings" \
+  "combined runtime guardrail"
 
 echo "PASS: firmware memory optimization plan tests"

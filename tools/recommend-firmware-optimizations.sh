@@ -7,10 +7,12 @@ SIZE_MATRIX_LOGDIR="$ROOT/log/firmware-size-matrix"
 STACK_LOGDIR="$ROOT/log/firmware-stack-sweep"
 SPIN_LOGDIR="$ROOT/log/firmware-spin-timeout-sweep"
 LINKER_LOGDIR="$ROOT/log/firmware-linker-reserve-sweep"
+COMBINED_LOGDIR="$ROOT/log/firmware-combined-memory-sweep"
 SIZE_MATRIX_CSV="${SIZE_MATRIX_CSV:-}"
 STACK_CSV="${STACK_CSV:-}"
 SPIN_CSV="${SPIN_CSV:-}"
 LINKER_CSV="${LINKER_CSV:-}"
+COMBINED_CSV="${COMBINED_CSV:-}"
 
 latest_file() {
   local dir="$1"
@@ -33,6 +35,7 @@ SIZE_MATRIX_CSV="${SIZE_MATRIX_CSV:-$(latest_file "$SIZE_MATRIX_LOGDIR" '*.csv')
 STACK_CSV="${STACK_CSV:-$(latest_file "$STACK_LOGDIR" '*.csv')}"
 SPIN_CSV="${SPIN_CSV:-$(latest_file "$SPIN_LOGDIR" '*.csv')}"
 LINKER_CSV="${LINKER_CSV:-$(latest_file "$LINKER_LOGDIR" '*.csv')}"
+COMBINED_CSV="${COMBINED_CSV:-$(latest_file "$COMBINED_LOGDIR" '*.csv')}"
 
 csv_value() {
   local file="$1"
@@ -158,6 +161,10 @@ default_linker_ram="$(csv_value "$LINKER_CSV" case default ram_static_bytes)"
 best_linker_row="$(csv_min_row "$LINKER_CSV" ram_static_bytes verdict PASS_STATIC)"
 best_linker_case="$(row_field "$best_linker_row" case)"
 best_linker_ram="$(row_field "$best_linker_row" ram_static_bytes)"
+baseline_combined_ram="$(csv_value "$COMBINED_CSV" case baseline ram_static_bytes)"
+best_combined_row="$(csv_min_row "$COMBINED_CSV" ram_static_bytes verdict PASS_STATIC)"
+best_combined_case="$(row_field "$best_combined_row" case)"
+best_combined_ram="$(row_field "$best_combined_row" ram_static_bytes)"
 spin_values="$(csv_unique_values "$SPIN_CSV" executor_spin_timeout_us)"
 
 default_ram_n="$(num_or_zero "$default_ram")"
@@ -166,9 +173,12 @@ default_stack_ram_n="$(num_or_zero "$default_stack_ram")"
 best_stack_ram_n="$(num_or_zero "$best_stack_ram")"
 default_linker_ram_n="$(num_or_zero "$default_linker_ram")"
 best_linker_ram_n="$(num_or_zero "$best_linker_ram")"
+baseline_combined_ram_n="$(num_or_zero "$baseline_combined_ram")"
+best_combined_ram_n="$(num_or_zero "$best_combined_ram")"
 tim2_static_saving=$((default_ram_n - best_10k_ram_n))
 stack_static_saving=$((default_stack_ram_n - best_stack_ram_n))
 linker_static_saving=$((default_linker_ram_n - best_linker_ram_n))
+combined_static_saving=$((baseline_combined_ram_n - best_combined_ram_n))
 
 cat <<EOF
 # Firmware Optimization Recommendations
@@ -177,6 +187,7 @@ cat <<EOF
 - stack sweep: $(relpath "$STACK_CSV")
 - spin-timeout sweep: $(relpath "$SPIN_CSV")
 - linker reserve sweep: $(relpath "$LINKER_CSV")
+- combined memory sweep: $(relpath "$COMBINED_CSV")
 
 ## Current Safe Recommendation
 
@@ -193,6 +204,8 @@ CANDIDATE tim2_high_loop_static_saving saved_bytes=$tim2_static_saving default_p
 CANDIDATE microros_stack_min_static words=${best_stack_words:-NA} saved_bytes=$stack_static_saving ram_static_bytes=${best_stack_ram:-NA} adoption=hold gate=measure_stack_hwm_after_high_rate margin_rule="min_free_words>=128"
 
 CANDIDATE linker_reserve_min_static case=${best_linker_case:-NA} saved_bytes=$linker_static_saving ram_static_bytes=${best_linker_ram:-NA} adoption=hold gate=verify_msp_heap_malloc_hardfault
+
+CANDIDATE combined_stack_linker_min_static case=${best_combined_case:-NA} saved_bytes=$combined_static_saving baseline_ram=${baseline_combined_ram:-NA} ram_static_bytes=${best_combined_ram:-NA} adoption=hold gate=verify_stack_hwm_msp_heap_together
 
 CANDIDATE executor_spin_timeout values="${spin_values:-NA}" saved_bytes=0 adoption=runtime_latency_only gate=compare_staircase_gap_and_cpu
 

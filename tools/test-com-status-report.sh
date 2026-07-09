@@ -53,6 +53,10 @@ assert_contains "$report" "## executor spin timeout 候选" \
   "executor spin-timeout candidates section"
 assert_contains "$report" "## linker heap/MSP 预留候选" \
   "linker heap/MSP reserve candidates section"
+assert_contains "$report" "## combined stack/linker 内存候选" \
+  "combined stack/linker memory candidates section"
+assert_contains "$report" "combined_stack_linker_min_static" \
+  "combined stack/linker recommendation row"
 assert_contains "$report" "meta_stream_history=2" \
   "micro-ROS stream history"
 assert_contains "$report" "generated_stream_history=in:2/out:2" \

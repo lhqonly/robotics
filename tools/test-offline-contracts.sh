@@ -22,6 +22,7 @@ tests=(
   "tools/test-com-status-report.sh"
   "tools/test-firmware-size-report.sh"
   "tools/test-firmware-size-matrix-contract.sh"
+  "tools/test-firmware-combined-memory-sweep.sh"
   "tools/test-firmware-optimization-recommendations.sh"
   "tools/test-firmware-memory-plan.sh"
 )
