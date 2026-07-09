@@ -844,6 +844,7 @@ serial_users="$(serial_lsof)"
   echo "来源：$(relpath "$latest_staircase_metrics")"
   echo
   echo "contract：$staircase_contract"
+  echo "默认验收门槛：1/2/5/10kHz × 921600/2000000 latest-target；lost=0，duplicate=0，qos_incompatibility=0，pc_cmd_catchup_events=0，pc_cmd_catchup_extra=0。"
   echo
   markdown_table_from_prefix "$latest_staircase_metrics" '| Stage |'
   echo

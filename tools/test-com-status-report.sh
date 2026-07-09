@@ -91,6 +91,10 @@ assert_contains "$report" "## staircase 阶梯汇总" \
   "staircase section"
 assert_contains "$report" "contract：FAIL com_staircase_contract" \
   "staircase acceptance contract status"
+assert_contains "$report" "pc_cmd_catchup_events=0" \
+  "staircase catch-up event acceptance gate"
+assert_contains "$report" "pc_cmd_catchup_extra=0" \
+  "staircase catch-up extra acceptance gate"
 assert_contains "$report" "missing_required_stage" \
   "staircase contract missing stage reason"
 if find "$ROOT/log/com-perf" -maxdepth 1 -type f -name '*.wire.log' | grep -q .; then
