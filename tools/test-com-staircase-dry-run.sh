@@ -41,6 +41,17 @@ assert_contains "$default_summary" \
   "default latest diagnostic periods"
 assert_contains "$default_summary" "pc_launch_prefix=none" \
   "default staircase records absent PC launch prefix"
+assert_contains "$default_summary" "post_stage_settle_seconds=3" \
+  "default staircase records post-stage settle"
+assert_contains "$default_summary" \
+  "isolate_ros_domain_per_stage=0 ros_domain_base=0" \
+  "default staircase records ROS domain reuse"
+assert_contains "$default_summary" \
+  "START baseline_1khz_20hz_reliable stage_ros_domain_id=0" \
+  "default baseline stage ROS domain"
+assert_contains "$default_summary" \
+  "START latest_1000hz_921600baud_irqp4_poll0_spin1000us_200hz_be_n40 stage_ros_domain_id=0" \
+  "default latest stage reuses ROS domain"
 assert_contains "$default_summary" \
   "START latest_10000hz_921600baud_irqp4_poll0_spin1000us_200hz_be_n40" \
   "default 10k latest stage"
@@ -64,5 +75,45 @@ assert_count "$matrix_summary" '^START latest_' 64 \
   "expanded latest stage count"
 assert_contains "$matrix_summary" "DONE failures=0" \
   "dry-run staircase completes cleanly"
+
+LOGDIR="$TMPDIR/isolated" DRY_RUN=1 STAIRCASE_ISOLATE_ROS_DOMAIN_PER_STAGE=1 \
+  "$ROOT/tools/run-com-staircase.sh" dry_isolated >/dev/null
+isolated_summary="$TMPDIR/isolated/dry_isolated.summary.log"
+assert_contains "$isolated_summary" \
+  "isolate_ros_domain_per_stage=1 ros_domain_base=0" \
+  "explicit ROS domain isolation is recorded"
+assert_contains "$isolated_summary" \
+  "START baseline_1khz_20hz_reliable stage_ros_domain_id=0" \
+  "isolated baseline starts at base ROS domain"
+assert_contains "$isolated_summary" \
+  "START latest_1000hz_921600baud_irqp4_poll0_spin1000us_200hz_be_n40 stage_ros_domain_id=1" \
+  "isolated latest stage increments ROS domain"
+
+LOGDIR="$TMPDIR/fallback" DRY_RUN=1 STAIRCASE_FORCE_STLINK_FAIL=1 \
+  "$ROOT/tools/run-com-staircase.sh" dry_fallback >/dev/null
+fallback_summary="$TMPDIR/fallback/dry_fallback.summary.log"
+assert_contains "$fallback_summary" \
+  "BLOCKED forced ST-LINK failure via STAIRCASE_FORCE_STLINK_FAIL=1" \
+  "forced ST-LINK fallback marker"
+assert_contains "$fallback_summary" "SKIP flash staircase stages" \
+  "fallback skips flash stages"
+assert_contains "$fallback_summary" "START no_flash_smoke" \
+  "fallback reliable smoke stage"
+assert_contains "$fallback_summary" "START no_flash_latest_target_qos_probe" \
+  "fallback latest-target QoS probe stage"
+assert_contains "$fallback_summary" "REQUIRE_CORE_METRICS=0 REQUIRE_HEALTH_PASS=0" \
+  "fallback QoS probe is evidence-only"
+assert_contains "$fallback_summary" "QOS_RELIABILITY=best_effort" \
+  "fallback QoS probe uses best-effort preset"
+assert_contains "$fallback_summary" "post_stage_settle_seconds=3" \
+  "fallback records post-stage settle"
+assert_contains "$fallback_summary" \
+  "START no_flash_smoke stage_ros_domain_id=0" \
+  "fallback smoke ROS domain"
+assert_contains "$fallback_summary" \
+  "START no_flash_latest_target_qos_probe stage_ros_domain_id=0" \
+  "fallback QoS probe reuses ROS domain by default"
+assert_count "$fallback_summary" '^START latest_' 0 \
+  "fallback does not run flash latest stages"
 
 echo "PASS: communication staircase dry-run tests"

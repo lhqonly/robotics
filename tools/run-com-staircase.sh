@@ -17,6 +17,8 @@ DRY_RUN="${DRY_RUN:-0}"
 CONTINUE_ON_ERROR="${CONTINUE_ON_ERROR:-1}"
 FAIL_ON_STAGE_ERROR="${FAIL_ON_STAGE_ERROR:-0}"
 RUN_NO_FLASH_SMOKE_ON_STLINK_FAIL="${RUN_NO_FLASH_SMOKE_ON_STLINK_FAIL:-1}"
+RUN_NO_FLASH_LATEST_QOS_PROBE_ON_STLINK_FAIL="${RUN_NO_FLASH_LATEST_QOS_PROBE_ON_STLINK_FAIL:-1}"
+STAIRCASE_FORCE_STLINK_FAIL="${STAIRCASE_FORCE_STLINK_FAIL:-0}"
 
 BUILD_FIRMWARE="${BUILD_FIRMWARE:-1}"
 FLASH_FIRMWARE="${FLASH_FIRMWARE:-1}"
@@ -35,6 +37,9 @@ STAIRCASE_BAUDS="${STAIRCASE_BAUDS:-921600}"
 STAIRCASE_CONTROL_TIMER_IRQ_PRIORITIES="${STAIRCASE_CONTROL_TIMER_IRQ_PRIORITIES:-${STAIRCASE_CONTROL_TIMER_IRQ_PRIORITY:-4}}"
 STAIRCASE_UART_READ_POLL_YIELDS="${STAIRCASE_UART_READ_POLL_YIELDS:-0}"
 STAIRCASE_EXECUTOR_SPIN_TIMEOUT_US="${STAIRCASE_EXECUTOR_SPIN_TIMEOUT_US:-1000}"
+POST_STAGE_SETTLE_SECONDS="${POST_STAGE_SETTLE_SECONDS:-3}"
+STAIRCASE_ISOLATE_ROS_DOMAIN_PER_STAGE="${STAIRCASE_ISOLATE_ROS_DOMAIN_PER_STAGE:-0}"
+STAIRCASE_ROS_DOMAIN_BASE="${STAIRCASE_ROS_DOMAIN_BASE:-${ROS_DOMAIN_ID:-0}}"
 
 SMOKE_RUN_SECONDS="${SMOKE_RUN_SECONDS:-18}"
 SMOKE_WARMUP_SECONDS="${SMOKE_WARMUP_SECONDS:-5}"
@@ -42,6 +47,7 @@ SMOKE_HZ_SECONDS="${SMOKE_HZ_SECONDS:-10}"
 
 mkdir -p "$LOGDIR"
 : >"$SUMMARY"
+stage_index=0
 
 record() {
   printf '%s\n' "$*" | tee -a "$SUMMARY"
@@ -141,6 +147,10 @@ record_stage_metrics() {
 
 check_stlink_ready() {
   local out
+  if [ "$STAIRCASE_FORCE_STLINK_FAIL" = "1" ]; then
+    record "BLOCKED forced ST-LINK failure via STAIRCASE_FORCE_STLINK_FAIL=1"
+    return 1
+  fi
   if [ "$DRY_RUN" = "1" ]; then
     return 0
   fi
@@ -169,10 +179,17 @@ run_stage() {
   shift
   local stage_log="$LOGDIR/$TAG_PREFIX.$tag.console.log"
   local status=0
+  local stage_ros_domain_id="$STAIRCASE_ROS_DOMAIN_BASE"
 
-  record "START $tag"
+  if [ "$STAIRCASE_ISOLATE_ROS_DOMAIN_PER_STAGE" = "1" ]; then
+    stage_ros_domain_id=$((STAIRCASE_ROS_DOMAIN_BASE + stage_index))
+  fi
+  stage_index=$((stage_index + 1))
+
+  record "START $tag stage_ros_domain_id=$stage_ros_domain_id"
   if [ "$DRY_RUN" = "1" ]; then
-    printf '[dry-run] env LOGDIR=%q' "$LOGDIR" | tee -a "$SUMMARY"
+    printf '[dry-run] env LOGDIR=%q ROS_DOMAIN_ID=%q' \
+      "$LOGDIR" "$stage_ros_domain_id" | tee -a "$SUMMARY"
     printf ' %q' "$@" | tee -a "$SUMMARY"
     printf ' %q %q\n' "$ROOT/tools/run-com-perf.sh" "$tag" | tee -a "$SUMMARY"
     record "OK $tag dry_run=1"
@@ -180,7 +197,8 @@ run_stage() {
   fi
 
   set +e
-  env LOGDIR="$LOGDIR" "$@" "$ROOT/tools/run-com-perf.sh" "$tag" \
+  env LOGDIR="$LOGDIR" ROS_DOMAIN_ID="$stage_ros_domain_id" \
+    "$@" "$ROOT/tools/run-com-perf.sh" "$tag" \
     2>&1 | tee "$stage_log"
   status=${PIPESTATUS[0]}
   set -e
@@ -193,6 +211,10 @@ run_stage() {
     if [ "$CONTINUE_ON_ERROR" != "1" ]; then
       exit "$status"
     fi
+  fi
+  if [ "$POST_STAGE_SETTLE_SECONDS" -gt 0 ] 2>/dev/null; then
+    record "SETTLE $tag seconds=$POST_STAGE_SETTLE_SECONDS"
+    sleep "$POST_STAGE_SETTLE_SECONDS"
   fi
   return "$status"
 }
@@ -255,8 +277,27 @@ run_no_flash_smoke() {
     HZ_SECONDS="$SMOKE_HZ_SECONDS"
 }
 
+run_no_flash_latest_qos_probe() {
+  run_stage "no_flash_latest_target_qos_probe" \
+    BUILD_FIRMWARE=0 \
+    FLASH_FIRMWARE=0 \
+    REQUIRE_CORE_METRICS=0 \
+    REQUIRE_HEALTH_PASS=0 \
+    CMD_RATE_HZ=200 \
+    CMD_CATCHUP_MAX=1 \
+    QOS_RELIABILITY=best_effort \
+    QOS_DEPTH=1 \
+    TRACKING_MODE=sampled \
+    STATUS_EVERY_N="$LATEST_STATUS_EVERY_N" \
+    SUMMARY_PERIOD_S=5.0 \
+    LINK_HEALTH_PERIOD_S=5.0 \
+    RUN_SECONDS="$SMOKE_RUN_SECONDS" \
+    WARMUP_SECONDS="$SMOKE_WARMUP_SECONDS" \
+    HZ_SECONDS="$SMOKE_HZ_SECONDS"
+}
+
 record "staircase tag_prefix=$TAG_PREFIX logdir=$LOGDIR"
-record "mode build_firmware=$BUILD_FIRMWARE flash_firmware=$FLASH_FIRMWARE dry_run=$DRY_RUN staircase_bauds=$STAIRCASE_BAUDS staircase_control_timer_irq_priorities=$STAIRCASE_CONTROL_TIMER_IRQ_PRIORITIES staircase_uart_read_poll_yields=$STAIRCASE_UART_READ_POLL_YIELDS staircase_executor_spin_timeout_us=$STAIRCASE_EXECUTOR_SPIN_TIMEOUT_US pc_launch_prefix=${PC_LAUNCH_PREFIX:-none}"
+record "mode build_firmware=$BUILD_FIRMWARE flash_firmware=$FLASH_FIRMWARE dry_run=$DRY_RUN force_stlink_fail=$STAIRCASE_FORCE_STLINK_FAIL fallback_smoke=$RUN_NO_FLASH_SMOKE_ON_STLINK_FAIL fallback_latest_qos_probe=$RUN_NO_FLASH_LATEST_QOS_PROBE_ON_STLINK_FAIL post_stage_settle_seconds=$POST_STAGE_SETTLE_SECONDS isolate_ros_domain_per_stage=$STAIRCASE_ISOLATE_ROS_DOMAIN_PER_STAGE ros_domain_base=$STAIRCASE_ROS_DOMAIN_BASE staircase_bauds=$STAIRCASE_BAUDS staircase_control_timer_irq_priorities=$STAIRCASE_CONTROL_TIMER_IRQ_PRIORITIES staircase_uart_read_poll_yields=$STAIRCASE_UART_READ_POLL_YIELDS staircase_executor_spin_timeout_us=$STAIRCASE_EXECUTOR_SPIN_TIMEOUT_US pc_launch_prefix=${PC_LAUNCH_PREFIX:-none}"
 
 failures=0
 if check_stlink_ready; then
@@ -277,6 +318,9 @@ else
   record "SKIP flash staircase stages because ST-LINK target access is not ready"
   if [ "$RUN_NO_FLASH_SMOKE_ON_STLINK_FAIL" = "1" ]; then
     run_no_flash_smoke || failures=$((failures + 1))
+  fi
+  if [ "$RUN_NO_FLASH_LATEST_QOS_PROBE_ON_STLINK_FAIL" = "1" ]; then
+    run_no_flash_latest_qos_probe || failures=$((failures + 1))
   fi
 fi
 
