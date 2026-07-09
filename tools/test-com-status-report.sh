@@ -177,12 +177,16 @@ assert_contains "$report" "PASS_STATIC | thin_margin | low_telemetry_candidate" 
   "M2 921600 thin-margin marker"
 assert_contains "$report" "state20_health200_2000000" \
   "M2 2Mbps first smoke sweep row"
-assert_contains "$report" "state20_health200_2000000\` 是 M2 真机首轮 first_smoke" \
+assert_contains "$report" "state20_health200_2000000\` 推荐作为 M2 真机首轮 first_smoke profile" \
   "M2 telemetry sweep first smoke interpretation"
 assert_contains "$report" "state500_health1000_921600\` 只是 921600 low_telemetry_candidate" \
   "M2 telemetry sweep thin-margin interpretation"
 assert_contains "$report" "PASS_STATIC\` 只代表 CDR/XRCE 静态 UART 预算" \
   "M2 telemetry sweep static-only warning"
+assert_contains "$report" "不覆盖 Agent 建链、ROS graph、target→state 闭环" \
+  "M2 telemetry sweep explicitly excludes runtime smoke evidence"
+assert_contains "$report" "尚未完成真机 micro-ROS Agent 联通" \
+  "M2 motor unresolved runtime smoke remains open"
 assert_contains "$report" "200Hz target + 20ms state + 200ms health（50Hz/5Hz）" \
   "M2 motor unresolved communication budget"
 

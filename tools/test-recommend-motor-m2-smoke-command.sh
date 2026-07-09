@@ -51,6 +51,8 @@ assert_contains "$out" "STRICT=1 tools/diagnose-swd.sh" \
   "SWD gate"
 assert_contains "$out" "tools/run-bridge.sh '/dev/ttyUSB0' '2000000'" \
   "default bridge command"
+assert_contains "$out" 'tee "$evidence_dir/agent.log"' \
+  "agent log evidence capture"
 assert_contains "$out" "evidence dir: log/motor-m2-smoke/" \
   "default evidence directory"
 assert_contains "$out" "tools/check-motor-m2-smoke-evidence.py --template" \
@@ -109,6 +111,10 @@ assert_contains "$out" "--min-enabled-soak-target-hz 180.000000 --max-enabled-so
   "enabled soak checker rate band"
 assert_contains "$out" "tools/measure-stack-hwm.sh 'firmware/f103-microros/build-motor/f103-microros.elf'" \
   "motor stack HWM command"
+assert_contains "$out" "newlib_heap\` MSP/heap margin" \
+  "newlib heap MSP margin evidence boundary"
+assert_contains "$out" "no reconnect/session-loss/HardFault" \
+  "agent log reconnect boundary"
 assert_contains "$out" "Passing \`/com\` 10kHz/200Hz validation is not a substitute" \
   "surrogate evidence warning"
 assert_contains "$out" "CHECK non_empty_frame_id_keeps_last_target_seq_at_previous_accepted_seq" \
@@ -150,6 +156,8 @@ assert_contains "$commands" "timeout 16 ros2 topic hz /motor/tp_motor_health" \
   "custom motor health hz timeout"
 assert_contains "$commands" "tools/run-bridge.sh '/dev/ttyACM0' '921600'" \
   "custom serial in commands format"
+assert_contains "$commands" 'tee "$evidence_dir/agent.log"' \
+  "agent log evidence capture in commands format"
 assert_contains "$commands" "tools/pub-motor-m2-enabled-target-soak.py --hz 200" \
   "enabled soak publisher in commands format"
 assert_contains "$commands" "cmake --build 'firmware/f103-microros/build-motor-921k'" \
@@ -177,6 +185,8 @@ assert_contains "$checklist" "CHECK enabled_200hz_target_soak_received_and_appli
   "enabled soak growth checklist"
 assert_contains "$checklist" "CHECK com_status_hz_during_enabled_soak_stays_in_range" \
   "enabled soak com coexistence checklist"
+assert_contains "$checklist" "CHECK agent_log_has_no_session_loss_disconnect_or_hardfault" \
+  "agent log session loss checklist"
 
 set +e
 bad_period_out="$(M2_MOTOR_STATE_PERIOD_MS=0 "$ROOT/tools/recommend-motor-m2-smoke-command.sh" 2>&1 >/dev/null)"

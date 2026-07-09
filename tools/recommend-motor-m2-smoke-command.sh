@@ -140,12 +140,12 @@ cmake -S firmware/f103-microros -B $(shell_quote "$M2_MOTOR_BUILD_DIR") \\
 cmake --build $(shell_quote "$M2_MOTOR_BUILD_DIR")
 tools/firmware-size-report.sh $(shell_quote "$elf")
 st-flash --connect-under-reset write $(shell_quote "$bin") 0x08000000
-MICROROS_AGENT_VERBOSITY=6 tools/run-bridge.sh $(shell_quote "$M2_MOTOR_SERIAL") $(shell_quote "$M2_MOTOR_BAUD")
+evidence_dir=$(shell_quote "$M2_MOTOR_EVIDENCE_DIR")
+mkdir -p "\$evidence_dir"
+MICROROS_AGENT_VERBOSITY=6 tools/run-bridge.sh $(shell_quote "$M2_MOTOR_SERIAL") $(shell_quote "$M2_MOTOR_BAUD") 2>&1 | tee "\$evidence_dir/agent.log"
 
 source /opt/ros/jazzy/setup.bash
 source ros2_ws/install/setup.bash
-evidence_dir=$(shell_quote "$M2_MOTOR_EVIDENCE_DIR")
-mkdir -p "\$evidence_dir"
 tools/check-motor-m2-smoke-evidence.py --template >"\$evidence_dir/evidence.env"
 ros2 topic list | tee "\$evidence_dir/topics.txt" | grep -E '^/(com|motor)/'
 ros2 topic info -v /motor/tp_joint_target | tee "\$evidence_dir/info.motor_target.txt"
@@ -224,6 +224,7 @@ CHECK enabled_200hz_target_soak_received_and_applied_grow
 CHECK enabled_soak_last_target_seq_tracks_latest_seq
 CHECK com_status_hz_during_enabled_soak_stays_in_range
 CHECK stack_hwm_msp_heap_margin_recorded_before_default_memory_reduction
+CHECK agent_log_has_no_session_loss_disconnect_or_hardfault
 CHECK 921600_is_comparison_only_when_static_budget_is_over_30_percent
 EOF
 }
@@ -251,7 +252,7 @@ cat <<EOF
 - ELF: $elf
 - profile: EXO_MOTOR_ROS_ENTITIES=ON, best_effort=$M2_MOTOR_QOS_BEST_EFFORT, loop=${M2_MOTOR_CONTROL_LOOP_HZ}Hz, status_every_n=$M2_MOTOR_STATUS_EVERY_N, motor_state_period_ms=$M2_MOTOR_STATE_PERIOD_MS, motor_health_period_ms=$M2_MOTOR_HEALTH_PERIOD_MS
 
-Gate: run \`tools/diagnose-swd.sh\` first; only flash when \`SWD_STATUS=ok\`.
+Gate: run \`STRICT=1 tools/diagnose-swd.sh\` first; only flash when \`SWD_STATUS=ok\`.
 
 The first M2 smoke should prefer 2Mbps. Static budget says the default 200Hz
 target + 20ms state + 200ms health profile is over the 30% budget at 921600
@@ -278,5 +279,5 @@ $(print_checklist)
 - The non-empty \`header.frame_id\` command is a negative test. Do not count it as passing just because \`/motor/tp_joint_state\` still publishes: \`last_target_seq\` must remain at the previous accepted seq, \`targets_received/targets_applied\` must not increase because of the rejected target, and a later legal target must still be accepted.
 - The seq42/seq43/seq44 targets intentionally use \`control_mode=0\` so \`targets_applied\` is not naturally incremented by the enabled control loop during the negative frame_id check.
 - The enabled soak uses \`control_mode=1\` (ZERO_TORQUE) with empty \`frame_id\` and monotonic seq. It is the evidence for 200Hz target receive plus 10kHz control tick applied growth; do not substitute the disabled negative-test counters for this gate.
-- Do not reduce motor-enabled stack/linker reserve defaults until \`tools/measure-stack-hwm.sh\` and MSP/heap evidence are recorded on the motor-enabled firmware.
+- Do not reduce motor-enabled stack/linker reserve defaults until \`tools/measure-stack-hwm.sh\` records task-stack HWM plus \`newlib_heap\` MSP/heap margin, and \`agent.log\` shows no reconnect/session-loss/HardFault during the motor-enabled smoke.
 EOF

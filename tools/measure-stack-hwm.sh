@@ -97,28 +97,51 @@ count_a5_prefix_words() {
     '
 }
 
+symbol_addr() {
+  local symbol="$1"
+  arm-none-eabi-nm -S "$ELF" |
+    awk -v s="$symbol" '$4 == s && found == 0 { print $1; found = 1 }'
+}
+
+symbol_value() {
+  local symbol="$1"
+  arm-none-eabi-nm -a "$ELF" |
+    awk -v s="$symbol" '$3 == s && found == 0 { print $1; found = 1 }'
+}
+
+dump_memory() {
+  local addr_hex="$1"
+  local end_hex="$2"
+  local out="$3"
+  timeout "$STLINK_TIMEOUT_SECONDS" gdb-multiarch -q "$ELF" \
+    -ex 'set pagination off' \
+    -ex "target extended-remote :$PORT" \
+    -ex "dump binary memory $out 0x$addr_hex 0x$end_hex" \
+    -ex 'disconnect' \
+    -ex 'quit' >/tmp/measure-stack-hwm.gdb.log 2>/tmp/measure-stack-hwm.gdb.err
+}
+
+read_u32_le() {
+  local file="$1"
+  od -An -tu4 -N4 "$file" | awk '{print $1; exit}'
+}
+
 echo "elf=$ELF"
 for sym in "${STACK_SYMBOLS[@]}"; do
-  line="$(arm-none-eabi-nm -S "$ELF" |
-    awk -v s="$sym" '$4 == s && found == 0 { print; found = 1 }')"
-  if [ -z "$line" ]; then
+  addr_hex="$(symbol_addr "$sym")"
+  if [ -z "$addr_hex" ]; then
     echo "$sym missing"
     continue
   fi
 
-  addr_hex="$(awk '{print $1}' <<<"$line")"
-  size_hex="$(awk '{print $2}' <<<"$line")"
+  size_hex="$(arm-none-eabi-nm -S "$ELF" |
+    awk -v s="$sym" '$4 == s && found == 0 { print $2; found = 1 }')"
   addr=$((16#$addr_hex))
   size=$((16#$size_hex))
   end=$((addr + size))
   out="/tmp/measure-stack-hwm.${sym}.bin"
 
-  timeout "$STLINK_TIMEOUT_SECONDS" gdb-multiarch -q "$ELF" \
-    -ex 'set pagination off' \
-    -ex "target extended-remote :$PORT" \
-    -ex "dump binary memory $out 0x$(printf '%x' "$addr") 0x$(printf '%x' "$end")" \
-    -ex 'disconnect' \
-    -ex 'quit' >/tmp/measure-stack-hwm.gdb.log 2>/tmp/measure-stack-hwm.gdb.err
+  dump_memory "$(printf '%x' "$addr")" "$(printf '%x' "$end")" "$out"
 
   hwm_words="$(count_a5_prefix_words "$out")"
   total_words=$((size / 4))
@@ -126,3 +149,35 @@ for sym in "${STACK_SYMBOLS[@]}"; do
   printf '%s addr=0x%s bytes=%d total_words=%d hwm_free_words=%d used_words=%d\n' \
     "$sym" "$addr_hex" "$size" "$total_words" "$hwm_words" "$used_words"
 done
+
+heap_end_addr_hex="$(symbol_addr g_newlib_heap_end)"
+reserve_addr_hex="$(symbol_addr g_newlib_heap_msp_reserve_bytes)"
+end_hex="$(symbol_value end)"
+estack_hex="$(symbol_value _estack)"
+if [ -n "$heap_end_addr_hex" ] && [ -n "$reserve_addr_hex" ] &&
+    [ -n "$end_hex" ] && [ -n "$estack_hex" ]; then
+  heap_ptr_out="/tmp/measure-stack-hwm.g_newlib_heap_end.bin"
+  reserve_out="/tmp/measure-stack-hwm.g_newlib_heap_msp_reserve_bytes.bin"
+  heap_end_addr=$((16#$heap_end_addr_hex))
+  reserve_addr=$((16#$reserve_addr_hex))
+  dump_memory "$heap_end_addr_hex" "$(printf '%x' $((heap_end_addr + 4)))" "$heap_ptr_out"
+  dump_memory "$reserve_addr_hex" "$(printf '%x' $((reserve_addr + 4)))" "$reserve_out"
+  heap_end_value="$(read_u32_le "$heap_ptr_out")"
+  reserve_bytes="$(read_u32_le "$reserve_out")"
+  estack_value=$((16#$estack_hex))
+  end_value=$((16#$end_hex))
+  heap_limit=$((estack_value - reserve_bytes))
+  free_before_reserve=$((heap_limit - heap_end_value))
+  if [ "$free_before_reserve" -lt 0 ]; then
+    free_before_reserve=0
+  fi
+  bytes_to_estack=$((estack_value - heap_end_value))
+  if [ "$bytes_to_estack" -lt 0 ]; then
+    bytes_to_estack=0
+  fi
+  printf 'newlib_heap heap_end=0x%08x end=0x%08x estack=0x%08x msp_reserved_bytes=%d free_before_msp_reserve_bytes=%d bytes_to_estack=%d\n' \
+    "$heap_end_value" "$end_value" "$estack_value" "$reserve_bytes" \
+    "$free_before_reserve" "$bytes_to_estack"
+else
+  echo "newlib_heap missing"
+fi

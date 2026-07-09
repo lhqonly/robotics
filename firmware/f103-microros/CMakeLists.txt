@@ -74,6 +74,7 @@ add_compile_definitions(EXO_CONTROL_TASK_STACK_WORDS=${EXO_CONTROL_TASK_STACK_WO
 add_compile_definitions(EXO_LED_TASK_STACK_WORDS=${EXO_LED_TASK_STACK_WORDS})
 add_compile_definitions(EXO_MINIMAL_STACK_WORDS=${EXO_MINIMAL_STACK_WORDS})
 add_compile_definitions(EXO_UART_READ_POLL_YIELDS=${EXO_UART_READ_POLL_YIELDS})
+add_compile_definitions(EXO_NEWLIB_HEAP_MSP_RESERVE_BYTES=${EXO_MSP_STACK_BYTES})
 
 # ---- micro-ROS 静态库(T5)----
 # [MICROROS-INCLUDE] / [MICROROS-LIB]:libmicroros.a + 其 include/ 由主 agent 用

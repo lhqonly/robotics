@@ -99,6 +99,12 @@ write_fake_lsusb "$TMPDIR/lsusb"
 assert_contains "$(cat "$ROOT/tools/measure-stack-hwm.sh")" \
   "Found[[:space:]]+0 stlink programmers" \
   "stack HWM preflight rejects zero programmers"
+assert_contains "$(cat "$ROOT/tools/measure-stack-hwm.sh")" \
+  "g_newlib_heap_end" \
+  "stack HWM also reads exported newlib heap end"
+assert_contains "$(cat "$ROOT/tools/measure-stack-hwm.sh")" \
+  "free_before_msp_reserve_bytes" \
+  "stack HWM reports newlib heap MSP margin"
 
 write_fake_stinfo "$TMPDIR/st-info-ok" ok
 out="$(run_diag "$TMPDIR/st-info-ok" "$TMPDIR/lsusb")"

@@ -55,24 +55,52 @@
  * RESERVE 给 MSP/ISR 栈留余量(调度器启动后 MSP 仅 ISR 用)。 */
 extern char end;        /* 链接脚本:.bss 之后 = newlib heap 起点 */
 extern char _estack;    /* 链接脚本:RAM 顶(MSP 初值) */
-#define NEWLIB_HEAP_MSP_RESERVE  512u
+#ifndef EXO_NEWLIB_HEAP_MSP_RESERVE_BYTES
+#define EXO_NEWLIB_HEAP_MSP_RESERVE_BYTES  512u
+#endif
+#if EXO_NEWLIB_HEAP_MSP_RESERVE_BYTES < 256u
+#error "EXO_NEWLIB_HEAP_MSP_RESERVE_BYTES must be >= 256"
+#endif
+#if (EXO_NEWLIB_HEAP_MSP_RESERVE_BYTES % 8u) != 0u
+#error "EXO_NEWLIB_HEAP_MSP_RESERVE_BYTES must be 8-byte aligned"
+#endif
+
+char *g_newlib_heap_end __attribute__((used)) = &end;
+volatile const uint32_t g_newlib_heap_msp_reserve_bytes __attribute__((used)) =
+    EXO_NEWLIB_HEAP_MSP_RESERVE_BYTES;
 
 void *_sbrk(ptrdiff_t incr)
 {
-    static char *heap_end = 0;
-    char *prev;
+    uintptr_t base = (uintptr_t)&end;
+    uintptr_t current;
+    uintptr_t next;
     uintptr_t stack_top = (uintptr_t)&_estack;
-    char *limit = (char *)(stack_top - NEWLIB_HEAP_MSP_RESERVE);
-    if (heap_end == 0) {
-        heap_end = &end;
+    uintptr_t limit = stack_top - g_newlib_heap_msp_reserve_bytes;
+    if (g_newlib_heap_end == 0) {
+        g_newlib_heap_end = &end;
     }
-    if (heap_end + incr > limit) {
+    current = (uintptr_t)g_newlib_heap_end;
+    if (current < base || current > limit) {
         errno = ENOMEM;
         return (void *)-1;   /* 超界:malloc 得 NULL,rcl 据此干净失败 */
     }
-    prev = heap_end;
-    heap_end += incr;
-    return (void *)prev;
+    if (incr < 0) {
+        uintptr_t decrement = (uintptr_t)(-(incr + 1)) + 1u;
+        if (decrement > current - base) {
+            errno = ENOMEM;
+            return (void *)-1;
+        }
+        next = current - decrement;
+    } else {
+        uintptr_t increment = (uintptr_t)incr;
+        if (increment > limit - current) {
+            errno = ENOMEM;
+            return (void *)-1;
+        }
+        next = current + increment;
+    }
+    g_newlib_heap_end = (char *)next;
+    return (void *)current;
 }
 
 #include "microros_app.h"   /* T5:micro-ROS 应用任务(替代 T4 的 echo AppTask) */

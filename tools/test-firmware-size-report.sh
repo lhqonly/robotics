@@ -78,6 +78,11 @@ fi
 motor_elf="$ROOT/firmware/f103-microros/build-motor/f103-microros.elf"
 if [ -f "$motor_elf" ]; then
   motor_report="$(CATEGORY_LIMIT=5 "$ROOT/tools/firmware-size-report.sh" "$motor_elf")"
+  motor_symbols="$(arm-none-eabi-nm -S "$motor_elf")"
+  assert_contains "$motor_symbols" "g_newlib_heap_end" \
+    "motor ELF exports runtime newlib heap end symbol"
+  assert_contains "$motor_symbols" "g_newlib_heap_msp_reserve_bytes" \
+    "motor ELF exports runtime newlib heap MSP reserve symbol"
   for label in JointTarget JointState MotorHealth; do
     if ! awk -v label="$label" '
       /^rosidl_type_metadata_breakdown:/ {in_section = 1; next}

@@ -1012,7 +1012,7 @@ preflight_commands="$(printf '%s\n' "$staircase_preflight" |
     fi
   fi
   echo
-  echo "- 解读：\`state20_health200_2000000\` 是 M2 真机首轮 first_smoke；\`state500_health1000_921600\` 只是 921600 low_telemetry_candidate，静态 margin 约 0.09%，不能当作 runtime PASS。"
+  echo "- 解读：\`state20_health200_2000000\` 推荐作为 M2 真机首轮 first_smoke profile；\`state500_health1000_921600\` 只是 921600 low_telemetry_candidate，静态 margin 约 0.09%，不能当作 runtime PASS。"
   echo "- 边界：\`PASS_STATIC\` 只代表 CDR/XRCE 静态 UART 预算；不覆盖 Agent 建链、ROS graph、target→state 闭环、reconnect/soak、\`/com/tp_mcu_status\` 并发挤压或长尾调度。"
   echo
   echo "## 线速预算外推"

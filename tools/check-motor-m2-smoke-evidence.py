@@ -16,6 +16,7 @@ from pathlib import Path
 TEMPLATE = """# M2 motor smoke evidence.
 # Fill this file from the commands printed by tools/recommend-motor-m2-smoke-command.sh.
 sample_only=true
+template_generated=true
 evidence_source=template
 evidence_capture_id=template
 swd_status=ok
@@ -90,6 +91,10 @@ com_status_soak_hz=5.0
 
 # Motor-enabled runtime memory evidence.
 microros_stack_free_words=128
+newlib_heap_free_before_msp_reserve_bytes=1024
+newlib_heap_msp_reserved_bytes=1024
+agent_session_loss_events=0
+hardfault_seen=false
 """
 
 
@@ -159,6 +164,33 @@ def microros_stack_free_words_from_text(text: str) -> str | None:
     return None
 
 
+def newlib_heap_metric_from_text(text: str, key: str) -> str | None:
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line.startswith("newlib_heap "):
+            continue
+        match = re.search(rf"\b{re.escape(key)}=(\d+)\b", line)
+        if match:
+            return match.group(1)
+    return None
+
+
+def agent_session_loss_events_from_text(text: str) -> str | None:
+    if not text:
+        return None
+    pattern = re.compile(
+        r"session.*(lost|closed|reset)|connection.*lost|disconnect",
+        re.IGNORECASE,
+    )
+    return str(sum(1 for line in text.splitlines() if pattern.search(line)))
+
+
+def hardfault_seen_from_text(text: str) -> str | None:
+    if not text:
+        return None
+    return "true" if re.search(r"hardfault|!!HARDFAULT!!", text, re.IGNORECASE) else "false"
+
+
 def read_text_if_exists(path: Path) -> str:
     if not path.exists():
         return ""
@@ -184,6 +216,8 @@ def read_evidence_dir(path: Path) -> dict[str, str]:
     env = path / "evidence.env"
     if env.exists():
         values.update(read_evidence(env))
+    values["_evidence_path_kind"] = "directory"
+    values["template_generated"] = "false"
     values["evidence_source"] = "directory_raw_capture"
     values["evidence_capture_id"] = "directory_raw_capture"
 
@@ -314,6 +348,24 @@ def read_evidence_dir(path: Path) -> dict[str, str]:
             path / "stack-hwm.txt",
             microros_stack_free_words_from_text,
         ),
+        "newlib_heap_free_before_msp_reserve_bytes": (
+            path / "stack-hwm.txt",
+            lambda text: newlib_heap_metric_from_text(
+                text, "free_before_msp_reserve_bytes"
+            ),
+        ),
+        "newlib_heap_msp_reserved_bytes": (
+            path / "stack-hwm.txt",
+            lambda text: newlib_heap_metric_from_text(text, "msp_reserved_bytes"),
+        ),
+        "agent_session_loss_events": (
+            path / "agent.log",
+            agent_session_loss_events_from_text,
+        ),
+        "hardfault_seen": (
+            path / "agent.log",
+            hardfault_seen_from_text,
+        ),
     }
     for key, (source_path, parser) in derived_files.items():
         value = parser(read_text_if_exists(source_path))
@@ -365,7 +417,12 @@ class Checker:
 
     def reason(self, reason: str) -> None:
         self.reasons.append(reason)
-        if reason.startswith("missing_") or reason == "sample_template_not_filled":
+        if (
+            reason.startswith("missing_")
+            or reason == "sample_template_not_filled"
+            or reason == "file_evidence_not_raw_capture_use_directory"
+            or reason == "template_generated_evidence_not_raw_capture"
+        ):
             self.missing_evidence = True
 
     def require_bool(self, key: str) -> bool | None:
@@ -536,9 +593,17 @@ class Checker:
                 )
 
     def check(self, args: argparse.Namespace) -> int:
+        path_kind = self.value("_evidence_path_kind")
+        if path_kind == "file":
+            self.reason("file_evidence_not_raw_capture_use_directory")
+
         sample_only = self.value("sample_only")
         if sample_only is not None and as_bool(sample_only) is True:
             self.reason("sample_template_not_filled")
+
+        template_generated = self.value("template_generated")
+        if template_generated is not None and as_bool(template_generated) is True:
+            self.reason("template_generated_evidence_not_raw_capture")
 
         evidence_source = self.value("evidence_source")
         if evidence_source is None:
@@ -631,6 +696,27 @@ class Checker:
                 "microros_stack_free_words_low_"
                 f"{free_words}_lt_{args.min_microros_stack_free_words}"
             )
+        heap_free = self.require_int("newlib_heap_free_before_msp_reserve_bytes")
+        if heap_free is not None and heap_free < args.min_newlib_heap_free_before_msp_reserve_bytes:
+            self.reason(
+                "newlib_heap_free_before_msp_reserve_bytes_low_"
+                f"{heap_free}_lt_{args.min_newlib_heap_free_before_msp_reserve_bytes}"
+            )
+        msp_reserved = self.require_int("newlib_heap_msp_reserved_bytes")
+        if msp_reserved is not None and msp_reserved < args.min_newlib_heap_msp_reserved_bytes:
+            self.reason(
+                "newlib_heap_msp_reserved_bytes_low_"
+                f"{msp_reserved}_lt_{args.min_newlib_heap_msp_reserved_bytes}"
+            )
+        session_loss = self.require_int("agent_session_loss_events")
+        if session_loss is not None and session_loss > args.max_agent_session_loss_events:
+            self.reason(
+                "agent_session_loss_events_high_"
+                f"{session_loss}_gt_{args.max_agent_session_loss_events}"
+            )
+        hardfault_seen = self.require_bool("hardfault_seen")
+        if hardfault_seen is True:
+            self.reason("hardfault_seen")
 
         if self.reasons:
             if self.hardware_offline:
@@ -655,7 +741,11 @@ class Checker:
             f"min_enabled_soak_applied_per_received="
             f"{args.min_enabled_soak_applied_per_received:g} "
             f"min_enabled_soak_applied_delta={args.min_enabled_soak_applied_delta} "
-            f"min_microros_stack_free_words={args.min_microros_stack_free_words}"
+            f"min_microros_stack_free_words={args.min_microros_stack_free_words} "
+            f"min_newlib_heap_free_before_msp_reserve_bytes="
+            f"{args.min_newlib_heap_free_before_msp_reserve_bytes} "
+            f"min_newlib_heap_msp_reserved_bytes={args.min_newlib_heap_msp_reserved_bytes} "
+            f"max_agent_session_loss_events={args.max_agent_session_loss_events}"
         )
         return 0
 
@@ -682,6 +772,9 @@ def main() -> int:
     parser.add_argument("--min-enabled-soak-applied-delta", type=int, default=1)
     parser.add_argument("--max-enabled-soak-last-target-lag", type=int, default=0)
     parser.add_argument("--min-microros-stack-free-words", type=int, default=128)
+    parser.add_argument("--min-newlib-heap-free-before-msp-reserve-bytes", type=int, default=0)
+    parser.add_argument("--min-newlib-heap-msp-reserved-bytes", type=int, default=512)
+    parser.add_argument("--max-agent-session-loss-events", type=int, default=0)
     args = parser.parse_args()
 
     if args.template:
@@ -690,7 +783,11 @@ def main() -> int:
     if args.evidence is None:
         parser.error("evidence file is required unless --template is used")
     try:
-        values = read_evidence_dir(args.evidence) if args.evidence.is_dir() else read_evidence(args.evidence)
+        if args.evidence.is_dir():
+            values = read_evidence_dir(args.evidence)
+        else:
+            values = read_evidence(args.evidence)
+            values["_evidence_path_kind"] = "file"
     except OSError as exc:
         print(f"FAIL motor_m2_smoke reason=evidence_read_failed:{exc}")
         return 1

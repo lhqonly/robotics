@@ -79,6 +79,9 @@ assert_contains "$CMAKE" \
 assert_contains "$CMAKE" \
   "add_compile_definitions(EXO_MOTOR_FRAME_ID_RX_CAPACITY=\${EXO_MOTOR_FRAME_ID_RX_CAPACITY})" \
   "motor frame_id RX capacity compile definition"
+assert_contains "$CMAKE" \
+  "add_compile_definitions(EXO_NEWLIB_HEAP_MSP_RESERVE_BYTES=\${EXO_MSP_STACK_BYTES})" \
+  "newlib heap MSP reserve follows linker MSP reserve"
 assert_contains "$APP" \
   "#if EXO_MOTOR_STATE_PERIOD_MS < 10u || EXO_MOTOR_STATE_PERIOD_MS > 1000u" \
   "motor state period range guard"
@@ -94,6 +97,21 @@ assert_contains "$APP" \
 assert_contains "$APP" \
   "#  if EXO_MOTOR_FRAME_ID_RX_CAPACITY < 8u" \
   "motor frame_id RX capacity lower bound"
+assert_contains "$MAIN" \
+  "char *g_newlib_heap_end __attribute__((used)) = &end;" \
+  "newlib heap end is exported for runtime measurement"
+assert_contains "$MAIN" \
+  "volatile const uint32_t g_newlib_heap_msp_reserve_bytes __attribute__((used))" \
+  "newlib MSP reserve is exported for runtime measurement"
+assert_contains "$MAIN" \
+  "EXO_NEWLIB_HEAP_MSP_RESERVE_BYTES must be 8-byte aligned" \
+  "newlib MSP reserve has alignment guard"
+assert_contains "$MAIN" \
+  "if (decrement > current - base)" \
+  "sbrk rejects negative heap underflow"
+assert_contains "$MAIN" \
+  "g_newlib_heap_end = (char *)next;" \
+  "sbrk advances exported heap end"
 
 assert_contains "$MAIN" "#if EXO_CONTROL_LOOP_HZ <= 1000u" \
   "1kHz-and-below FreeRTOS task branch"

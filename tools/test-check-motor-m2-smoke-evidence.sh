@@ -41,10 +41,16 @@ assert_contains "$(cat "$template")" "topic_motor_target=present" \
   "template includes motor target topic"
 assert_contains "$(cat "$template")" "evidence_source=template" \
   "template marks evidence source"
+assert_contains "$(cat "$template")" "template_generated=true" \
+  "template marks generated evidence"
 assert_contains "$(cat "$template")" "evidence_capture_id=template" \
   "template marks capture id"
 assert_contains "$(cat "$template")" "state_after_ttl_fault_bits=2" \
   "template includes TTL stale evidence"
+assert_contains "$(cat "$template")" "newlib_heap_free_before_msp_reserve_bytes=1024" \
+  "template includes newlib heap MSP margin"
+assert_contains "$(cat "$template")" "agent_session_loss_events=0" \
+  "template includes agent session loss evidence"
 
 out="$(run_expect_fail "unfilled sample template" "$ROOT/tools/check-motor-m2-smoke-evidence.py" "$template")"
 assert_contains "$out" "BLOCKED_MISSING_EVIDENCE motor_m2_smoke" \
@@ -63,17 +69,11 @@ assert_contains "$out" "sample_template_not_filled" \
   "template capture id still blocked after source flip"
 
 sed -i 's/^evidence_capture_id=.*/evidence_capture_id=test_manual_capture/' "$template"
-out="$("$ROOT/tools/check-motor-m2-smoke-evidence.py" "$template")"
-assert_contains "$out" "PASS motor_m2_smoke" \
-  "passing evidence"
-assert_contains "$out" "motor_state_hz_range=45..55" \
-  "passing rate contract"
-assert_contains "$out" "motor_health_hz_range=4.5..5.5" \
-  "passing health rate contract"
-assert_contains "$out" "enabled_soak_target_hz_range=180..220" \
-  "passing enabled soak rate contract"
-assert_contains "$out" "min_enabled_soak_applied_per_received=40" \
-  "passing enabled soak applied/received contract"
+out="$(run_expect_fail "template-derived single-file evidence" "$ROOT/tools/check-motor-m2-smoke-evidence.py" "$template")"
+assert_contains "$out" "file_evidence_not_raw_capture_use_directory" \
+  "single-file evidence cannot pass"
+assert_contains "$out" "template_generated_evidence_not_raw_capture" \
+  "template-derived evidence cannot pass"
 
 offline="$TMPDIR/offline.env"
 cp "$template" "$offline"
@@ -96,8 +96,6 @@ reject_seq="$TMPDIR/reject-seq.env"
 cp "$template" "$reject_seq"
 sed -i 's/^state_after_reject_last_target_seq=.*/state_after_reject_last_target_seq=43/' "$reject_seq"
 out="$(run_expect_fail "rejected frame_id advanced seq" "$ROOT/tools/check-motor-m2-smoke-evidence.py" "$reject_seq")"
-assert_contains "$out" "FAIL motor_m2_smoke" \
-  "reject seq fail status"
 assert_contains "$out" "state_after_reject_last_target_seq_expected_42_got_43" \
   "reject seq reason"
 
@@ -118,9 +116,9 @@ assert_contains "$out" "health_after_reject_targets_applied_changed_from_0_to_1"
 applied_natural="$TMPDIR/applied-natural.env"
 cp "$reject_applied" "$applied_natural"
 sed -i 's/^reject_baseline_target_enabled=.*/reject_baseline_target_enabled=true/' "$applied_natural"
-out="$("$ROOT/tools/check-motor-m2-smoke-evidence.py" "$applied_natural")"
-assert_contains "$out" "PASS motor_m2_smoke" \
-  "enabled baseline allows natural applied growth"
+out="$(run_expect_fail "single-file applied natural evidence" "$ROOT/tools/check-motor-m2-smoke-evidence.py" "$applied_natural")"
+assert_contains "$out" "file_evidence_not_raw_capture_use_directory" \
+  "single-file applied natural evidence cannot pass"
 
 clamp="$TMPDIR/clamp.env"
 cp "$template" "$clamp"
@@ -206,6 +204,34 @@ sed -i 's/^microros_stack_free_words=.*/microros_stack_free_words=64/' "$stack"
 out="$(run_expect_fail "stack margin low" "$ROOT/tools/check-motor-m2-smoke-evidence.py" "$stack")"
 assert_contains "$out" "microros_stack_free_words_low_64_lt_128" \
   "stack margin reason"
+
+heap_margin="$TMPDIR/heap-margin.env"
+cp "$template" "$heap_margin"
+sed -i 's/^newlib_heap_free_before_msp_reserve_bytes=.*/newlib_heap_free_before_msp_reserve_bytes=-1/' "$heap_margin"
+out="$(run_expect_fail "newlib heap margin low" "$ROOT/tools/check-motor-m2-smoke-evidence.py" "$heap_margin")"
+assert_contains "$out" "newlib_heap_free_before_msp_reserve_bytes_low_-1_lt_0" \
+  "negative heap margin parse reason"
+
+msp_reserve="$TMPDIR/msp-reserve.env"
+cp "$template" "$msp_reserve"
+sed -i 's/^newlib_heap_msp_reserved_bytes=.*/newlib_heap_msp_reserved_bytes=128/' "$msp_reserve"
+out="$(run_expect_fail "msp reserve too small" "$ROOT/tools/check-motor-m2-smoke-evidence.py" "$msp_reserve")"
+assert_contains "$out" "newlib_heap_msp_reserved_bytes_low_128_lt_512" \
+  "MSP reserve reason"
+
+agent_loss="$TMPDIR/agent-loss.env"
+cp "$template" "$agent_loss"
+sed -i 's/^agent_session_loss_events=.*/agent_session_loss_events=1/' "$agent_loss"
+out="$(run_expect_fail "agent session loss" "$ROOT/tools/check-motor-m2-smoke-evidence.py" "$agent_loss")"
+assert_contains "$out" "agent_session_loss_events_high_1_gt_0" \
+  "agent session loss reason"
+
+hardfault="$TMPDIR/hardfault.env"
+cp "$template" "$hardfault"
+sed -i 's/^hardfault_seen=.*/hardfault_seen=true/' "$hardfault"
+out="$(run_expect_fail "hardfault seen" "$ROOT/tools/check-motor-m2-smoke-evidence.py" "$hardfault")"
+assert_contains "$out" "hardfault_seen" \
+  "hardfault reason"
 
 duplicate="$TMPDIR/duplicate.env"
 cp "$template" "$duplicate"
@@ -342,11 +368,28 @@ EOF
 cat >"$dir/stack-hwm.txt" <<'EOF'
 elf=firmware/f103-microros/build-motor/f103-microros.elf
 microros_task_stack addr=0x20001150 bytes=3072 total_words=768 hwm_free_words=160 used_words=608
+newlib_heap heap_end=0x20003ee0 end=0x20003ee0 estack=0x20005000 msp_reserved_bytes=1024 free_before_msp_reserve_bytes=3360 bytes_to_estack=4384
+EOF
+cat >"$dir/agent.log" <<'EOF'
+[run-bridge] micro_ros_agent serial --dev /dev/ttyUSB0 -b 2000000 -v6
+[INFO] session established
 EOF
 
 out="$("$ROOT/tools/check-motor-m2-smoke-evidence.py" "$dir")"
 assert_contains "$out" "PASS motor_m2_smoke" \
   "passing directory evidence"
+assert_contains "$out" "motor_state_hz_range=45..55" \
+  "passing rate contract"
+assert_contains "$out" "motor_health_hz_range=4.5..5.5" \
+  "passing health rate contract"
+assert_contains "$out" "enabled_soak_target_hz_range=180..220" \
+  "passing enabled soak rate contract"
+assert_contains "$out" "min_enabled_soak_applied_per_received=40" \
+  "passing enabled soak applied/received contract"
+assert_contains "$out" "min_newlib_heap_msp_reserved_bytes=512" \
+  "passing MSP reserve contract"
+assert_contains "$out" "max_agent_session_loss_events=0" \
+  "passing agent reconnect contract"
 
 bad_dir="$TMPDIR/bad-evidence-dir"
 cp -a "$dir" "$bad_dir"
@@ -397,5 +440,19 @@ EOF
 out="$(run_expect_fail "missing microros stack HWM" "$ROOT/tools/check-motor-m2-smoke-evidence.py" "$bad_stack_dir")"
 assert_contains "$out" "missing_microros_stack_free_words" \
   "missing microros stack reason"
+assert_contains "$out" "missing_newlib_heap_free_before_msp_reserve_bytes" \
+  "missing newlib heap reason"
+
+bad_agent_dir="$TMPDIR/bad-agent-dir"
+cp -a "$dir" "$bad_agent_dir"
+cat >"$bad_agent_dir/agent.log" <<'EOF'
+[ERROR] session lost after disconnect
+!!HARDFAULT!!
+EOF
+out="$(run_expect_fail "bad agent log" "$ROOT/tools/check-motor-m2-smoke-evidence.py" "$bad_agent_dir")"
+assert_contains "$out" "agent_session_loss_events_high_1_gt_0" \
+  "agent log session loss reason"
+assert_contains "$out" "hardfault_seen" \
+  "agent log hardfault reason"
 
 echo "PASS: M2 motor smoke evidence checker tests"
