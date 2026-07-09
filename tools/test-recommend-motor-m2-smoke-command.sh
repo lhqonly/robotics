@@ -53,6 +53,14 @@ assert_contains "$out" "tools/run-bridge.sh '/dev/ttyUSB0' '2000000'" \
   "default bridge command"
 assert_contains "$out" 'tee "$evidence_dir/agent.log"' \
   "agent log evidence capture"
+assert_contains "$out" 'agent_pid=$!' \
+  "agent background pid capture"
+assert_contains "$out" "trap cleanup_agent EXIT" \
+  "agent cleanup trap"
+assert_contains "$out" "cleanup_agent" \
+  "agent cleanup before manifest"
+assert_contains "$out" "trap - EXIT" \
+  "agent cleanup trap cleared before checker"
 assert_contains "$out" "evidence dir: log/motor-m2-smoke/" \
   "default evidence directory"
 assert_contains "$out" "cat >\"\$evidence_dir/evidence.env\" <<'EVIDENCE_ENV'" \
@@ -166,6 +174,10 @@ assert_contains "$commands" "tools/run-bridge.sh '/dev/ttyACM0' '921600'" \
   "custom serial in commands format"
 assert_contains "$commands" 'tee "$evidence_dir/agent.log"' \
   "agent log evidence capture in commands format"
+assert_contains "$commands" 'agent_pid=$!' \
+  "agent background pid in commands format"
+assert_contains "$commands" "trap cleanup_agent EXIT" \
+  "agent cleanup trap in commands format"
 assert_contains "$commands" "> raw.sha256" \
   "raw manifest in commands format"
 assert_contains "$commands" "tools/pub-motor-m2-enabled-target-soak.py --hz 200" \
@@ -225,6 +237,8 @@ bad_text_out="$(M2_MOTOR_STATE_PERIOD_MS=20abc "$ROOT/tools/recommend-motor-m2-s
 bad_text_rc=$?
 bad_decimal_out="$(M2_MOTOR_HEALTH_PERIOD_MS=100.5 "$ROOT/tools/recommend-motor-m2-smoke-command.sh" 2>&1 >/dev/null)"
 bad_decimal_rc=$?
+bad_soak_duration_out="$(M2_MOTOR_ENABLED_SOAK_DURATION_S=0.5 "$ROOT/tools/recommend-motor-m2-smoke-command.sh" 2>&1 >/dev/null)"
+bad_soak_duration_rc=$?
 set -e
 if [ "$bad_health_rc" -eq 0 ]; then
   echo "FAIL: invalid motor health period should fail" >&2
@@ -278,6 +292,15 @@ fi
 grep -Fq "ERROR: M2_MOTOR_HEALTH_PERIOD_MS must be an integer in [100, 5000]" <<<"$bad_decimal_out" || {
   echo "FAIL: decimal motor health period error missing" >&2
   echo "$bad_decimal_out" >&2
+  exit 1
+}
+if [ "$bad_soak_duration_rc" -eq 0 ]; then
+  echo "FAIL: enabled soak duration below evidence floor should fail" >&2
+  exit 1
+fi
+grep -Fq "ERROR: M2_MOTOR_ENABLED_SOAK_DURATION_S must be a number >= 2" <<<"$bad_soak_duration_out" || {
+  echo "FAIL: invalid enabled soak duration error missing" >&2
+  echo "$bad_soak_duration_out" >&2
   exit 1
 }
 

@@ -527,11 +527,12 @@ bad_agent_dir="$TMPDIR/bad-agent-dir"
 cp -a "$dir" "$bad_agent_dir"
 cat >"$bad_agent_dir/agent.log" <<'EOF'
 [ERROR] session lost after disconnect
+[WARN] reconnecting client
 !!HARDFAULT!!
 EOF
 out="$(run_expect_fail "bad agent log" "$ROOT/tools/check-motor-m2-smoke-evidence.py" "$bad_agent_dir")"
-assert_contains "$out" "agent_session_loss_events_high_1_gt_0" \
-  "agent log session loss reason"
+assert_contains "$out" "agent_session_loss_events_high_2_gt_0" \
+  "agent log session loss and reconnect reason"
 assert_contains "$out" "hardfault_seen" \
   "agent log hardfault reason"
 

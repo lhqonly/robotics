@@ -221,7 +221,7 @@ def agent_session_loss_events_from_text(text: str) -> str | None:
     if not text:
         return None
     pattern = re.compile(
-        r"session.*(lost|closed|reset)|connection.*lost|disconnect",
+        r"session.*(lost|closed|reset)|connection.*lost|disconnect|re-?connect(?:ed|ing)?",
         re.IGNORECASE,
     )
     return str(sum(1 for line in text.splitlines() if pattern.search(line)))

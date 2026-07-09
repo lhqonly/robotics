@@ -53,6 +53,15 @@ assert_contains "$actual_out" "CANDIDATE rosidl_raw_source_metadata" \
   "ROSIDL raw source metadata recommendation"
 assert_contains "$actual_out" "SWD_STATUS=ok" \
   "runtime SWD gate"
+assert_contains "$actual_out" \
+  "tools/motor-m2-telemetry-sweep.py --min-margin-pct 1 --pass-only" \
+  "M2 conservative telemetry shortlist gate"
+assert_contains "$actual_out" \
+  "2Mbps M2 motor first-smoke path before treating 921600 as a post-2Mbps comparison-only case" \
+  "M2 first-smoke before 921600 comparison gate"
+assert_contains "$actual_out" \
+  "stack HWM, \`newlib_heap\` MSP/heap margin, and an Agent log with no reconnect/session loss/HardFault" \
+  "M2 motor-enabled memory and agent runtime gate"
 
 cat >"$TMPDIR/size.csv" <<'EOF'
 profile,ram_static_bytes,ram_rosidl_type_metadata_bytes,ram_rosidl_raw_source_metadata_bytes,ram_microros_custom_pools_bytes

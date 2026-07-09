@@ -460,7 +460,7 @@ def main() -> int:
     print()
     print("1. `tools/diagnose-swd.sh` must report `SWD_STATUS=ok`.")
     print("2. Flash the matching best-effort/status40 firmware before judging 200Hz latest-target.")
-    print("3. Run `tools/motor-m2-telemetry-sweep.py --pass-only` to choose the 921600 low-telemetry comparison profile before motor smoke.")
+    print("3. Run `tools/motor-m2-telemetry-sweep.py --min-margin-pct 1 --pass-only` for conservative M2 telemetry candidates; 921600 remains post-2Mbps comparison only.")
     print("4. Run staircase with `STAIRCASE_BAUDS=\"921600 2000000\"` and include the best PC scheduler case plus M2 motor topics.")
     print("5. Run `tools/check-com-staircase-contract.py <metrics.csv> --max-pc-catchup-events 0 --max-pc-catchup-extra 0`; add `--max-wire-baud-util-pct 30` when wire metrics were collected.")
     print("6. Accept only stages with `qos_incompatibility=0`, `lost=0`, `duplicate=0`, 200Hz target/window rate inside contract, PC p99/max gap inside contract, and zero catch-up bursts.")

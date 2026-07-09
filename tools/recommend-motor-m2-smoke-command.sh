@@ -77,6 +77,17 @@ validate_positive_integer_list() {
   done
 }
 
+validate_enabled_soak_duration() {
+  awk -v seconds="$M2_MOTOR_ENABLED_SOAK_DURATION_S" 'BEGIN {
+    if (seconds !~ /^[0-9]+([.][0-9]+)?$/ || seconds < 2.0) {
+      exit 1
+    }
+  }' || {
+    echo "ERROR: M2_MOTOR_ENABLED_SOAK_DURATION_S must be a number >= 2" >&2
+    exit 1
+  }
+}
+
 rate_min_from_hz() {
   local hz="$1"
   awk -v hz="$hz" 'BEGIN { printf "%.6f", hz * 0.90 }'
@@ -103,6 +114,7 @@ bin="$M2_MOTOR_BUILD_DIR/f103-microros.bin"
 validate_positive_integer_list "M2_MOTOR_BAUD" "$M2_MOTOR_BAUD"
 validate_positive_integer_list "M2_MOTOR_REQUIRE_BUDGET_BAUDS" "$M2_MOTOR_REQUIRE_BUDGET_BAUDS"
 validate_periods
+validate_enabled_soak_duration
 M2_MOTOR_STATE_HZ="$(hz_from_period_ms "$M2_MOTOR_STATE_PERIOD_MS")"
 M2_MOTOR_HEALTH_HZ="$(hz_from_period_ms "$M2_MOTOR_HEALTH_PERIOD_MS")"
 M2_MOTOR_STATE_MIN_HZ="$(rate_min_from_hz "$M2_MOTOR_STATE_HZ")"
@@ -142,7 +154,13 @@ tools/firmware-size-report.sh $(shell_quote "$elf")
 st-flash --connect-under-reset write $(shell_quote "$bin") 0x08000000
 evidence_dir=$(shell_quote "$M2_MOTOR_EVIDENCE_DIR")
 mkdir -p "\$evidence_dir"
-MICROROS_AGENT_VERBOSITY=6 tools/run-bridge.sh $(shell_quote "$M2_MOTOR_SERIAL") $(shell_quote "$M2_MOTOR_BAUD") 2>&1 | tee "\$evidence_dir/agent.log"
+(MICROROS_AGENT_VERBOSITY=6 tools/run-bridge.sh $(shell_quote "$M2_MOTOR_SERIAL") $(shell_quote "$M2_MOTOR_BAUD") 2>&1 | tee "\$evidence_dir/agent.log") &
+agent_pid=\$!
+cleanup_agent() {
+  kill "\$agent_pid" 2>/dev/null || true
+  wait "\$agent_pid" 2>/dev/null || true
+}
+trap cleanup_agent EXIT
 
 source /opt/ros/jazzy/setup.bash
 source ros2_ws/install/setup.bash
@@ -197,7 +215,9 @@ ros2 topic echo --once /motor/tp_joint_state | tee "\$evidence_dir/state.after_e
 ros2 topic echo --once /motor/tp_motor_health | tee "\$evidence_dir/health.after_enabled_soak.yaml"
 
 tools/measure-stack-hwm.sh $(shell_quote "$elf") | tee "\$evidence_dir/stack-hwm.txt"
-# Generate this only after all runtime raw files are complete and agent.log is no longer appending.
+# Stop the Agent before hashing agent.log, after all runtime raw files are complete.
+cleanup_agent
+trap - EXIT
 (cd "\$evidence_dir" && sha256sum topics.txt info.motor_target.txt info.motor_state.txt info.motor_health.txt info.com_status.txt state.before_seq42.yaml state.after_seq42.yaml health.before_reject.yaml state.after_reject_seq43.yaml health.after_reject_seq43.yaml state.after_seq44.yaml state.after_clamp_seq45.yaml health.before_ttl.yaml state.after_ttl.yaml health.after_ttl.yaml health.before_enabled_soak.yaml enabled_soak.summary.txt health.mid_enabled_soak.yaml state.mid_enabled_soak.yaml rate.motor_state.txt rate.motor_health.txt rate.com_status.txt rate.com_status.soak.txt state.after_enabled_soak.yaml health.after_enabled_soak.yaml stack-hwm.txt agent.log > raw.sha256)
 tools/check-motor-m2-smoke-evidence.py "\$evidence_dir" --min-motor-state-hz $M2_MOTOR_STATE_MIN_HZ --max-motor-state-hz $M2_MOTOR_STATE_MAX_HZ --min-motor-health-hz $M2_MOTOR_HEALTH_MIN_HZ --max-motor-health-hz $M2_MOTOR_HEALTH_MAX_HZ --min-enabled-soak-target-hz $M2_MOTOR_ENABLED_SOAK_MIN_HZ --max-enabled-soak-target-hz $M2_MOTOR_ENABLED_SOAK_MAX_HZ --min-enabled-soak-duration-s $M2_MOTOR_ENABLED_SOAK_DURATION_S
 EOF

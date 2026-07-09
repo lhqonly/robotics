@@ -290,7 +290,8 @@ CANDIDATE microros_custom_pools bytes=${microros_pools_bytes:-NA} profile_scope=
 ## Next Runtime Gates
 
 1. Restore SWD until \`tools/diagnose-swd.sh\` reports \`SWD_STATUS=ok\`.
-2. Run \`STAIRCASE_BAUDS="921600 2000000" tools/run-com-staircase.sh staircase_\$(date +%Y%m%d_%H%M)\`.
-3. After the highest passing profile, run \`tools/measure-stack-hwm.sh firmware/f103-microros/build/f103-microros.elf\`.
-4. Only then consider stack/linker reserve default changes.
+2. Confirm the communication shortlist with \`tools/motor-m2-telemetry-sweep.py --min-margin-pct 1 --pass-only\`.
+3. Run the 2Mbps M2 motor first-smoke path before treating 921600 as a post-2Mbps comparison-only case.
+4. During the motor-enabled soak, record stack HWM, \`newlib_heap\` MSP/heap margin, and an Agent log with no reconnect/session loss/HardFault.
+5. Only then consider stack/linker reserve default changes.
 EOF
