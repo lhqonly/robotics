@@ -347,6 +347,18 @@ PC timer 补发标成 WARN；不设置这两个变量时只展示补发计数，
 如果要专门比较“靠补发追平均频率”的吞吐策略，可以临时设
 `CMD_CATCHUP_MAX=1` 单独跑一轮；latest-target 控制默认优先压低 burst 长尾。
 
+如果要探索 PC 侧能否稳定产生 1000Hz latest-target 发布节拍，可以复用同一个
+wrapper，只覆盖命令频率和状态降频。这个 probe 只用于 PC-only 发包节拍证据；
+`tools/recommend-staircase-command.sh` 和 `tools/recommend-communication-optimizations.py`
+默认仍只会选择 200Hz latest-target scheduler 结果，避免 1000Hz 探针污染上板验收推荐：
+
+```bash
+CMD_RATE_HZ=1000 STATUS_EVERY_N=200 \
+PC_SCHEDULER_CASES=$'default|\nthreads2||2\nthreads4||4' \
+RUN_SECONDS=20 WARMUP_SECONDS=3 HZ_SECONDS=12 \
+tools/run-pc-latest-scheduler-sweep.sh pc_sched_1000hz_latest_$(date +%Y%m%d_%H%M)
+```
+
 如果要比较更具体的调度策略，可以用多行 `PC_SCHEDULER_CASES`。每行格式为
 `label|launch_prefix[|executor_threads]`，空 prefix 用 `label|`。第三列可选；
 不写时继承全局 `EXECUTOR_THREADS`，写了就只覆盖当前 case：
