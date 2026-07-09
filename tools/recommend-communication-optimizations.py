@@ -63,6 +63,11 @@ def fnum(row: dict[str, str], key: str) -> float | None:
         return None
 
 
+def fnum_or_inf(row: dict[str, str], key: str) -> float:
+    value = fnum(row, key)
+    return value if value is not None else float("inf")
+
+
 @dataclass
 class WireProjection:
     cmd_hz: float
@@ -110,8 +115,10 @@ def best_scheduler(rows: list[dict[str, str]]) -> dict[str, str] | None:
     return min(
         candidates,
         key=lambda row: (
-            fnum(row, "pc_wire_gap_p99_ms") or float("inf"),
-            fnum(row, "pc_wire_gap_max_ms") or float("inf"),
+            fnum_or_inf(row, "pc_wire_gap_p99_ms"),
+            fnum_or_inf(row, "pc_wire_gap_max_ms"),
+            fnum_or_inf(row, "pc_cmd_catchup_extra"),
+            fnum_or_inf(row, "pc_cmd_catchup_events"),
         ),
     )
 
@@ -215,6 +222,8 @@ def main() -> int:
             tag=best_sched.get("tag", "unknown"),
             p99_ms=fmt(fnum(best_sched, "pc_wire_gap_p99_ms")),
             max_ms=fmt(fnum(best_sched, "pc_wire_gap_max_ms")),
+            catchup_events=fmt(fnum(best_sched, "pc_cmd_catchup_events"), 0),
+            catchup_extra=fmt(fnum(best_sched, "pc_cmd_catchup_extra"), 0),
             adoption="prefer_for_staircase_case",
         ))
     else:
