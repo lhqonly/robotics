@@ -316,6 +316,21 @@ staircase_contract_status() {
     "$latest_staircase_contract_metrics" 2>&1 || true
 }
 
+staircase_preflight_status() {
+  local swd_status
+  if [ ! -x "$ROOT/tools/com-staircase-preflight.sh" ]; then
+    echo "PREFLIGHT_RECOMMEND_STATUS=missing_preflight_tool"
+    echo "PREFLIGHT_READY=no"
+    echo "PREFLIGHT_NEXT_ACTION=restore_preflight_tool"
+    return 0
+  fi
+  swd_status="$(printf '%s\n' "$stlink_probe" |
+    awk -F'[ =]' '/^status=/ {print $2; exit}')"
+  swd_status="${swd_status:-unknown}"
+  (cd "$ROOT" && SWD_STATUS_OVERRIDE="$swd_status" \
+    tools/com-staircase-preflight.sh 2>/dev/null || true)
+}
+
 cmake_arg_value() {
   local file="$1"
   local key="$2"
@@ -670,6 +685,7 @@ stlink_probe="$(probe_stlink)"
 serial_status="$(serial_presence)"
 usb_status="$(usb_snapshot)"
 serial_users="$(serial_lsof)"
+staircase_preflight="$(staircase_preflight_status)"
 
 {
   echo "# 通信验证交接报告"
@@ -700,6 +716,12 @@ serial_users="$(serial_lsof)"
   echo '```'
   echo
   echo "结论：如果出现 \`status=bad_unknown_target\`、\`chipid: 0x000\` 或 \`dev-type: unknown\`，说明 ST-LINK 本身可见，但 SWD 没读到 STM32 目标；此时不要阻塞 ROS/串口 no-flash 验证，但不能烧录新固件或复测运行期栈水位。"
+  echo
+  echo "## staircase preflight"
+  echo
+  echo '```text'
+  printf '%s\n' "$staircase_preflight"
+  echo '```'
   echo
   echo "## 最近日志"
   echo

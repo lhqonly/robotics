@@ -39,6 +39,12 @@ fi
 
 assert_contains "$report" "status=skipped reason=COM_STATUS_PROBE_STLINK=0" \
   "ST-LINK skip marker"
+assert_contains "$report" "## staircase preflight" \
+  "staircase preflight section"
+assert_contains "$report" "PREFLIGHT_READY=no" \
+  "staircase preflight readiness"
+assert_contains "$report" "PREFLIGHT_NEXT_ACTION=run_tools_diagnose_swd" \
+  "staircase preflight next action"
 assert_contains "$report" "## micro-ROS 配置快照" \
   "micro-ROS config section"
 assert_contains "$report" "## 固件静态内存矩阵" \
