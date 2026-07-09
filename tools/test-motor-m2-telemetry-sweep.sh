@@ -41,6 +41,8 @@ assert_contains "$sweep" "source: static CDR field-size estimate from \`tools/co
   "budget source"
 assert_contains "$sweep" "budget contract: baud_util_pct <= 30.00" \
   "budget threshold"
+assert_contains "$sweep" "conservative static margin floor: 0.00 percentage points" \
+  "default conservative margin floor"
 assert_contains "$sweep" "state20_health200_921600 | 20 | 200 | 50.00 | 5.00 | 921600 | 272.00 | 67.05 | 339.05 | 36.79 | -6.79" \
   "default 921600 over budget"
 assert_contains "$sweep" "state20_health200_921600 | 20 | 200 | 50.00 | 5.00 | 921600" \
@@ -65,6 +67,22 @@ assert_contains "$pass_only" "state500_health1000_921600" \
 if grep -Fq "state20_health200_921600" "$pass_only"; then
   echo "FAIL: pass-only should not include default 921600 over-budget row" >&2
   cat "$pass_only" >&2
+  exit 1
+fi
+
+conservative="$TMPDIR/conservative.md"
+"$ROOT/tools/motor-m2-telemetry-sweep.py" --min-margin-pct 1 >"$conservative"
+assert_contains "$conservative" "conservative static margin floor: 1.00 percentage points" \
+  "custom conservative margin floor"
+assert_contains "$conservative" "state500_health1000_921600 | 500 | 1000 | 2.00 | 1.00 | 921600 | 272.00 | 3.65 | 275.65 | 29.91 | 0.09" \
+  "conservative sweep keeps low telemetry row"
+assert_contains "$conservative" "PASS_THIN | thin_margin | comparison_only" \
+  "conservative sweep downgrades thin 921600 row"
+conservative_pass_only="$TMPDIR/conservative-pass-only.md"
+"$ROOT/tools/motor-m2-telemetry-sweep.py" --min-margin-pct 1 --pass-only >"$conservative_pass_only"
+if grep -Fq "state500_health1000_921600" "$conservative_pass_only"; then
+  echo "FAIL: conservative pass-only should exclude thin 921600 row" >&2
+  cat "$conservative_pass_only" >&2
   exit 1
 fi
 
@@ -101,6 +119,13 @@ out="$(run_expect_fail "nan cmd" \
   "$ROOT/tools/motor-m2-telemetry-sweep.py" --cmd-hz nan)"
 grep -Fq -- "ERROR: --cmd-hz must be finite" <<<"$out" || {
   echo "FAIL: nan cmd error missing" >&2
+  echo "$out" >&2
+  exit 1
+}
+out="$(run_expect_fail "bad min margin" \
+  "$ROOT/tools/motor-m2-telemetry-sweep.py" --min-margin-pct -1)"
+grep -Fq -- "ERROR: --min-margin-pct must be >= 0" <<<"$out" || {
+  echo "FAIL: bad min margin error missing" >&2
   echo "$out" >&2
   exit 1
 }

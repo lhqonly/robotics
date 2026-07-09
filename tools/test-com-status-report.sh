@@ -171,10 +171,8 @@ assert_contains "$report" "### M2 motor telemetry period sweep" \
   "M2 motor telemetry sweep section"
 assert_contains "$report" "# M2 Motor Telemetry Period Sweep" \
   "M2 motor telemetry sweep output"
-assert_contains "$report" "state500_health1000_921600" \
-  "M2 921600 low telemetry sweep row"
-assert_contains "$report" "PASS_STATIC | thin_margin | low_telemetry_candidate" \
-  "M2 921600 thin-margin marker"
+assert_not_contains "$report" "state500_health1000_921600 | 500 | 1000" \
+  "M2 report conservative pass-only hides 921600 thin-margin table row"
 assert_contains "$report" "state20_health200_2000000" \
   "M2 2Mbps first smoke sweep row"
 assert_contains "$report" "state20_health200_2000000\` 推荐作为 M2 真机首轮 first_smoke profile" \
@@ -198,24 +196,24 @@ awk '
 ' "$report" >"$telemetry_section"
 assert_contains "$telemetry_section" "note: this is static UART planning only; it does not replace Agent smoke evidence" \
   "M2 telemetry scoped static-only note"
+assert_contains "$telemetry_section" "conservative static margin floor: 1.00 percentage points" \
+  "M2 telemetry scoped conservative margin floor"
 assert_contains "$telemetry_section" "## Fastest Passing Telemetry Per Baud" \
   "M2 telemetry scoped fastest table"
 assert_contains "$telemetry_section" "## Sweep Rows" \
   "M2 telemetry scoped sweep rows"
-assert_contains "$telemetry_section" "state500_health1000_921600" \
-  "M2 telemetry scoped 921600 row"
-assert_contains "$telemetry_section" "PASS_STATIC | thin_margin | low_telemetry_candidate" \
-  "M2 telemetry scoped thin-margin marker"
 assert_contains "$telemetry_section" "state20_health200_2000000" \
   "M2 telemetry scoped first smoke row"
 assert_contains "$telemetry_section" "PASS_STATIC | static_margin | first_smoke" \
   "M2 telemetry scoped first-smoke marker"
-assert_contains "$telemetry_section" "state500_health2000_921600" \
-  "M2 telemetry scoped second sweep row catches truncation"
-assert_contains "$telemetry_section" "这里只展示 \`--pass-only\` 摘要的前几行" \
+assert_contains "$telemetry_section" "这里只展示 \`--min-margin-pct 1 --pass-only\` 摘要的前几行" \
   "M2 telemetry scoped truncation note"
-assert_not_contains "$telemetry_section" "state20_health200_921600" \
+assert_contains "$telemetry_section" "post-2Mbps comparison only" \
+  "M2 telemetry scoped 921600 ordering note"
+assert_not_contains "$telemetry_section" "state20_health200_921600 | 20 | 200" \
   "M2 telemetry scoped pass-only excludes default over-budget row"
+assert_not_contains "$telemetry_section" "state500_health1000_921600 | 500 | 1000" \
+  "M2 telemetry scoped conservative pass-only excludes thin 921600 row"
 sweep_data_rows="$(
   awk '
     /^## Sweep Rows/ {in_sweep = 1; next}
@@ -275,8 +273,10 @@ assert_contains "$report" "M2 motor 真机首轮" \
   "M2 motor runtime next step"
 assert_contains "$report" "tools/recommend-motor-m2-smoke-command.sh" \
   "M2 motor smoke command generator in next steps"
-assert_contains "$report" "tools/motor-m2-telemetry-sweep.py --pass-only" \
+assert_contains "$report" "tools/motor-m2-telemetry-sweep.py --min-margin-pct 1 --pass-only" \
   "M2 motor telemetry sweep in next steps"
+assert_contains "$report" "921600 post-2Mbps comparison only" \
+  "M2 motor 921600 comparison ordering"
 assert_contains "$report" "tools/check-motor-m2-smoke-evidence.py" \
   "M2 motor smoke evidence checker in next steps"
 assert_contains "$report" "/motor/tp_joint_target" \

@@ -112,6 +112,7 @@ def project_rows(
     health_periods: list[int],
     bauds: list[int],
     max_baud_util_pct: float,
+    min_margin_pct: float,
     xrce_overhead_bytes: float,
 ) -> list[Row]:
     payload = wire_budget.motor_m2_payload_sizes()
@@ -145,11 +146,12 @@ def project_rows(
                 target_wire_ms = target_bits * 1000.0 / baud
                 state_wire_ms = state_bits * 1000.0 / baud
                 health_wire_ms = health_bits * 1000.0 / baud
-                verdict = (
-                    "PASS_STATIC"
-                    if util_pct <= max_baud_util_pct else
-                    "OVER_BUDGET"
-                )
+                if util_pct > max_baud_util_pct:
+                    verdict = "OVER_BUDGET"
+                elif margin_pct < min_margin_pct:
+                    verdict = "PASS_THIN"
+                else:
+                    verdict = "PASS_STATIC"
                 rows.append(Row(
                     state_ms=state_ms,
                     health_ms=health_ms,
@@ -202,7 +204,7 @@ def profile_id(row: Row) -> str:
 
 
 def risk(row: Row) -> str:
-    if row.verdict != "PASS_STATIC":
+    if row.verdict == "OVER_BUDGET":
         return "over_budget"
     if row.margin_pct < 1.0:
         return "thin_margin"
@@ -210,10 +212,12 @@ def risk(row: Row) -> str:
 
 
 def adoption(row: Row) -> str:
-    if row.verdict != "PASS_STATIC":
+    if row.verdict == "OVER_BUDGET":
         if row.state_ms == 20 and row.health_ms == 200 and row.baud == 921600:
             return "comparison_only"
         return "reject"
+    if row.verdict == "PASS_THIN":
+        return "comparison_only" if row.baud == 921600 else "hold_for_margin"
     if row.state_ms == 20 and row.health_ms == 200 and row.baud == 2_000_000:
         return "first_smoke"
     if row.baud == 921600:
@@ -325,6 +329,12 @@ def main() -> int:
     )
     parser.add_argument("--max-baud-util-pct", type=float, default=30.0)
     parser.add_argument(
+        "--min-margin-pct",
+        type=float,
+        default=0.0,
+        help="Residual baud-utilization margin required for PASS_STATIC.",
+    )
+    parser.add_argument(
         "--xrce-overhead-bytes",
         type=float,
         default=wire_budget.MOTOR_M2_DEFAULT_XRCE_OVERHEAD_BYTES,
@@ -344,6 +354,10 @@ def main() -> int:
         raise SystemExit("ERROR: --max-baud-util-pct must be finite")
     if args.max_baud_util_pct <= 0:
         raise SystemExit("ERROR: --max-baud-util-pct must be > 0")
+    if not math.isfinite(args.min_margin_pct):
+        raise SystemExit("ERROR: --min-margin-pct must be finite")
+    if args.min_margin_pct < 0:
+        raise SystemExit("ERROR: --min-margin-pct must be >= 0")
     if not math.isfinite(args.xrce_overhead_bytes):
         raise SystemExit("ERROR: --xrce-overhead-bytes must be finite")
     if args.xrce_overhead_bytes < 0:
@@ -358,6 +372,7 @@ def main() -> int:
         health_periods=health_periods,
         bauds=bauds,
         max_baud_util_pct=args.max_baud_util_pct,
+        min_margin_pct=args.min_margin_pct,
         xrce_overhead_bytes=args.xrce_overhead_bytes,
     )
     if not rows:
@@ -374,6 +389,7 @@ def main() -> int:
     print("- source: static CDR field-size estimate from `tools/com-wire-budget.py`")
     print(f"- target command rate: {fmt(args.cmd_hz)} Hz")
     print(f"- budget contract: baud_util_pct <= {fmt(args.max_baud_util_pct)}")
+    print(f"- conservative static margin floor: {fmt(args.min_margin_pct)} percentage points")
     print(
         "- period guard: state "
         f"{STATE_PERIOD_MIN_MS}..{STATE_PERIOD_MAX_MS}ms, "
