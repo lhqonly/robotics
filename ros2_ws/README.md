@@ -362,15 +362,22 @@ RUNS=2 tools/run-pc-scheduler-sweep.sh pc_sched_custom_$(date +%Y%m%d_%H%M)
 要按阶梯一次跑完整验证矩阵，用：
 
 ```bash
+tools/diagnose-swd.sh
 tools/run-com-staircase.sh staircase_$(date +%Y%m%d_%H%M)
 ```
+
+`tools/diagnose-swd.sh` 只读检查 ST-LINK/SWD，不会 reset 或 flash。输出里
+`SWD_STATUS=ok` 时再跑完整 staircase；如果是 `bad_unknown_target` 或
+`bad_probe_failed`，先按脚本里的 recovery checklist 检查 usbip 独占、供电、
+BOOT0/RESET、SWDIO/SWCLK/NRST 和共地。需要给自动化 gate 用时可加
+`STRICT=1 tools/diagnose-swd.sh`，SWD 未恢复会返回非 0。
 
 它会依次跑 1kHz/20Hz reliable baseline，然后跑 1/2/5/10kHz MCU 本地闭环
 与 200Hz PC latest-target profile；latest-target 默认同时比较 `921600` 和
 `2000000` 两个 baud。单个阶段失败会写入
 `log/com-staircase/<tag>.summary.log` 并继续；每个完成阶段会追加一行
 `METRICS`，汇总 `sampler_hz`、gap p95/p99/max、seq 步长和
-`zero_gap_count`、`lost/duplicate/inflight`。当前 ST-LINK/SWD 不可用时，
+`zero_gap_count`、`lost/duplicate/inflight`、`qos_incompatibility`。当前 ST-LINK/SWD 不可用时，
 脚本会跳过需要烧录的阶梯，自动 fallback 到 no-flash smoke，继续验证串口/ROS
 链路。只想看将要跑哪些阶段、不碰硬件：
 

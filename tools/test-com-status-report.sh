@@ -77,6 +77,8 @@ if find "$ROOT/log/com-perf" -maxdepth 1 -type f -name '*.wire.log' | grep -q .;
 fi
 assert_contains "$report" "## 未解决项" \
   "unresolved section"
+assert_contains "$report" "tools/diagnose-swd.sh" \
+  "SWD diagnostic command in next steps"
 assert_not_contains "$report" "division by zero" \
   "status report contract output"
 

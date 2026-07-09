@@ -14,6 +14,7 @@ tests=(
   "tools/test-com-staircase-dry-run.sh"
   "tools/test-pc-scheduler-sweep.sh"
   "tools/test-run-com-perf-config.sh"
+  "tools/test-swd-diagnose.sh"
   "tools/test-com-docs.sh"
   "tools/test-com-status-report.sh"
   "tools/test-firmware-size-report.sh"

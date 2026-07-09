@@ -24,5 +24,11 @@ assert_contains "$README" "sampler_target_rx_hz" \
   "staircase success metric documents target receive rate"
 assert_contains "$README" "pc_wire_gap_p99/max_ms" \
   "staircase success metric documents PC publish gap"
+assert_contains "$README" "tools/diagnose-swd.sh" \
+  "SWD diagnostic command is documented"
+assert_contains "$README" "SWD_STATUS=ok" \
+  "SWD diagnostic status is documented"
+assert_contains "$README" "qos_incompatibility" \
+  "staircase documents QoS incompatibility metric"
 
 echo "PASS: communication docs checks"
