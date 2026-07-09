@@ -16,12 +16,21 @@ match this profile or DDS endpoint matching will silently fail.
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 
 
-def make_exo_qos(depth: int = 10) -> QoSProfile:
-    """Build the shared /com/* QoS profile with a configurable history depth."""
+def make_exo_qos(depth: int = 10, reliability: str = 'reliable') -> QoSProfile:
+    """Build the shared /com/* QoS profile with runtime-tunable depth/reliability."""
     if depth < 1:
         raise ValueError('QoS depth must be >= 1, got %d' % depth)
+    reliability_key = reliability.strip().lower().replace('-', '_')
+    if reliability_key == 'reliable':
+        reliability_policy = ReliabilityPolicy.RELIABLE
+    elif reliability_key in ('best_effort', 'besteffort'):
+        reliability_policy = ReliabilityPolicy.BEST_EFFORT
+    else:
+        raise ValueError(
+            "QoS reliability must be 'reliable' or 'best_effort', got %r"
+            % reliability)
     return QoSProfile(
-        reliability=ReliabilityPolicy.RELIABLE,
+        reliability=reliability_policy,
         history=HistoryPolicy.KEEP_LAST,
         depth=depth,
     )

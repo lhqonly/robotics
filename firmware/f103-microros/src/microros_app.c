@@ -54,43 +54,83 @@
 #  define EXO_CRC_ENABLED 0
 #endif
 
+#ifndef EXO_QOS_BEST_EFFORT
+#  define EXO_QOS_BEST_EFFORT 0
+#endif
+
+#ifndef EXO_CONTROL_LOOP_HZ
+#  define EXO_CONTROL_LOOP_HZ 1000u
+#endif
+
+#ifndef EXO_STATUS_EVERY_N
+#  define EXO_STATUS_EVERY_N 1u
+#endif
+
+#ifndef EXO_EXECUTOR_SPIN_TIMEOUT_US
+#  define EXO_EXECUTOR_SPIN_TIMEOUT_US 1000u
+#endif
+
+#if EXO_STATUS_EVERY_N < 1u
+#  error "EXO_STATUS_EVERY_N must be >= 1"
+#endif
+
+#if EXO_EXECUTOR_SPIN_TIMEOUT_US < 1u
+#  error "EXO_EXECUTOR_SPIN_TIMEOUT_US must be >= 1"
+#endif
+
 /* ===== MCU 本地控制基线 =====
- * 第一阶段只做 1kHz 调度骨架:通信回调更新 latest target,本地控制 task 每 1ms
- * 读取一次最新目标。这里不驱动电机,只验证"本地闭环频率"与"ROS 通信频率"解耦。
- * 2/5/10kHz 后续不能再靠 FreeRTOS 1kHz tick,需要硬件定时器或 DWT 调度。 */
-static volatile uint32_t g_control_latest_seq = 0u;
-static volatile int32_t  g_control_latest_payload = 0;
+ * 通信回调更新 latest target,本地控制 tick 读取最新目标。这里不驱动电机,只验证
+ * "本地闭环频率"与"ROS 通信频率"解耦。>1kHz 时 TIM2 ISR 可设为高于 FreeRTOS
+ * syscall critical section 的优先级,因此 target 用双缓冲+原子 active index 提交:
+ * ISR 永远读 active buffer;任务只写 inactive buffer 后再切 active,避免半更新 seq/payload。 */
+typedef struct {
+    uint32_t seq;
+    int32_t payload;
+} control_target_t;
+
+static volatile control_target_t g_control_targets[2];
+static volatile uint32_t g_control_target_active = 0u;
+static volatile uint32_t g_control_latest_seq = 0u;       /* SWD/debug mirror */
+static volatile int32_t  g_control_latest_payload = 0;    /* SWD/debug mirror */
 static volatile uint32_t g_control_tick_count = 0u;
 
 static void com_control_update_target(uint32_t seq, int32_t payload)
 {
-    taskENTER_CRITICAL();
+    uint32_t next = (g_control_target_active ^ 1u) & 1u;
+
+    g_control_targets[next].payload = payload;
+    g_control_targets[next].seq = seq;
+    g_control_target_active = next;
+
+    /* Mirrors are for coarse SWD/debug observation only. The control ISR reads
+     * the double-buffered active target above. */
     g_control_latest_seq = seq;
     g_control_latest_payload = payload;
-    taskEXIT_CRITICAL();
 }
 
 void com_control_task(void *arg)
 {
     (void)arg;
     TickType_t last = xTaskGetTickCount();
-    const TickType_t period = pdMS_TO_TICKS(1u);
+    const TickType_t period = pdMS_TO_TICKS(
+        (1000u + EXO_CONTROL_LOOP_HZ - 1u) / EXO_CONTROL_LOOP_HZ);
 
     for (;;) {
-        uint32_t seq;
-        int32_t payload;
-
         vTaskDelayUntil(&last, period);
-        taskENTER_CRITICAL();
-        seq = g_control_latest_seq;
-        payload = g_control_latest_payload;
-        taskEXIT_CRITICAL();
-
-        /* Phase-1 baseline: consume latest target without motor output. */
-        (void)seq;
-        (void)payload;
-        g_control_tick_count++;
+        com_control_tick_isr();
     }
+}
+
+void com_control_tick_isr(void)
+{
+    uint32_t active = g_control_target_active & 1u;
+    uint32_t seq = g_control_targets[active].seq;
+    int32_t payload = g_control_targets[active].payload;
+
+    /* Phase baseline: consume latest target without motor output. */
+    (void)seq;
+    (void)payload;
+    g_control_tick_count++;
 }
 
 uint32_t com_control_tick_count(void)
@@ -100,7 +140,8 @@ uint32_t com_control_tick_count(void)
 
 uint32_t com_control_latest_seq(void)
 {
-    return g_control_latest_seq;
+    uint32_t active = g_control_target_active & 1u;
+    return g_control_targets[active].seq;
 }
 
 /* ===== 是否拿到 micro-ROS 头(lib 已生成) ===== */
@@ -142,6 +183,7 @@ static rclc_executor_t      g_executor;           /* 单线程 executor */
 /* 消息体:sub 收的 ExoCmd、pub 发的 ExoStatus,各一个(header 16B + payload 4B = 20B)。静态。 */
 static exo_msgs__msg__ExoCmd    g_msg_cmd;         /* 订阅回调写入 */
 static exo_msgs__msg__ExoStatus g_msg_status;      /* 回填后发布 */
+static uint32_t g_cmd_rx_count = 0u;                /* 收到的 PC 命令计数,用于状态降频 */
 
 /* CRC 自检失败计数(§7.9,crc_enabled 时收到 cmd 的 crc 与重算不符则 +1,不阻断)。
  * volatile + used:保留为可观测探针(调试器/将来诊断 topic 可读),不让编译器优化掉。 */
@@ -161,6 +203,11 @@ static volatile uint32_t g_crc_mismatch_count __attribute__((used)) = 0u;
 
 /* 软失败:不死,返回让外层重连(用于 spin/建链这类可重试路径)。 */
 #define RCSOFT(fn) ((fn) == RCL_RET_OK)
+
+static void ignore_rcl_ret(rcl_ret_t rc)
+{
+    (void)rc;
+}
 
 static void fail_stop(void)
 {
@@ -191,6 +238,7 @@ static void cmd_heartbeat_callback(const void *msgin)
 #endif
 
     /* ---- 回填 ExoStatus(§1.2 / H1)---- */
+    g_cmd_rx_count++;
     g_msg_status.header.seq = m->header.seq;   /* 原样回填 seq(§7.6 配对,精确相等) */
     g_msg_status.payload    = m->payload;      /* ★bit-exact 原样回填 payload(H1:零变换) */
     com_control_update_target(m->header.seq, m->payload);
@@ -208,9 +256,12 @@ static void cmd_heartbeat_callback(const void *msgin)
     g_msg_status.header.crc = 0u;              /* crc 关:置 0,收侧不校验(§7.9) */
 #endif
 
-    /* 发布回 mcu_status。RELIABLE 下 rcl_publish 把消息交给 XRCE reliable stream;
-     * 失败不致命(下一拍心跳还会来),故用软检查,不 fail_stop。 */
-    (void)rcl_publish(&g_pub_status, &g_msg_status, NULL);
+    /* 发布回 mcu_status。默认 EXO_STATUS_EVERY_N=1 保持每条命令回一次状态;
+     * 压测/真实控制可设为 5/10:每条命令仍更新 latest target,但只按比例回状态,
+     * 避免 PC 200Hz 目标下发被同频状态回传拖住串口 reliable stream。 */
+    if ((g_cmd_rx_count % EXO_STATUS_EVERY_N) == 0u) {
+        ignore_rcl_ret(rcl_publish(&g_pub_status, &g_msg_status, NULL));
+    }
 }
 
 /* ===== 建立 micro-ROS 实体(节点/pub/sub/executor),RELIABLE QoS ===== */
@@ -236,6 +287,15 @@ static bool microros_entities_init(void)
      *    传 qos_profile_default(rmw 默认 = RELIABLE/KEEP_LAST)。History depth 由
      *    colcon.meta 的 RMW_UXRCE_MAX_HISTORY=1 在 lib 层钉死为 1(契约 F103 侧 depth=1)。
      * 用 rosidl 的 exo_msgs/ExoStatus type support。 */
+#if EXO_QOS_BEST_EFFORT
+    if (!RCSOFT(rclc_publisher_init_best_effort(
+            &g_pub_status,
+            &g_node,
+            ROSIDL_GET_MSG_TYPE_SUPPORT(exo_msgs, msg, ExoStatus),
+            "com/tp_mcu_status"))) {
+        return false;
+    }
+#else
     if (!RCSOFT(rclc_publisher_init_default(
             &g_pub_status,
             &g_node,
@@ -243,9 +303,19 @@ static bool microros_entities_init(void)
             "com/tp_mcu_status"))) {   /* rclc 会补成 /com/tp_mcu_status(默认命名空间下绝对化) */
         return false;
     }
+#endif
 
     /* subscription /com/tp_cmd_heartbeat,RELIABLE QoS(同上,_init_default = reliable)。
      * 用 rosidl 的 exo_msgs/ExoCmd type support。 */
+#if EXO_QOS_BEST_EFFORT
+    if (!RCSOFT(rclc_subscription_init_best_effort(
+            &g_sub_cmd,
+            &g_node,
+            ROSIDL_GET_MSG_TYPE_SUPPORT(exo_msgs, msg, ExoCmd),
+            "com/tp_cmd_heartbeat"))) {
+        return false;
+    }
+#else
     if (!RCSOFT(rclc_subscription_init_default(
             &g_sub_cmd,
             &g_node,
@@ -253,6 +323,7 @@ static bool microros_entities_init(void)
             "com/tp_cmd_heartbeat"))) {
         return false;
     }
+#endif
 
     /* executor:1 个句柄(只挂 1 个 subscription)。 */
     g_executor = rclc_executor_get_zero_initialized_executor();
@@ -275,11 +346,11 @@ static bool microros_entities_init(void)
 static void microros_entities_fini(void)
 {
     /* 逆序销毁。fini 失败不致命(本就在清理重连路径),忽略返回值。 */
-    rcl_publisher_fini(&g_pub_status, &g_node);
-    rcl_subscription_fini(&g_sub_cmd, &g_node);
-    rclc_executor_fini(&g_executor);
-    rcl_node_fini(&g_node);
-    rclc_support_fini(&g_support);
+    ignore_rcl_ret(rcl_publisher_fini(&g_pub_status, &g_node));
+    ignore_rcl_ret(rcl_subscription_fini(&g_sub_cmd, &g_node));
+    ignore_rcl_ret(rclc_executor_fini(&g_executor));
+    ignore_rcl_ret(rcl_node_fini(&g_node));
+    ignore_rcl_ret(rclc_support_fini(&g_support));
 }
 
 /* ===== micro-ROS 应用任务主体 ===== */
@@ -322,14 +393,17 @@ void microros_app_task(void *arg)
 
         /* 3. spin:周期性处理 executor(收 cmd → 触发回调 → 回填 publish)。
          *    每轮 spin_some 处理已到数据,期间定期 ping 检测 agent 是否掉线。 */
-        uint32_t miss = 0;
+        TickType_t last_ping = xTaskGetTickCount();
         for (;;) {
-            /* spin_some 超时 1ms:配合 PC 200Hz/MCU 1kHz 基线,降低串口响应等待。 */
-            (void)rclc_executor_spin_some(&g_executor, RCL_MS_TO_NS(1));
+            /* spin_some 超时默认 1000us,可编译期下调到 500/200/100us 做延迟阶梯。
+             * ping 用 FreeRTOS tick 计时,不再假设"1000 次循环约等于 1s"。 */
+            (void)rclc_executor_spin_some(
+                &g_executor,
+                ((uint64_t)EXO_EXECUTOR_SPIN_TIMEOUT_US) * 1000ull);
 
             /* 每 ~1s ping 一次 agent;连续多次失败判定掉线,跳出去重连。 */
-            if (++miss >= 1000u) {     /* 1000 × ~1ms ≈ 1s */
-                miss = 0;
+            if ((xTaskGetTickCount() - last_ping) >= pdMS_TO_TICKS(1000)) {
+                last_ping = xTaskGetTickCount();
                 if (rmw_uros_ping_agent(50, 2) != RMW_RET_OK) {
                     break;            /* agent 掉线 → 清理重连 */
                 }

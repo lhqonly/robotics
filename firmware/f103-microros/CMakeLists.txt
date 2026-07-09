@@ -22,6 +22,20 @@ project(f103-microros C ASM)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
+option(EXO_QOS_BEST_EFFORT "Use best-effort QoS for ExoCmd/ExoStatus perf tests" OFF)
+set(EXO_UART_BAUD "921600" CACHE STRING "USART1 baud rate for the micro-ROS serial link")
+set(EXO_CONTROL_LOOP_HZ "1000" CACHE STRING "Local MCU control-loop baseline frequency")
+set(EXO_CONTROL_TIMER_IRQ_PRIORITY "4" CACHE STRING "TIM2 control-loop IRQ priority for >1kHz local loop")
+set(EXO_STATUS_EVERY_N "1" CACHE STRING "Publish one MCU status for every N received PC commands")
+set(EXO_EXECUTOR_SPIN_TIMEOUT_US "1000" CACHE STRING "rclc executor spin_some timeout in microseconds")
+set(EXO_MICROROS_TASK_STACK_WORDS "768" CACHE STRING "micro-ROS task stack words")
+set(EXO_CONTROL_TASK_STACK_WORDS "128" CACHE STRING "1kHz control task stack words")
+set(EXO_LED_TASK_STACK_WORDS "64" CACHE STRING "LED heartbeat task stack words")
+set(EXO_MINIMAL_STACK_WORDS "96" CACHE STRING "FreeRTOS idle/minimal stack words")
+set(EXO_UART_READ_POLL_YIELDS "0" CACHE STRING "taskYIELD polls before 1-tick UART read sleep")
+set(EXO_NEWLIB_HEAP_BYTES "512" CACHE STRING "Link-time newlib heap reserve bytes")
+set(EXO_MSP_STACK_BYTES "1024" CACHE STRING "Link-time MSP/ISR stack reserve bytes")
+
 # ---- 路径 ----
 set(TP        ${CMAKE_SOURCE_DIR}/ThirdParty)
 set(CMSIS     ${TP}/CMSIS)
@@ -33,6 +47,21 @@ set(LDSCRIPT  ${CMAKE_SOURCE_DIR}/STM32F103RB_FLASH.ld)
 # STM32F103xB : 选择 CMSIS device 头里的具体型号寄存器定义。
 # USE_HAL_DRIVER 不定义(我们不用 HAL)。
 add_compile_definitions(STM32F103xB)
+if(EXO_QOS_BEST_EFFORT)
+    add_compile_definitions(EXO_QOS_BEST_EFFORT=1)
+else()
+    add_compile_definitions(EXO_QOS_BEST_EFFORT=0)
+endif()
+add_compile_definitions(EXO_UART_BAUD=${EXO_UART_BAUD})
+add_compile_definitions(EXO_CONTROL_LOOP_HZ=${EXO_CONTROL_LOOP_HZ})
+add_compile_definitions(EXO_CONTROL_TIMER_IRQ_PRIORITY=${EXO_CONTROL_TIMER_IRQ_PRIORITY})
+add_compile_definitions(EXO_STATUS_EVERY_N=${EXO_STATUS_EVERY_N})
+add_compile_definitions(EXO_EXECUTOR_SPIN_TIMEOUT_US=${EXO_EXECUTOR_SPIN_TIMEOUT_US})
+add_compile_definitions(EXO_MICROROS_TASK_STACK_WORDS=${EXO_MICROROS_TASK_STACK_WORDS})
+add_compile_definitions(EXO_CONTROL_TASK_STACK_WORDS=${EXO_CONTROL_TASK_STACK_WORDS})
+add_compile_definitions(EXO_LED_TASK_STACK_WORDS=${EXO_LED_TASK_STACK_WORDS})
+add_compile_definitions(EXO_MINIMAL_STACK_WORDS=${EXO_MINIMAL_STACK_WORDS})
+add_compile_definitions(EXO_UART_READ_POLL_YIELDS=${EXO_UART_READ_POLL_YIELDS})
 
 # ---- micro-ROS 静态库(T5)----
 # [MICROROS-INCLUDE] / [MICROROS-LIB]:libmicroros.a + 其 include/ 由主 agent 用
@@ -110,6 +139,8 @@ target_link_options(${PROJECT_NAME}.elf PRIVATE
     -Wl,--gc-sections
     -Wl,-Map=${CMAKE_BINARY_DIR}/output.map
     -Wl,--print-memory-usage
+    -Wl,--defsym=_Min_Heap_Size=${EXO_NEWLIB_HEAP_BYTES}
+    -Wl,--defsym=_Min_Stack_Size=${EXO_MSP_STACK_BYTES}
     --specs=nano.specs            # newlib-nano,省 Flash/RAM
     --specs=nosys.specs           # 无 OS syscalls 桩(_sbrk 等弱实现)
     -Wl,--no-warn-rwx-segments

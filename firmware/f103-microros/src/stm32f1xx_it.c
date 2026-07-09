@@ -4,18 +4,21 @@
  *   - USART1_IRQHandler        : 处理 IDLE line(收完变长帧后线路空闲)→ 收集 RX
  *   - DMA1_Channel5_IRQHandler : USART1_RX DMA 传输完成(circular 绕回)→ 收集 RX
  *   - DMA1_Channel4_IRQHandler : USART1_TX DMA 传输完成 → 清标志、关通道(标记空闲)
+ *   - TIM2_IRQHandler          : >1kHz 本地控制 tick 基线(不调用 FreeRTOS API)
  *
  * SysTick/PendSV/SVC 由 FreeRTOS port 提供(经 FreeRTOSConfig.h 的宏映射到 CMSIS 名),
  * 此处不实现。Reset/NMI/HardFault 等由 CMSIS startup 提供默认弱实现。
  *
- * 注:本卡未在 ISR 内调用 FreeRTOS FromISR API(只搬字节进无锁 SPSC 环形缓冲),
- *     故无需 portYIELD_FROM_ISR。中断优先级数值=6 >= MAX_SYSCALL(5),已为将来用 API 留余地。
+ * 注:USART/DMA ISR 未调用 FreeRTOS FromISR API(只搬字节进无锁 SPSC 环形缓冲),
+ *     故无需 portYIELD_FROM_ISR。USART/DMA 优先级数值=6 >= MAX_SYSCALL(5),已为将来用
+ *     API 留余地。TIM2 高频控制 ISR 不调用 FreeRTOS API,可设为更高优先级以减少闭环抖动。
  */
 
 #include "stm32f1xx.h"
 
 /* 在 main.c 中定义:把 DMA RX 缓冲里的新字节搬进应用环形缓冲。 */
 extern void rx_dma_collect(void);
+extern void com_control_tick_isr(void);
 
 /* ===== HardFault 处理 —— 永久保留(取代 CMSIS 弱默认死循环) =====
  * CMSIS startup 的 HardFault_Handler 是弱默认 = 死循环,会把任何总线/用法故障伪装成
@@ -82,5 +85,13 @@ void DMA1_Channel4_IRQHandler(void)
     if (DMA1->ISR & DMA_ISR_TEIF4) {
         DMA1_Channel4->CCR &= ~DMA_CCR_EN;
         DMA1->IFCR = DMA_IFCR_CTEIF4;
+    }
+}
+
+void TIM2_IRQHandler(void)
+{
+    if (TIM2->SR & TIM_SR_UIF) {
+        TIM2->SR &= (uint16_t)~TIM_SR_UIF;
+        com_control_tick_isr();
     }
 }

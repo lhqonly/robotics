@@ -1,6 +1,6 @@
 /* main.c — STM32F103RB 固件主文件 (T5 / 里程碑 M2/M3)
  *
- * 目标:时钟树 72MHz + LED(PA5) 心跳 + USART1(PA9/PA10) @921600 8N1 +
+ * 目标:时钟树 72MHz + LED(PA5) 心跳 + USART1(PA9/PA10) @EXO_UART_BAUD 8N1 +
  *       DMA1 Ch5 RX circular + USART1 IDLE 中断收变长帧 + DMA1 Ch4 TX 发送。
  *       底层收发(DMA/IDLE/app_ring,RX bug 已修见 git 573a226)沿用 T4,不改动。
  *
@@ -9,7 +9,7 @@
  *     transport 层(src/microros_transport.c)的 write/read 回调底座。
  *   - 任务模型:T4 的「echo + 临时 DBG 探针」AppTask 已删除,改为
  *       microros_app_task(src/microros_app.c):rclc 双向闭环 node_com_mcu 节点;
- *       com_control_task(src/microros_app.c):1kHz 本地控制基线(消费最新目标,暂不驱动电机);
+ *       com_control_task/TIM2(src/microros_app.c):本地控制基线(消费最新目标,暂不驱动电机);
  *       + 一个极小 LedTask 做 liveness 心跳。
  *   - 串口归 micro-ROS(XRCE-DDS over serial);仅上电横幅/建链失败用明文自检串。
  *
@@ -46,6 +46,7 @@
 
 #include <errno.h>
 #include <stddef.h>
+#include <stdint.h>
 
 /* ===== 有界 _sbrk(覆盖 nosys 的无界版本)—— 永久保留的健壮性改进 =====
  * nosys.specs 的 _sbrk 不做任何边界检查:newlib heap 从 `end` 一路上涨,耗尽时越过 RAM 顶
@@ -60,7 +61,8 @@ void *_sbrk(ptrdiff_t incr)
 {
     static char *heap_end = 0;
     char *prev;
-    char *limit = (char *)&_estack - NEWLIB_HEAP_MSP_RESERVE;
+    uintptr_t stack_top = (uintptr_t)&_estack;
+    char *limit = (char *)(stack_top - NEWLIB_HEAP_MSP_RESERVE);
     if (heap_end == 0) {
         heap_end = &end;
     }
@@ -101,6 +103,39 @@ int clock_gettime(clockid_t clk_id, struct timespec *tp)
 #define UART_MTU            128u
 #define RX_DMA_BUF_SIZE     (2u * UART_MTU)   /* circular 双半区 = 256B */
 #define TX_DMA_BUF_SIZE     UART_MTU          /* 单缓冲 128B */
+
+#ifndef EXO_UART_BAUD
+#  define EXO_UART_BAUD 921600u
+#endif
+#define USART1_BRR_VALUE    ((uint32_t)((72000000u + (EXO_UART_BAUD / 2u)) / EXO_UART_BAUD))
+
+#ifndef EXO_UART_READ_POLL_YIELDS
+#  define EXO_UART_READ_POLL_YIELDS 0u
+#endif
+
+#ifndef EXO_CONTROL_LOOP_HZ
+#  define EXO_CONTROL_LOOP_HZ 1000u
+#endif
+
+#if EXO_CONTROL_LOOP_HZ < 1u
+#  error "EXO_CONTROL_LOOP_HZ must be >= 1"
+#endif
+
+#if EXO_CONTROL_LOOP_HZ <= 1000u && ((1000u % EXO_CONTROL_LOOP_HZ) != 0u)
+#  error "EXO_CONTROL_LOOP_HZ <= 1000 must divide the 1kHz FreeRTOS tick"
+#endif
+
+#if EXO_CONTROL_LOOP_HZ > 1000u && ((1000000u % EXO_CONTROL_LOOP_HZ) != 0u)
+#  error "EXO_CONTROL_LOOP_HZ > 1000 must divide the 1MHz TIM2 control tick"
+#endif
+
+#ifndef EXO_CONTROL_TIMER_IRQ_PRIORITY
+#  define EXO_CONTROL_TIMER_IRQ_PRIORITY 4u
+#endif
+
+#if EXO_CONTROL_TIMER_IRQ_PRIORITY > 15u
+#  error "EXO_CONTROL_TIMER_IRQ_PRIORITY must be <= 15"
+#endif
 
 static volatile uint8_t rx_dma_buf[RX_DMA_BUF_SIZE] __attribute__((aligned(4)));
 static          uint8_t tx_dma_buf[TX_DMA_BUF_SIZE] __attribute__((aligned(4)));
@@ -261,7 +296,7 @@ static void DMA_Init(void)
     DMA1_Channel5->CCR |= DMA_CCR_EN;
 }
 
-/* ===== USART1 @921600 8N1,DMA TX/RX + IDLE 中断 ===== */
+/* ===== USART1 @EXO_UART_BAUD 8N1,DMA TX/RX + IDLE 中断 ===== */
 static void USART1_Init(void)
 {
     RCC->APB2ENR |= RCC_APB2ENR_USART1EN;   /* USART1 在 APB2(72MHz),区别于 USART2 的 APB1(36MHz) */
@@ -270,13 +305,10 @@ static void USART1_Init(void)
     USART1->CR2 = 0;
     USART1->CR3 = 0;
 
-    /* 波特率:USARTDIV = fCK / (16 × baud),fCK = PCLK2 = 72MHz,baud = 921600。
-     *   USARTDIV = 72e6 / (16 × 921600) = 4.8828  →  mantissa=4,frac=round(0.8828×16)=14
-     *   BRR = (4 << 4) | 14 = 0x4E = 78。实际 baud = 72e6/(16×4.875)=923077,误差 +0.16%。
-     * 等价整数式 BRR = (PCLK2 + baud/2)/baud = (72e6+460800)/921600 = 78。
-     * 直接写常数,避免运行期浮点(固件路径禁浮点)。
-     * 注:USART1 在 APB2/72MHz,故 BRR=0x4E,区别于 USART2 的 APB1/36MHz/0x27。 */
-    USART1->BRR = 0x4Eu;                   /* = 78, USART1@921600 (PCLK2=72MHz) */
+    /* 波特率:oversampling by 16 时 BRR 等价整数式为 round(PCLK2 / baud)。
+     * 默认 EXO_UART_BAUD=921600 -> BRR=78(0x4E),实际 923077,误差 +0.16%。
+     * 2Mbps -> BRR=36(0x24),3Mbps -> BRR=24(0x18),均需 USB-TTL 实测确认。 */
+    USART1->BRR = USART1_BRR_VALUE;
 
     /* CR3:开 DMA 收发。 */
     USART1->CR3 = USART_CR3_DMAT | USART_CR3_DMAR;
@@ -288,6 +320,30 @@ static void USART1_Init(void)
     NVIC_SetPriority(USART1_IRQn, 6);
     NVIC_EnableIRQ(USART1_IRQn);
 }
+
+#if EXO_CONTROL_LOOP_HZ > 1000u
+/* ===== TIM2 高频本地控制 tick =====
+ * FreeRTOS tick=1kHz,无法表达 2/5/10kHz。高频基线改用 TIM2 ISR;ISR 只调用
+ * com_control_tick_isr() 做 latest-target 采样/计数,不调用 FreeRTOS API。
+ * 默认优先级 4 高于 configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY(5),不会被
+ * FreeRTOS critical section 屏蔽;latest target 在 microros_app.c 用双缓冲提交。 */
+static void ControlTimer_Init(void)
+{
+    RCC->APB1ENR |= RCC_APB1ENR_TIM2EN;
+    (void)RCC->APB1ENR;
+
+    TIM2->CR1 = 0;
+    TIM2->PSC = 71u;  /* APB1 prescaler=2 => TIM2CLK=72MHz,PSC 71 => 1MHz */
+    TIM2->ARR = (uint16_t)((1000000u / EXO_CONTROL_LOOP_HZ) - 1u);
+    TIM2->EGR = TIM_EGR_UG;
+    TIM2->SR = 0;
+    TIM2->DIER = TIM_DIER_UIE;
+
+    NVIC_SetPriority(TIM2_IRQn, EXO_CONTROL_TIMER_IRQ_PRIORITY);
+    NVIC_EnableIRQ(TIM2_IRQn);
+    TIM2->CR1 = TIM_CR1_CEN;
+}
+#endif
 
 /* ===== TX:用 DMA 发送一段(<= TX_DMA_BUF_SIZE)。阻塞等待上一次发完。 =====
  * 本卡自检/回显数据量小,简单实现:拷进 tx_dma_buf,重设 Ch7,等 TC。
@@ -367,7 +423,9 @@ size_t uart_ll_read(uint8_t *out, size_t max, int timeout_ms)
         return got;   /* 已有数据 / 不等待 → 立即返回(XRCE 轮询常态) */
     }
 
-    /* 当前为空且要求等待:在 timeout_ms 内轮询(1ms 粒度,降低 200Hz 基线 RTT)。 */
+    /* 当前为空且要求等待:在 timeout_ms 内轮询。默认保持 1 tick 睡眠粒度;
+     * EXO_UART_READ_POLL_YIELDS>0 时,睡眠前先让出同优先级调度若干次并重试,
+     * 用于后续验证能否压低串口 RX 到 executor 的 1ms 量化长尾。 */
     TickType_t start    = xTaskGetTickCount();
     TickType_t deadline = pdMS_TO_TICKS((uint32_t)timeout_ms);
     while ((xTaskGetTickCount() - start) < deadline) {
@@ -379,6 +437,18 @@ size_t uart_ll_read(uint8_t *out, size_t max, int timeout_ms)
             }
             return got;
         }
+#if EXO_UART_READ_POLL_YIELDS > 0u
+        for (uint32_t i = 0u; i < EXO_UART_READ_POLL_YIELDS; i++) {
+            taskYIELD();
+            if (app_ring_get(&c) == 0) {
+                out[got++] = c;
+                while (got < max && app_ring_get(&c) == 0) {
+                    out[got++] = c;
+                }
+                return got;
+            }
+        }
+#endif
         vTaskDelay(pdMS_TO_TICKS(1));
     }
     return got;   /* 超时,got==0 */
@@ -400,20 +470,36 @@ static void LedTask(void *arg)
 /* ===== 静态 task 资源(configSUPPORT_STATIC_ALLOCATION=1) =====
  * micro-ROS 任务栈:rcl→rmw→xrce 调用链较深。早期按 05 文档 T8 建议从 ~2500 words
  *   起测,现已基于 gdb 栈水位和硬件验收收敛到 1024 words。
- * 控制任务栈:128 words(=512B),1kHz latest-target 消费骨架。
- * LED 任务栈:64 words(=256B),只翻 GPIO + delay,够用。 */
-#define MICROROS_TASK_STACK_WORDS  1024u   /* 4KB。gdb 实测 rcl_init+create_session 全程栈最深仅用 ~235 words
-                                            * (早期 2048-word 栈 HWM 余 1813),4KB 仍保留约 3KB 栈余量;
-                                            * 省下 2KB SRAM 给 newlib heap / micro-ROS 运行余量。
-                                            * (注:建链 hang 与栈无关,真因是 best_effort 流配置见 colcon.meta;
-                                            *  此前 10KB→6KB 的栈调整是误判方向,栈从来不是瓶颈。) */
-#define CONTROL_TASK_STACK_WORDS   128u    /* = 512B,1kHz local control baseline */
-#define LED_TASK_STACK_WORDS       64u     /* = 256B */
+ * 控制任务栈:128 words(=512B),<=1kHz latest-target 消费骨架。
+ * LED 任务栈:64 words(=256B),只翻 GPIO + delay,够用。
+ * Idle 栈:configMINIMAL_STACK_SIZE=96 words;按 2026-07-08 HWM used≈24 words
+ *   保留约 72 words 裕度,省 128B SRAM。 */
+#ifndef EXO_MICROROS_TASK_STACK_WORDS
+#  define EXO_MICROROS_TASK_STACK_WORDS 768u
+#endif
+#ifndef EXO_CONTROL_TASK_STACK_WORDS
+#  define EXO_CONTROL_TASK_STACK_WORDS 128u
+#endif
+#ifndef EXO_LED_TASK_STACK_WORDS
+#  define EXO_LED_TASK_STACK_WORDS 64u
+#endif
+
+#define MICROROS_TASK_STACK_WORDS  EXO_MICROROS_TASK_STACK_WORDS
+                                           /* Default 3KB。2026-07-08 真机 HWM:
+                                            * total=1024 words, used≈484, free≈540。
+                                            * 降到 768 后仍按该样本保留约 284 words(>1KB)
+                                            * 余量,同时省 1KB SRAM。 */
+#define CONTROL_TASK_STACK_WORDS   EXO_CONTROL_TASK_STACK_WORDS
+                                           /* Default 512B,1kHz local control baseline */
+#define LED_TASK_STACK_WORDS       EXO_LED_TASK_STACK_WORDS
+                                           /* Default 256B */
 
 static StaticTask_t microros_task_tcb;
 static StackType_t  microros_task_stack[MICROROS_TASK_STACK_WORDS];
+#if EXO_CONTROL_LOOP_HZ <= 1000u
 static StaticTask_t control_task_tcb;
 static StackType_t  control_task_stack[CONTROL_TASK_STACK_WORDS];
+#endif
 static StaticTask_t led_task_tcb;
 static StackType_t  led_task_stack[LED_TASK_STACK_WORDS];
 static StaticTask_t idle_task_tcb;
@@ -455,10 +541,14 @@ int main(void)
      * 污染 XRCE 帧流,agent 无法建链)。固件存活靠 LED 心跳(LedTask)观察,不靠串口文本。
      * 原 boot banner 已移除(2026-06-20:实测 banner 文本混进 XRCE 流导致 agent 收不到 session)。 */
 
-    /* 控制任务优先级 3,高于通信任务:本地闭环不被 ROS 通信阻塞。
-     * micro-ROS 应用任务优先级 2;LED 心跳任务优先级 1,更低。 */
+    /* 控制基线高于通信任务:本地闭环不被 ROS 通信阻塞。
+     * <=1kHz 用 FreeRTOS task;>1kHz 用 TIM2 ISR。micro-ROS 优先级 2;LED 优先级 1。 */
+#if EXO_CONTROL_LOOP_HZ <= 1000u
     xTaskCreateStatic(com_control_task, "ctrl", CONTROL_TASK_STACK_WORDS, NULL,
                       3 /*prio*/, control_task_stack, &control_task_tcb);
+#else
+    ControlTimer_Init();
+#endif
     xTaskCreateStatic(microros_app_task, "uros", MICROROS_TASK_STACK_WORDS, NULL,
                       2 /*prio*/, microros_task_stack, &microros_task_tcb);
     xTaskCreateStatic(LedTask, "led", LED_TASK_STACK_WORDS, NULL,
@@ -500,7 +590,11 @@ T8_PROBE_NOINLINE uint32_t t8_probe_microros_stack_hwm_words(void)
 
 T8_PROBE_NOINLINE uint32_t t8_probe_control_stack_hwm_words(void)
 {
+#if EXO_CONTROL_LOOP_HZ <= 1000u
     return (uint32_t)uxTaskGetStackHighWaterMark((TaskHandle_t)&control_task_tcb);
+#else
+    return 0u;  /* TIM2 ISR mode has no control task stack. */
+#endif
 }
 
 T8_PROBE_NOINLINE uint32_t t8_probe_led_stack_hwm_words(void)

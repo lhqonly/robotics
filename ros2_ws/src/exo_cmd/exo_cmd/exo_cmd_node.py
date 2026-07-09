@@ -30,6 +30,7 @@ This node makes no assumption about WHO sends mcu_status: in Phase A it is the
 local loopback_node, in Phase B it is the STM32 micro-ROS firmware.
 """
 
+from collections import deque
 import random
 import time
 
@@ -71,6 +72,18 @@ class ExoCmdNode(Node):
         # Period of the /com/tp_link_health publisher (§7.7, ~1 Hz). Decoupled from
         # summary_period_s. 0 disables the diagnostic topic.
         self.declare_parameter('link_health_period_s', 1.0)
+        # Per-message logs are expensive on the communication hot path. Keep the
+        # structured counters/topic, but make normal matched echoes DEBUG by
+        # default and throttle soft RTT warnings.
+        self.declare_parameter('log_matched_events', False)
+        self.declare_parameter('log_sent_commands', False)
+        self.declare_parameter('rtt_warn_log_period_s', 1.0)
+        # Optional startup grace for hardware runs: publish commands immediately
+        # so DDS/XRCE discovery and the MCU path warm up, but do not feed those
+        # startup seqs into LinkHealth counters. This keeps self-test summaries
+        # focused on steady-state link quality instead of first-frame discovery
+        # tails.
+        self.declare_parameter('startup_grace_s', 0.0)
         # Application-level CRC self-check (Q4 / §7.9). Default OFF: cmd.crc is
         # published as 0 and incoming status.crc is NOT checked. When True, the
         # publisher fills header.crc and the subscriber verifies it -- a mismatch
@@ -93,9 +106,21 @@ class ExoCmdNode(Node):
         # Command publish rate. Default keeps the historical self-test behavior;
         # pc_cmd.launch.py overrides this for the real-hardware baseline.
         self.declare_parameter('cmd_rate_hz', 10.0)
+        # Optional phase catch-up for high-rate latest-target runs. If a timer
+        # callback arrives late, publish up to N extra commands in the same
+        # callback to keep the long-term wire rate near cmd_rate_hz. Default off:
+        # strict full-echo diagnostics should not hide scheduler stalls with
+        # bursts.
+        self.declare_parameter('cmd_catchup_max', 0)
         # Keep-last depth. Default remains 10 for compatibility; high-rate
         # control runs can use depth=1 to avoid stale command queueing.
         self.declare_parameter('qos_depth', 10)
+        # Reliable is the safety/acceptance default. best_effort is a performance
+        # experiment mode for latest-only high-rate command/status streams.
+        self.declare_parameter('qos_reliability', 'reliable')
+        self.declare_parameter('tracking_mode', 'echo')
+        self.declare_parameter('status_every_n', 1)
+        self.declare_parameter('sample_window', 4096)
 
         rtt_warn_ms = self.get_parameter('rtt_warn_ms').value
         rtt_deadline_ms = self.get_parameter('rtt_deadline_ms').value
@@ -103,6 +128,14 @@ class ExoCmdNode(Node):
         sweep_period_s = self.get_parameter('sweep_period_s').value
         summary_period_s = self.get_parameter('summary_period_s').value
         link_health_period_s = self.get_parameter('link_health_period_s').value
+        self._log_matched_events = bool(
+            self.get_parameter('log_matched_events').value)
+        self._log_sent_commands = bool(
+            self.get_parameter('log_sent_commands').value)
+        self._rtt_warn_log_period_s = float(
+            self.get_parameter('rtt_warn_log_period_s').value)
+        self._startup_grace_s = float(
+            self.get_parameter('startup_grace_s').value)
         settled_window = self.get_parameter('settled_window').value
         self._crc_enabled = bool(self.get_parameter('crc_enabled').value)
         # CRC-mismatch tally (§7.9) lives in the tracker now (Low-3), so the
@@ -112,19 +145,42 @@ class ExoCmdNode(Node):
         self.executor_threads = self.get_parameter('executor_threads').value
         start_value = self.get_parameter('start_value').value
         cmd_rate_hz = float(self.get_parameter('cmd_rate_hz').value)
+        self._cmd_catchup_max = int(
+            self.get_parameter('cmd_catchup_max').value)
         qos_depth = int(self.get_parameter('qos_depth').value)
+        qos_reliability = self.get_parameter('qos_reliability').value
+        qos_reliability_key = (
+            qos_reliability.strip().lower().replace('-', '_'))
+        self._tracking_mode = (
+            self.get_parameter('tracking_mode').value.strip().lower())
+        self._status_every_n = int(self.get_parameter('status_every_n').value)
+        self._sample_window = int(self.get_parameter('sample_window').value)
 
         if cmd_rate_hz <= 0.0:
             self.get_logger().fatal(
                 'invalid cmd_rate_hz %.3f: must be > 0' % cmd_rate_hz)
             raise ValueError('cmd_rate_hz must be > 0')
+        if self._tracking_mode not in ('echo', 'sampled'):
+            raise ValueError(
+                "tracking_mode must be 'echo' or 'sampled', got %r"
+                % self._tracking_mode)
+        if self._status_every_n < 1:
+            raise ValueError('status_every_n must be >= 1')
+        if self._sample_window < 1:
+            raise ValueError('sample_window must be >= 1')
+        if self._cmd_catchup_max < 0:
+            raise ValueError('cmd_catchup_max must be >= 0')
 
         self._heartbeat_period_s = 1.0 / cmd_rate_hz
         try:
-            self._qos = make_exo_qos(qos_depth)
+            self._qos = make_exo_qos(qos_depth, qos_reliability)
         except ValueError as exc:
-            self.get_logger().fatal('invalid qos_depth: %s' % exc)
+            self.get_logger().fatal('invalid QoS profile: %s' % exc)
             raise
+        catchup_latest_target_safe = (
+            self._cmd_catchup_max == 0 or
+            (qos_reliability_key in ('best_effort', 'besteffort') and
+             self._tracking_mode == 'sampled' and self._status_every_n > 1))
 
         # §7.6 run nonce: -1 -> random 32-bit nonce; >=0 -> literal start; any
         # other negative is illegal (turning -1 into a real nonce is the node's
@@ -140,18 +196,33 @@ class ExoCmdNode(Node):
             raise ValueError('start_value must be >=0 or -1, got %d'
                              % start_value)
 
-        try:
-            self._tracker = LinkHealthTracker(
-                rtt_warn_ms=rtt_warn_ms,
-                rtt_deadline_ms=rtt_deadline_ms,
-                max_inflight=max_inflight,
-                settled_window=settled_window,
-                start_seq=start_seq,
-            )
-        except ValueError as exc:
-            # §7.2 constraint rtt_warn_ms < rtt_deadline_ms violated: fail loud.
-            self.get_logger().fatal('invalid link-health params: %s' % exc)
-            raise
+        self._tracker_kwargs = {
+            'rtt_warn_ms': rtt_warn_ms,
+            'rtt_deadline_ms': rtt_deadline_ms,
+            'max_inflight': max_inflight,
+            'settled_window': settled_window,
+        }
+        self._tracker = self._new_tracker(start_seq)
+        self._start_s = self._now()
+        self._next_cmd_due_s = self._start_s + self._heartbeat_period_s
+        self._wire_seq = start_seq
+        self._wire_send_count = 0
+        self._cmd_catchup_events = 0
+        self._cmd_catchup_extra = 0
+        self._last_summary_s = self._start_s
+        self._last_summary_wire_count = 0
+        self._last_summary_sent_count = 0
+        self._last_summary_matched_count = 0
+        self._last_wire_publish_s = None
+        self._wire_gap_window = deque(maxlen=4096)
+        self._last_rtt_warn_log_s = 0.0
+        self._rtt_warn_suppressed = 0
+        self._sampled_sends = {}
+        self._sampled_order = deque()
+        self._sampled_seen = set()
+        self._startup_grace_active = self._startup_grace_s > 0.0
+        self._startup_grace_seqs = set()
+        self._cmd_msg = ExoCmd()
 
         # Callback groups (task ⑤): rx (echo subscription) gets its OWN group so
         # on_status -- which timestamps the safety-critical RTT -- can run
@@ -193,13 +264,21 @@ class ExoCmdNode(Node):
             % (rtt_warn_ms, rtt_deadline_ms, max_inflight, sweep_period_s,
                settled_window))
         self.get_logger().info(
-            'executor_threads=%d (0 = auto / os.cpu_count()), qos_depth=%d'
-            % (self.executor_threads, qos_depth))
+            'executor_threads=%d (0 = auto / os.cpu_count()), '
+            'qos_depth=%d qos_reliability=%s tracking_mode=%s '
+            'status_every_n=%d sample_window=%d cmd_catchup_max=%d'
+            % (self.executor_threads, qos_depth, qos_reliability,
+               self._tracking_mode, self._status_every_n,
+               self._sample_window, self._cmd_catchup_max))
         self.get_logger().info(
             'crc_enabled=%s (application self-check, non-blocking; §7.9), '
-            'link_health %s @ %.2f Hz'
+            'link_health %s @ %.2f Hz, log_matched_events=%s '
+            'log_sent_commands=%s rtt_warn_log_period_s=%.3f '
+            'startup_grace_s=%.3f'
             % (self._crc_enabled, TOPIC_LINK_HEALTH,
-               (1.0 / link_health_period_s) if link_health_period_s else 0.0))
+               (1.0 / link_health_period_s) if link_health_period_s else 0.0,
+               self._log_matched_events, self._log_sent_commands,
+               self._rtt_warn_log_period_s, self._startup_grace_s))
         # Surface the resolved nonce prominently (§7.6): the echoed values that
         # come back equal to this prove THIS run's causality.
         self.get_logger().info(
@@ -211,6 +290,12 @@ class ExoCmdNode(Node):
             'applied QoS pub[%s]: %s' % (TOPIC_HEARTBEAT, qos_summary(self._pub)))
         self.get_logger().info(
             'applied QoS sub[%s]: %s' % (TOPIC_STATUS, qos_summary(self._sub)))
+        if not catchup_latest_target_safe:
+            self.get_logger().warn(
+                'cmd_catchup_max=%d outside latest-target profile; use it only '
+                'with best_effort + sampled + status_every_n>1. It can flood '
+                'reliable/status_every_1 full-echo diagnostics.'
+                % self._cmd_catchup_max)
 
     # ----- observables -------------------------------------------------------
     @property
@@ -234,30 +319,159 @@ class ExoCmdNode(Node):
         """Monotonic seconds (for the tracker / sweep / RTT)."""
         return time.monotonic()
 
+    def _new_tracker(self, start_seq: int) -> LinkHealthTracker:
+        """Build a tracker; fail loud if threshold params are invalid."""
+        try:
+            return LinkHealthTracker(
+                start_seq=start_seq, **self._tracker_kwargs)
+        except ValueError as exc:
+            # §7.2 constraint rtt_warn_ms < rtt_deadline_ms violated: fail loud.
+            self.get_logger().fatal('invalid link-health params: %s' % exc)
+            raise
+
+    def _finish_startup_grace(self, now_s: float) -> None:
+        """Start steady-state LinkHealth accounting at the current wire seq."""
+        if not self._startup_grace_active:
+            return
+        self._startup_grace_active = False
+        self._tracker = self._new_tracker(self._wire_seq)
+        self._sampled_sends.clear()
+        self._sampled_order.clear()
+        self._sampled_seen.clear()
+        self._wire_send_count = 0
+        self._cmd_catchup_events = 0
+        self._cmd_catchup_extra = 0
+        self._last_summary_wire_count = 0
+        self._last_summary_sent_count = 0
+        self._last_summary_matched_count = 0
+        self._start_s = now_s
+        self._last_summary_s = now_s
+        self._next_cmd_due_s = now_s + self._heartbeat_period_s
+        self._last_wire_publish_s = None
+        self._wire_gap_window.clear()
+        self.get_logger().info(
+            'startup grace ended after %.3fs; link-health counters start at '
+            'seq=%d'
+            % (self._startup_grace_s, self._wire_seq))
+
+    def _within_startup_grace(self, now_s: float) -> bool:
+        """Return True while startup commands should be ignored by diagnostics."""
+        if not self._startup_grace_active:
+            return False
+        if now_s - self._start_s >= self._startup_grace_s:
+            self._finish_startup_grace(now_s)
+            return False
+        return True
+
     # ----- event surfacing ---------------------------------------------------
     def _emit(self, events) -> None:
         """Map tracker Events onto the ROS logger at their requested level."""
         log = self.get_logger()
         for ev in events:
             level = ev.level
+            msg = ev.msg
+            if ev.kind == 'matched' and not self._log_matched_events:
+                level = 'DEBUG'
+            if ev.kind == 'warn_rtt' and self._rtt_warn_log_period_s > 0.0:
+                now_s = self._now()
+                elapsed_s = now_s - self._last_rtt_warn_log_s
+                if elapsed_s < self._rtt_warn_log_period_s:
+                    self._rtt_warn_suppressed += 1
+                    continue
+                if self._rtt_warn_suppressed:
+                    msg = '%s (suppressed %d similar RTT warnings)' % (
+                        msg, self._rtt_warn_suppressed)
+                    self._rtt_warn_suppressed = 0
+                self._last_rtt_warn_log_s = now_s
             if level == 'ERROR':
-                log.error(ev.msg)
+                log.error(msg)
             elif level == 'WARN':
-                log.warn(ev.msg)
+                log.warn(msg)
             elif level == 'DEBUG':
-                log.debug(ev.msg)
+                log.debug(msg)
             else:
-                log.info(ev.msg)
+                log.info(msg)
+
+    def _remember_sampled_send(self, seq: int, now_s: float) -> None:
+        """Remember recent wire sends so sampled statuses can compute RTT."""
+        self._sampled_sends[seq] = now_s
+        self._sampled_order.append(seq)
+        while len(self._sampled_order) > self._sample_window:
+            old = self._sampled_order.popleft()
+            self._sampled_sends.pop(old, None)
+            self._sampled_seen.discard(old)
+
+    def _due_command_count(self, now_s: float) -> int:
+        """Return how many commands to publish on this timer callback."""
+        if self._cmd_catchup_max == 0:
+            return 1
+        if now_s < self._next_cmd_due_s:
+            return 1
+        periods_due = int(
+            (now_s - self._next_cmd_due_s) / self._heartbeat_period_s) + 1
+        return max(1, min(periods_due, self._cmd_catchup_max + 1))
+
+    def _remember_wire_gap(self, now_s: float) -> None:
+        """Track PC-side command publish intervals for jitter diagnosis."""
+        if self._last_wire_publish_s is not None:
+            self._wire_gap_window.append(now_s - self._last_wire_publish_s)
+        self._last_wire_publish_s = now_s
+
+    def _wire_gap_stats_ms(self):
+        """Return avg/p95/p99/max publish gap in milliseconds."""
+        if not self._wire_gap_window:
+            return 0.0, 0.0, 0.0, 0.0
+        gaps = list(self._wire_gap_window)
+        ordered = sorted(gaps)
+        count = len(ordered)
+
+        def nearest_rank(percent: float) -> float:
+            rank = int(percent * count)
+            if rank < percent * count:
+                rank += 1
+            rank = max(1, min(rank, count))
+            return ordered[rank - 1] * 1000.0
+
+        avg_ms = sum(gaps) * 1000.0 / count
+        return (
+            avg_ms,
+            nearest_rank(0.95),
+            nearest_rank(0.99),
+            ordered[-1] * 1000.0,
+        )
 
     # ----- timers / callbacks ------------------------------------------------
     def _on_timer(self):
+        count = self._due_command_count(self._now())
+        if count > 1:
+            self._cmd_catchup_events += 1
+            self._cmd_catchup_extra += count - 1
+        for _ in range(count):
+            self._publish_command()
+        self._next_cmd_due_s += count * self._heartbeat_period_s
+
+    def _publish_command(self):
         # §7.1: the SAME monotonic instant feeds the tracker (seconds) and the
         # wire stamp (nanoseconds). monotonic_ns() is the single source; the
         # seconds form passed to on_send is derived from it so RTT pairs cleanly.
         now_ns = self._now_ns()
         now_s = now_ns / 1e9
-        seq, events = self._tracker.on_send(now_s)
-        msg = ExoCmd()
+        if self._within_startup_grace(now_s):
+            seq = self._wire_seq
+            self._wire_seq = (self._wire_seq + 1) % (2 ** 32)
+            self._startup_grace_seqs.add(seq)
+            events = []
+        elif self._tracking_mode == 'sampled':
+            seq = self._wire_seq
+            self._wire_seq = (self._wire_seq + 1) % (2 ** 32)
+            self._remember_sampled_send(seq, now_s)
+            events = []
+        else:
+            seq, events = self._tracker.on_send(now_s)
+        if not self._startup_grace_active:
+            self._remember_wire_gap(now_s)
+        self._wire_send_count += 1
+        msg = self._cmd_msg
         msg.header.seq = seq
         msg.header.stamp_mono_ns = now_ns
         # payload is the loopback value, DECOUPLED from seq. We reuse seq's value
@@ -267,7 +481,8 @@ class ExoCmdNode(Node):
         msg.header.crc = (compute_crc(seq, now_ns, msg.payload)
                           if self._crc_enabled else 0)
         self._pub.publish(msg)
-        self.get_logger().debug('sent cmd_heartbeat seq=%d' % seq)
+        if self._log_sent_commands:
+            self.get_logger().debug('sent cmd_heartbeat seq=%d' % seq)
         # events here are only the (rare) cap-eviction LOST warnings.
         self._emit(events)
 
@@ -289,8 +504,32 @@ class ExoCmdNode(Node):
                     'crc_mismatch_count=%d)'
                     % (msg.header.seq, msg.header.crc, expected,
                        self._tracker.crc_mismatch_count))
-        events = self._tracker.on_echo(msg.header.seq, self._now())
+        now = self._now()
+        if msg.header.seq in self._startup_grace_seqs:
+            self._startup_grace_seqs.discard(msg.header.seq)
+            return
+        if self._within_startup_grace(now):
+            return
+        if self._tracking_mode == 'sampled':
+            events = self._on_sampled_status(msg, now)
+        else:
+            events = self._tracker.on_echo(msg.header.seq, now)
         self._emit(events)
+
+    def _on_sampled_status(self, msg: ExoStatus, now: float):
+        seq = msg.header.seq
+        t_send = self._sampled_sends.get(seq)
+        if t_send is None:
+            self.get_logger().warn(
+                'sampled status seq=%d not in recent send window=%d'
+                % (seq, self._sample_window))
+            return []
+        events = []
+        if seq not in self._sampled_seen:
+            events.extend(self._tracker.on_send_seq(seq, t_send))
+            self._sampled_seen.add(seq)
+        events.extend(self._tracker.on_echo(seq, now))
+        return events
 
     def _on_sweep(self):
         # §7.3/M3: settle every entry past its deadline as LOST.
@@ -304,10 +543,42 @@ class ExoCmdNode(Node):
         # instant, or a concurrent rx echo could make the logged line self-
         # contradictory (e.g. reconciles=True printed against stale counters).
         s = self._tracker.snapshot()
+        now_s = self._now()
+        elapsed_s = max(now_s - self._start_s, 1e-9)
+        wire_rate_hz = self._wire_send_count / elapsed_s
+        sent_rate_hz = s['sent'] / elapsed_s
+        matched_rate_hz = s['matched'] / elapsed_s
+        target_rate_hz = matched_rate_hz * self._status_every_n
+        window_s = max(now_s - self._last_summary_s, 1e-9)
+        window_wire_rate_hz = (
+            (self._wire_send_count - self._last_summary_wire_count) / window_s)
+        window_sent_hz = (
+            (s['sent'] - self._last_summary_sent_count) / window_s)
+        window_matched_hz = (
+            (s['matched'] - self._last_summary_matched_count) / window_s)
+        window_target_hz = window_matched_hz * self._status_every_n
+        gap_avg_ms, gap_p95_ms, gap_p99_ms, gap_max_ms = (
+            self._wire_gap_stats_ms())
+        self._last_summary_s = now_s
+        self._last_summary_wire_count = self._wire_send_count
+        self._last_summary_sent_count = s['sent']
+        self._last_summary_matched_count = s['matched']
         line = ('link-health summary: sent=%d matched=%d lost=%d '
-                'duplicate=%d inflight=%d stale_duplicate=%d'
+                'duplicate=%d inflight=%d stale_duplicate=%d '
+                'wire_sent=%d wire_rate_hz=%.3f sent_rate_hz=%.3f '
+                'matched_rate_hz=%.3f target_rate_hz=%.3f '
+                'wire_window_hz=%.3f sent_window_hz=%.3f '
+                'matched_window_hz=%.3f target_window_hz=%.3f '
+                'wire_gap_avg_ms=%.3f wire_gap_p95_ms=%.3f '
+                'wire_gap_p99_ms=%.3f wire_gap_max_ms=%.3f '
+                'cmd_catchup_events=%d cmd_catchup_extra=%d'
                 % (s['sent'], s['matched'], s['lost'], s['duplicate'],
-                   s['inflight'], s['stale_duplicate']))
+                   s['inflight'], s['stale_duplicate'],
+                   self._wire_send_count, wire_rate_hz, sent_rate_hz,
+                   matched_rate_hz, target_rate_hz, window_wire_rate_hz,
+                   window_sent_hz, window_matched_hz, window_target_hz,
+                   gap_avg_ms, gap_p95_ms, gap_p99_ms, gap_max_ms,
+                   self._cmd_catchup_events, self._cmd_catchup_extra))
         if s['reconciles']:
             self.get_logger().info(line)
         else:

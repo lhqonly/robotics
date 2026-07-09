@@ -24,6 +24,8 @@ setup(
             'exo_cmd_node = exo_cmd.exo_cmd_node:main',
             # Local MCU simulator: sub /com/tp_cmd_heartbeat -> pub /com/tp_mcu_status
             'loopback_node = exo_cmd.loopback_node:main',
+            # Hardware perf helper: direct rclpy sampler for /com/tp_mcu_status
+            'status_sampler = exo_cmd.status_sampler:main',
         ],
     },
 )

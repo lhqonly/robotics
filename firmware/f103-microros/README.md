@@ -51,15 +51,17 @@ micro-ROS 官方推荐最低 32KB RAM,F103RB 只有 20KB,**低于官方下限**(
 > 数值故意不定死——"够不够"正是 T8 要回答的 go/no-go 客观依据;G-T8-a 须给出实测
 > HWM_min 与最终栈值。
 
-## 串口 transport 内存预算(目标 < 1KB,实测约 640B)
+## 串口 transport 内存预算(当前目标 < 1.5KB)
 
 | 项 | 建议值 | 理由 |
 |---|---|---|
 | XRCE custom transport MTU | **128 B**(`UCLIENT_CUSTOM_TRANSPORT_MTU=128`) | 单条 Int32 的 XRCE 载荷仅几十字节;128B 给足裕度且远小于默认 512B。MTU 是省流缓冲 RAM 的最大杠杆。 |
-| 可靠流缓冲(client 内部) | ≈ MTU×`STREAM_HISTORY`×流数 = 128×1×2 ≈ **256 B** | 由 `STREAM_HISTORY=1` + MTU=128 + 各 1 路可靠流压出(默认 4×512=2KB/流会超预算)。 |
+| XRCE reliable stream 缓冲(client 内部) | ≈ MTU×`STREAM_HISTORY`×可靠流数 = 128×2×2 ≈ **512 B** | 当前 `STREAM_HISTORY=2` 是 T5 后的兼容下限：bin create_topic 描述需要 2×128B，不能轻易压回 1。 |
+| XRCE best-effort stream 缓冲(client 内部) | 约 **256 B** | 高频 latest-target profile 需要输入/输出 best-effort stream；T5 发现 stream 数为 0 会触发初始化期内存踩踏。 |
 | USART2 DMA RX 双缓冲 | **2 × 128 B = 256 B** | DMA circular + IDLE 中断收变长帧;每半 128B 与 MTU 对齐。 |
 | USART2 DMA TX 缓冲 | **1 × 128 B = 128 B** | 发送主动控时序,单缓冲足够。 |
-| **合计** | **≈ 640 B** | < 1KB 目标达成,留约 380B 裕度。 |
+| app RX ring / index | **约 260 B** | 当前 `app_ring` 256B，外加 head/tail。 |
+| **合计** | **约 1.1-1.3 KB 量级** | 比早期 reliable-only/history=1 的 640B 预算更高，但换来 best-effort latest-target 与 vanilla agent/bin creation 稳定性。 |
 
 要点(给 T4/T5):
 - **MTU 三处一致**:`UCLIENT_CUSTOM_TRANSPORT_MTU`、custom transport 回调一次收/发字节数、
@@ -89,11 +91,9 @@ micro-ROS 官方推荐最低 32KB RAM,F103RB 只有 20KB,**低于官方下限**(
 
 ## 已知不确定点(T8 编译时必须确认)
 
-1. **CREATION_MODE = refs vs bin**:本配置用 `refs` 省 XML 运行时缓冲,但 refs 要求
-   agent 侧有匹配 refs 配置。若 serial 点对点下 refs 跑不通,回退 `bin` 模式,此时需要
-   `RMW_UXRCE_XML_BUFFER_LENGTH`(键名/可用性随 rmw 版本确认,A.2 给的 400 是合理起点)。
-   ⚠️ `RMW_UXRCE_XML_BUFFER_LENGTH` 不在当前 rmw_microxrcedds(jazzy)CMakeLists 选项表里,
-   故未放进可构建版,仅在回退 bin 时再核实启用。
+1. **CREATION_MODE = bin 是当前默认**:T5 后已从 `refs` 回到 `bin`，这样 vanilla
+   micro-ROS agent 开箱即用，不需要 agent 侧 XML/ref profile。`refs` 仍可作为未来内存实验，
+   但它会改变建链路径，必须重跑 T5 级建链验证。
 2. 个别键在所用 micro_ros_setup 分支的暴露方式可能不同——以上面"验证裁剪是否生效"
    的实测为准,不要假设设了就生效。
 3. 任务栈/heap 的具体字节数由 T8 用栈水位实测收敛,不在本配置定死。

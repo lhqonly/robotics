@@ -31,6 +31,7 @@ call the node's callbacks directly with constructed messages.
 """
 
 import contextlib
+import copy
 
 from exo_cmd.crc import compute_crc
 from exo_cmd.exo_cmd_node import ExoCmdNode
@@ -85,6 +86,40 @@ def make_status(seq, payload, stamp_mono_ns=0, crc=0):
     m.header.crc = crc
     m.payload = payload
     return m
+
+
+def capture_publish_into(out, ids=None):
+    """Return a publish hook that snapshots messages at publish time."""
+    def _capture(msg):
+        if ids is not None:
+            ids.append(id(msg))
+        out.append(copy.deepcopy(msg))
+    return _capture
+
+
+def test_wire_gap_stats_report_publish_jitter_window():
+    """PC publish gap stats expose avg/tail/max command timer jitter."""
+    with make_node(link_health_period_s=0.0, summary_period_s=0.0) as node:
+        for now_s in (10.000, 10.010, 10.030, 10.130):
+            node._remember_wire_gap(now_s)
+
+        avg_ms, p95_ms, p99_ms, max_ms = node._wire_gap_stats_ms()
+
+        assert avg_ms == pytest.approx((10.0 + 20.0 + 100.0) / 3.0)
+        assert p95_ms == pytest.approx(100.0)
+        assert p99_ms == pytest.approx(100.0)
+        assert max_ms == pytest.approx(100.0)
+
+
+def test_wire_gap_stats_window_is_bounded():
+    """PC publish jitter diagnostics keep a fixed-size recent window."""
+    with make_node(link_health_period_s=0.0, summary_period_s=0.0) as node:
+        for i in range(4100):
+            node._remember_wire_gap(float(i))
+
+        assert node._wire_gap_window.maxlen == 4096
+        assert len(node._wire_gap_window) == 4096
+        assert node._wire_gap_window[0] == pytest.approx(1.0)
 
 
 # --------------------------------------------------------------------------
@@ -185,8 +220,8 @@ def test_crc_end_to_end_loopback_resign_no_mismatch():
                    summary_period_s=0.0) as cmd, \
             make_loopback(crc_enabled=True) as loop:
         # Intercept both publishers so no DDS is involved.
-        cmd._pub.publish = sent_cmds.append
-        loop._pub.publish = echoes.append
+        cmd._pub.publish = capture_publish_into(sent_cmds)
+        loop._pub.publish = capture_publish_into(echoes)
 
         # 1) exo_cmd publishes a heartbeat with a crc over ITS t_send envelope.
         cmd._on_timer()
@@ -321,3 +356,150 @@ def test_link_health_message_matches_tracker_snapshot():
     assert msg.rtt_p95_ms == 20.0
     # Header stamp is wall-clock (diagnostic only); just assert it is set.
     assert msg.header.stamp.sec != 0 or msg.header.stamp.nanosec != 0
+
+
+def test_sampled_tracking_only_tracks_every_nth_command():
+    """
+    Sampled mode publishes every command but only tracks every Nth status sample.
+
+    This matches firmware EXO_STATUS_EVERY_N: commands 0..3 update latest target
+    but are not expected to echo; command 4 is tracked and can match.
+    """
+    sent_cmds = []
+    with make_node(tracking_mode='sampled', status_every_n=5,
+                   link_health_period_s=0.0, summary_period_s=0.0) as node:
+        node._pub.publish = capture_publish_into(sent_cmds)
+        for _ in range(5):
+            node._on_timer()
+
+        assert [m.header.seq for m in sent_cmds] == [0, 1, 2, 3, 4]
+        c = node._tracker.counters()
+        assert c['sent'] == 0
+        assert c['inflight'] == 0
+
+        node._on_status(make_status(seq=4, payload=4))
+        c = node._tracker.counters()
+        assert c['sent'] == 1
+        assert c['matched'] == 1
+        assert c['lost'] == 0
+        assert c['inflight'] == 0
+        assert node._tracker.reconciles()
+
+
+def test_sampled_tracking_send_window_is_bounded(monkeypatch):
+    """Sampled mode keeps only the recent send window for long high-rate runs."""
+    sent_cmds = []
+    warn_logs = []
+    with make_node(tracking_mode='sampled', sample_window=3,
+                   link_health_period_s=0.0, summary_period_s=0.0) as node:
+        node._pub.publish = capture_publish_into(sent_cmds)
+        for _ in range(5):
+            node._on_timer()
+
+        assert [m.header.seq for m in sent_cmds] == [0, 1, 2, 3, 4]
+        assert set(node._sampled_sends) == {2, 3, 4}
+        assert list(node._sampled_order) == [2, 3, 4]
+
+        with monkeypatch.context() as patch:
+            patch.setattr(node.get_logger(), 'warn', warn_logs.append)
+            node._on_status(make_status(seq=1, payload=1))
+
+        assert warn_logs == ['sampled status seq=1 not in recent send window=3']
+        assert node._tracker.counters()['sent'] == 0
+
+        node._on_status(make_status(seq=4, payload=4))
+        c = node._tracker.counters()
+        assert c['sent'] == 1
+        assert c['matched'] == 1
+        assert c['inflight'] == 0
+
+
+def test_startup_grace_ignores_warmup_seq_counters():
+    """Startup grace publishes warmup commands without polluting LinkHealth."""
+    sent_cmds = []
+    with make_node(startup_grace_s=0.5, link_health_period_s=0.0,
+                   summary_period_s=0.0) as node:
+        node._pub.publish = capture_publish_into(sent_cmds)
+
+        node._on_timer()
+        assert sent_cmds[-1].header.seq == 0
+        assert node._tracker.counters()['sent'] == 0
+
+        # Force the next timer call past grace. It resets LinkHealth to start at
+        # the current wire seq, then tracks seq=1 as the first steady-state send.
+        node._start_s -= 1.0
+        node._on_timer()
+        assert sent_cmds[-1].header.seq == 1
+        c = node._tracker.counters()
+        assert c['sent'] == 1
+        assert c['inflight'] == 1
+
+        # A late echo from the grace window is discarded, not reported as a
+        # duplicate/unmatched event and not counted as a match.
+        node._on_status(make_status(seq=0, payload=0))
+        c = node._tracker.counters()
+        assert c['matched'] == 0
+        assert c['duplicate'] == 0
+        assert c['lost'] == 0
+
+        node._on_status(make_status(seq=1, payload=1))
+        c = node._tracker.counters()
+        assert c['sent'] == 1
+        assert c['matched'] == 1
+        assert c['lost'] == 0
+        assert c['duplicate'] == 0
+        assert c['inflight'] == 0
+        assert node._tracker.reconciles()
+
+
+def test_cmd_catchup_publishes_one_extra_when_late():
+    """cmd_catchup_max=1 publishes at most two commands for a late timer."""
+    sent_cmds = []
+    with make_node(cmd_catchup_max=1, link_health_period_s=0.0,
+                   summary_period_s=0.0) as node:
+        node._pub.publish = capture_publish_into(sent_cmds)
+        node._next_cmd_due_s = node._now() - node._heartbeat_period_s * 1.1
+
+        node._on_timer()
+
+        assert [m.header.seq for m in sent_cmds] == [0, 1]
+        assert node._wire_send_count == 2
+        assert node._cmd_catchup_events == 1
+        assert node._cmd_catchup_extra == 1
+        assert node._tracker.counters()['sent'] == 2
+        assert node._tracker.counters()['inflight'] == 2
+
+
+def test_command_publish_reuses_message_instance_but_snapshots_values():
+    """The hot path reuses ExoCmd while each publish still carries new values."""
+    sent_cmds = []
+    published_ids = []
+    with make_node(link_health_period_s=0.0, summary_period_s=0.0) as node:
+        node._pub.publish = capture_publish_into(sent_cmds, published_ids)
+
+        node._on_timer()
+        node._on_timer()
+        node._on_timer()
+
+        assert len(set(published_ids)) == 1
+        assert [m.header.seq for m in sent_cmds] == [0, 1, 2]
+        assert [m.payload for m in sent_cmds] == [0, 1, 2]
+
+
+def test_sent_command_debug_log_is_opt_in(monkeypatch):
+    """Per-command sent logs stay off the hot path unless explicitly enabled."""
+    default_logs = []
+    with make_node(link_health_period_s=0.0, summary_period_s=0.0) as node:
+        with monkeypatch.context() as patch:
+            patch.setattr(node.get_logger(), 'debug', default_logs.append)
+            node._on_timer()
+
+    enabled_logs = []
+    with make_node(log_sent_commands=True, link_health_period_s=0.0,
+                   summary_period_s=0.0) as node:
+        with monkeypatch.context() as patch:
+            patch.setattr(node.get_logger(), 'debug', enabled_logs.append)
+            node._on_timer()
+
+    assert default_logs == []
+    assert enabled_logs == ['sent cmd_heartbeat seq=0']

@@ -418,53 +418,53 @@ class LinkHealthTracker:
             events: List[Event] = []
             seq = self._next_seq
             self._next_seq = (self._next_seq + 1) % SEQ_MODULUS
-
-            deadline = now + self.rtt_deadline_ms / 1000.0
-            # Pathological wrap: this seq value is reused while a 2^32-old entry
-            # is somehow still in flight. Settle the stale one as LOST so the
-            # dict key is never silently overwritten and the identity stays
-            # intact.
-            if seq in self._inflight:
-                stale_events: List[Event] = []
-                self._settle_lost(self._inflight[seq], now, kind='evict_lost',
-                                  level='WARN', reason='seq wrap collision',
-                                  out=stale_events)
-                events.extend(stale_events)
-            self._inflight[seq] = _InflightEntry(seq=seq, t_send=now,
-                                                 deadline=deadline)
-            self._unmark_settled(seq)  # in case this seq value was reused (wrap)
-            self.sent_count += 1
-
-            # §7.4: enforce a memory cap WITHOUT a silent drop -- the evicted
-            # entry is settled as LOST and a warning is emitted. The cap path
-            # uses the deadline min-heap (O(log N)); the no-cap path never
-            # touches the heap, so its behaviour is unchanged.
-            if self.max_inflight is not None:
-                # Track the new entry in the heap so it can be a future victim.
-                # (deadline, seq) ties break on seq -- harmless; both are 'oldest'.
-                heapq.heappush(self._inflight_heap, (deadline, seq))
-                # Opportunistic compaction: matched/lost removals leave stale
-                # tuples behind (lazy deletion), so the heap can grow past the
-                # live count even when the cap is rarely hit. When stale tuples
-                # outnumber live entries (heap > 2x live), rebuild the heap from
-                # the live entries only -- O(N) but amortised rare, keeping the
-                # heap O(live) so memory and pops stay bounded. Bounded by the cap
-                # anyway via the eviction below, but this also covers the
-                # cap-set-but-not-yet-hit churn (sends matched/lost faster than
-                # the cap is reached).
-                if len(self._inflight_heap) > 2 * len(self._inflight) + 8:
-                    self._inflight_heap = [
-                        (e.deadline, e.seq) for e in self._inflight.values()]
-                    heapq.heapify(self._inflight_heap)
-                while len(self._inflight) > self.max_inflight:
-                    oldest = self._pop_oldest_inflight()
-                    # oldest cannot be None here: len(_inflight) > cap >= 1, and
-                    # every live entry has a heap tuple, so a live victim exists.
-                    self._settle_lost(oldest, now, kind='evict_lost',
-                                      level='WARN',
-                                      reason='in-flight cap %d exceeded'
-                                      % self.max_inflight, out=events)
+            self._register_inflight_locked(seq, now, events)
             return seq, events
+
+    def on_send_seq(self, seq: int, now: float) -> List[Event]:
+        """
+        Register a caller-chosen seq as a tracked send at monotonic time `now`.
+
+        Used by latest-target / sampled-status mode: the node can publish every
+        command on the wire while only every Nth command is expected to produce
+        an MCU status sample. Counters then describe tracked samples, not every
+        wire command. The normal on_send() path remains strict echo mode.
+        """
+        if not (0 <= seq < SEQ_MODULUS):
+            raise ValueError('seq (%s) must be in [0, 2^32)' % seq)
+        with self._lock:
+            events: List[Event] = []
+            self._next_seq = (seq + 1) % SEQ_MODULUS
+            self._register_inflight_locked(seq, now, events)
+            return events
+
+    def _register_inflight_locked(self, seq: int, now: float,
+                                  events: List[Event]) -> None:
+        """Lock-held body shared by on_send() and on_send_seq()."""
+        deadline = now + self.rtt_deadline_ms / 1000.0
+        if seq in self._inflight:
+            stale_events: List[Event] = []
+            self._settle_lost(self._inflight[seq], now, kind='evict_lost',
+                              level='WARN', reason='seq wrap collision',
+                              out=stale_events)
+            events.extend(stale_events)
+        self._inflight[seq] = _InflightEntry(seq=seq, t_send=now,
+                                             deadline=deadline)
+        self._unmark_settled(seq)
+        self.sent_count += 1
+
+        if self.max_inflight is not None:
+            heapq.heappush(self._inflight_heap, (deadline, seq))
+            if len(self._inflight_heap) > 2 * len(self._inflight) + 8:
+                self._inflight_heap = [
+                    (e.deadline, e.seq) for e in self._inflight.values()]
+                heapq.heapify(self._inflight_heap)
+            while len(self._inflight) > self.max_inflight:
+                oldest = self._pop_oldest_inflight()
+                self._settle_lost(oldest, now, kind='evict_lost',
+                                  level='WARN',
+                                  reason='in-flight cap %d exceeded'
+                                  % self.max_inflight, out=events)
 
     # ----- receive path ------------------------------------------------------
     def on_echo(self, seq: int, now: float) -> List[Event]:

@@ -31,7 +31,7 @@
 
     "rosidl_typesupport": {
       "cmake-args": [
-        "-DROSIDL_TYPESUPPORT_SINGLE_TYPESUPPORT=ON"  // 只编译单一 typesupport(microxrcedds),不带 introspection -> 省大量 Flash/RAM
+        "-DROSIDL_TYPESUPPORT_SINGLE_TYPESUPPORT=OFF" // T5 后保持 OFF:与 exo_msgs/type description/agent 兼容路径一起验证过;若要重开,必须做独立 libmicroros rebuild 矩阵
       ]
     },
 
@@ -47,9 +47,9 @@
         "-DUCLIENT_PROFILE_SHARED_MEMORY=OFF",        // MCU 无共享内存
         "-DUCLIENT_PROFILE_STREAM_FRAMING=ON",        // serial/custom transport 需要 framing 协议(必须保留,否则 agent 对不上帧)
         "-DUCLIENT_PROFILE_MATCHING=OFF",
-        "-DUCLIENT_MAX_OUTPUT_BEST_EFFORT_STREAMS=0", // 契约要求 RELIABLE,不用 best-effort -> 省一组流缓冲
+        "-DUCLIENT_MAX_OUTPUT_BEST_EFFORT_STREAMS=1", // 高频 latest-target profile 需要 best-effort stream;T5 发现 0 会踩穿相邻 reliable buffer
         "-DUCLIENT_MAX_OUTPUT_RELIABLE_STREAMS=1",    // 1 路可靠输出(pub mcu_status)
-        "-DUCLIENT_MAX_INPUT_BEST_EFFORT_STREAMS=0",  // 同上,省 best-effort 输入缓冲
+        "-DUCLIENT_MAX_INPUT_BEST_EFFORT_STREAMS=1",  // 高频 latest-target profile 需要 best-effort 输入流
         "-DUCLIENT_MAX_INPUT_RELIABLE_STREAMS=1",     // 1 路可靠输入(sub cmd_heartbeat)
         "-DUCLIENT_CUSTOM_TRANSPORT_MTU=128"          // 自定义 transport MTU=128B(默认 512)-> 直接缩小流缓冲,见 README 串口内存预算
       ]
@@ -63,10 +63,10 @@
         "-DRMW_UXRCE_MAX_SERVICES=0",         // 无 service -> 0 槽,省服务池整块 RAM
         "-DRMW_UXRCE_MAX_CLIENTS=0",          // 无 client -> 0 槽
         "-DRMW_UXRCE_MAX_HISTORY=1",          // ★契约 v1.2 拍板:F103 侧历史深度=1(默认 8)-> 大幅省订阅消息队列 RAM
-        "-DRMW_UXRCE_STREAM_HISTORY=1",       // ★可靠流缓冲只缓 1 个 MTU(默认 4,必须 2 的幂)-> 省 ~3×MTU 的重传缓冲
+        "-DRMW_UXRCE_STREAM_HISTORY=2",       // bin create_topic 描述需要 2×128B reliable 输出缓冲;1 会导致实体创建失败
         "-DRMW_UXRCE_MAX_SESSIONS=1",         // 单会话(单 agent)
         "-DRMW_UXRCE_TRANSPORT=custom",       // 自定义 USART2+DMA transport
-        "-DRMW_UXRCE_CREATION_MODE=refs"      // refs 模式比 bin(XML)省 XML 缓冲;若 refs 在 serial 点对点跑不通则回退 bin,届时才需要 XML_BUFFER(键名待 T8 确认)
+        "-DRMW_UXRCE_CREATION_MODE=bin"       // vanilla agent 开箱即用;refs 需要 agent 侧 profile,不作为默认
       ]
     }
   }
