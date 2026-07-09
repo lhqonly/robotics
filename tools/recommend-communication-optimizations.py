@@ -128,6 +128,21 @@ class WireProjection:
     status_wire_ms: float
 
 
+@dataclass
+class MotorProjection:
+    target_hz: float
+    state_hz: float
+    health_hz: float
+    baud: int
+    tx_kbit_s: float
+    rx_kbit_s: float
+    total_kbit_s: float
+    util_pct: float
+    target_wire_ms: float
+    state_wire_ms: float
+    health_wire_ms: float
+
+
 def project_wire(metrics: dict[str, float], cmd_hz: float,
                  status_every_n: int, baud: int,
                  baseline_cmd_hz: float = 20.0,
@@ -152,6 +167,31 @@ def project_wire(metrics: dict[str, float], cmd_hz: float,
         util_pct=total * 1000.0 * 100.0 / baud,
         cmd_wire_ms=tx_bits_per_cmd * 1000.0 / baud,
         status_wire_ms=rx_bits_per_status * 1000.0 / baud,
+    )
+
+
+def project_motor_m2(target_hz: float, state_hz: float, health_hz: float,
+                     baud: int, xrce_overhead_bytes: float = 32.0
+                     ) -> MotorProjection:
+    # Empty-frame_id CDR payload sizes from tools/com-wire-budget.py.
+    target_bits = (104.0 + xrce_overhead_bytes) * 10.0
+    state_bits = (90.0 + xrce_overhead_bytes) * 10.0
+    health_bits = (89.0 + xrce_overhead_bytes) * 10.0
+    tx = target_bits * target_hz / 1000.0
+    rx = state_bits * state_hz / 1000.0 + health_bits * health_hz / 1000.0
+    total = tx + rx
+    return MotorProjection(
+        target_hz=target_hz,
+        state_hz=state_hz,
+        health_hz=health_hz,
+        baud=baud,
+        tx_kbit_s=tx,
+        rx_kbit_s=rx,
+        total_kbit_s=total,
+        util_pct=total * 1000.0 * 100.0 / baud,
+        target_wire_ms=target_bits * 1000.0 / baud,
+        state_wire_ms=state_bits * 1000.0 / baud,
+        health_wire_ms=health_bits * 1000.0 / baud,
     )
 
 
@@ -238,6 +278,8 @@ def main() -> int:
     latest_200_40_921600 = project_wire(wire_metrics, 200.0, 40, 921600)
     latest_200_40_2m = project_wire(wire_metrics, 200.0, 40, 2_000_000)
     full_echo_200_921600 = project_wire(wire_metrics, 200.0, 1, 921600)
+    motor_m2_921600 = project_motor_m2(200.0, 50.0, 5.0, 921600)
+    motor_m2_2m = project_motor_m2(200.0, 50.0, 5.0, 2_000_000)
     best_sched = best_scheduler(scheduler_rows)
     low_max_sched = lowest_max_scheduler(scheduler_rows)
     best_exploratory_sched = best_scheduler(exploratory_scheduler_rows)
@@ -318,6 +360,37 @@ def main() -> int:
             adoption="avoid_for_control",
         ))
 
+    motor_verdict_921600 = (
+        "PASS_STATIC"
+        if motor_m2_921600.util_pct <= args.baud_util_budget_pct
+        else "OVER_BUDGET"
+    )
+    motor_verdict_2m = (
+        "PASS_STATIC"
+        if motor_m2_2m.util_pct <= args.baud_util_budget_pct
+        else "OVER_BUDGET"
+    )
+    print(candidate_line(
+        "motor_m2_wire_budget_200hz_state50_health5_921600",
+        util_pct=fmt(motor_m2_921600.util_pct, 2),
+        total_kbit_s=fmt(motor_m2_921600.total_kbit_s, 2),
+        target_wire_ms=fmt(motor_m2_921600.target_wire_ms, 3),
+        state_wire_ms=fmt(motor_m2_921600.state_wire_ms, 3),
+        health_wire_ms=fmt(motor_m2_921600.health_wire_ms, 3),
+        verdict=motor_verdict_921600,
+        adoption="test_after_swd",
+    ))
+    print(candidate_line(
+        "motor_m2_wire_budget_200hz_state50_health5_2000000",
+        util_pct=fmt(motor_m2_2m.util_pct, 2),
+        total_kbit_s=fmt(motor_m2_2m.total_kbit_s, 2),
+        target_wire_ms=fmt(motor_m2_2m.target_wire_ms, 3),
+        state_wire_ms=fmt(motor_m2_2m.state_wire_ms, 3),
+        health_wire_ms=fmt(motor_m2_2m.health_wire_ms, 3),
+        verdict=motor_verdict_2m,
+        adoption="prefer_if_921600_runtime_margin_is_poor",
+    ))
+
     if best_sched:
         print(candidate_line(
             "pc_scheduler_best_observed",
@@ -372,7 +445,7 @@ def main() -> int:
     print()
     print("1. `tools/diagnose-swd.sh` must report `SWD_STATUS=ok`.")
     print("2. Flash the matching best-effort/status40 firmware before judging 200Hz latest-target.")
-    print("3. Run staircase with `STAIRCASE_BAUDS=\"921600 2000000\"` and include the best PC scheduler case.")
+    print("3. Run staircase with `STAIRCASE_BAUDS=\"921600 2000000\"` and include the best PC scheduler case plus M2 motor topics.")
     print("4. Run `tools/check-com-staircase-contract.py <metrics.csv> --max-pc-catchup-events 0 --max-pc-catchup-extra 0`; add `--max-wire-baud-util-pct 30` when wire metrics were collected.")
     print("5. Accept only stages with `qos_incompatibility=0`, `lost=0`, `duplicate=0`, 200Hz target/window rate inside contract, PC p99/max gap inside contract, and zero catch-up bursts.")
     return 0

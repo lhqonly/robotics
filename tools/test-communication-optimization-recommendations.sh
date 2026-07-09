@@ -27,6 +27,10 @@ assert_contains "$actual" "CANDIDATE wire_budget_200hz_status40_921600" \
   "wire budget candidate"
 assert_contains "$actual" "CANDIDATE baud_2000000_for_200hz_status40" \
   "2Mbps candidate"
+assert_contains "$actual" "CANDIDATE motor_m2_wire_budget_200hz_state50_health5_921600" \
+  "M2 motor 921600 budget candidate"
+assert_contains "$actual" "CANDIDATE motor_m2_wire_budget_200hz_state50_health5_2000000" \
+  "M2 motor 2Mbps budget candidate"
 assert_contains "$actual" "CANDIDATE qos_matching_required" \
   "QoS gate candidate"
 assert_contains "$actual" "CANDIDATE staircase_acceptance_contract" \
@@ -66,6 +70,12 @@ assert_contains "$synthetic" \
   "CANDIDATE avoid_reliable_full_echo_200hz projected_util_pct=19.02" \
   "synthetic full-echo warning"
 assert_contains "$synthetic" \
+  "CANDIDATE motor_m2_wire_budget_200hz_state50_health5_921600 util_pct=36.79 total_kbit_s=339.05 target_wire_ms=1.476 state_wire_ms=1.324 health_wire_ms=1.313 verdict=OVER_BUDGET adoption=test_after_swd" \
+  "synthetic M2 motor 921600 budget"
+assert_contains "$synthetic" \
+  "CANDIDATE motor_m2_wire_budget_200hz_state50_health5_2000000 util_pct=16.95 total_kbit_s=339.05 target_wire_ms=0.680 state_wire_ms=0.610 health_wire_ms=0.605 verdict=PASS_STATIC adoption=prefer_if_921600_runtime_margin_is_poor" \
+  "synthetic M2 motor 2Mbps budget"
+assert_contains "$synthetic" \
   "CANDIDATE pc_scheduler_best_observed tag=taskset_cpu2 p99_ms=8.000 max_ms=12.000 catchup_events=0 catchup_extra=0" \
   "synthetic scheduler best candidate"
 assert_contains "$synthetic" \
@@ -77,6 +87,9 @@ assert_contains "$synthetic" \
 assert_contains "$synthetic" \
   "CANDIDATE staircase_acceptance_contract required=max_pc_catchup_events=0,max_pc_catchup_extra=0,rate_and_gap_defaults optional_wire=max_wire_baud_util_pct=30 adoption=run_after_staircase" \
   "synthetic staircase acceptance contract args"
+assert_contains "$synthetic" \
+  'Run staircase with `STAIRCASE_BAUDS="921600 2000000"` and include the best PC scheduler case plus M2 motor topics.' \
+  "synthetic runtime gate includes motor topics"
 assert_contains "$synthetic" \
   "tools/check-com-staircase-contract.py <metrics.csv> --max-pc-catchup-events 0 --max-pc-catchup-extra 0" \
   "synthetic runtime gate includes acceptance command"
