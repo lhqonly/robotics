@@ -55,27 +55,6 @@ latest_watch_summary_min_samples() {
     done
 }
 
-active_overnight_watchers() {
-  ps -eo pid=,etimes=,args= 2>/dev/null |
-    awk '
-      /tools\/overnight-com-watch\.sh/ {
-        pid = $1
-        elapsed_s = $2
-        $1 = ""
-        $2 = ""
-        sub(/^[[:space:]]+/, "")
-        cmd = $0
-        tag = cmd
-        sub(/^.*tools\/overnight-com-watch\.sh[[:space:]]+/, "", tag)
-        sub(/[[:space:]].*$/, "", tag)
-        if (tag == cmd || tag == "") {
-          tag = "-"
-        }
-        printf("pid=%s elapsed_s=%s tag=%s cmd=%s\n", pid, elapsed_s, tag, cmd)
-      }
-    ' || true
-}
-
 relpath() {
   local path="${1:-}"
   if [ -z "$path" ]; then
@@ -501,7 +480,10 @@ staircase_contract="$(staircase_contract_status)"
 microros_config="$(microros_config_summary)"
 topic_qos_snapshot="$(graph_qos_snapshot "$latest_graph")"
 duplicate_node_warning="$(graph_duplicate_node_warning "$latest_graph")"
-active_watchers="$(active_overnight_watchers)"
+active_watchers=""
+if [ -x "$ROOT/tools/overnight-watch-status.sh" ]; then
+  active_watchers="$(cd "$ROOT" && tools/overnight-watch-status.sh 2>/dev/null || true)"
+fi
 latest_watch_live_summary=""
 if [ -n "$latest_watch_log" ] && [ -f "$latest_watch_log" ] &&
     [ -x "$ROOT/tools/summarize-overnight-com-watch.sh" ]; then

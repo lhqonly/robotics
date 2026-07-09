@@ -16,6 +16,7 @@ tests=(
   "tools/test-com-staircase-dry-run.sh"
   "tools/test-com-validation-cycle.sh"
   "tools/test-start-overnight-com-watch.sh"
+  "tools/test-overnight-watch-status.sh"
   "tools/test-pc-scheduler-sweep.sh"
   "tools/test-pc-latest-scheduler-sweep.sh"
   "tools/test-recommend-staircase-command.sh"
