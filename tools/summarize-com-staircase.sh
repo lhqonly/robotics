@@ -206,6 +206,7 @@ awk -v format="$FORMAT" '
     if (index($0, "pc_launch_prefix=") > 0) {
       pc_launch_prefix = $0
       sub(/^.*pc_launch_prefix=/, "", pc_launch_prefix)
+      sub(/ staircase_pc_launch_case_count=.*$/, "", pc_launch_prefix)
     }
   }
 

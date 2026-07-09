@@ -66,9 +66,9 @@ extract_summary_counter() {
   local line="$1"
   local key="$2"
   printf '%s\n' "$line" |
-    grep -o "${key}=[0-9]*" |
-    tail -1 |
-    cut -d= -f2
+    tr ' ' '\n' |
+    awk -F= -v k="$key" '$1 == k && $2 ~ /^[0-9]+$/ {print $2}' |
+    tail -1
 }
 
 extract_key_value() {
@@ -327,6 +327,10 @@ run_no_flash_latest_qos_probe() {
     WARMUP_SECONDS="$SMOKE_WARMUP_SECONDS" \
     HZ_SECONDS="$SMOKE_HZ_SECONDS"
 }
+
+if [ "${RUN_COM_STAIRCASE_SOURCE_ONLY:-0}" = "1" ]; then
+  return 0 2>/dev/null || exit 0
+fi
 
 STAIRCASE_PC_LAUNCH_CASE_COUNT="$(pc_launch_case_count)"
 

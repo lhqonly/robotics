@@ -28,6 +28,24 @@ assert_count() {
   fi
 }
 
+test_summary_counter_parser() {
+  local output
+  output="$(
+    RUN_COM_STAIRCASE_SOURCE_ONLY=1 bash -c '
+      LOGDIR="$2" source "$1" __source_only
+      extract_summary_counter \
+        "[com-perf] last_summary=[node_com_cmd] link-health summary: sent=1 matched=1 lost=0 duplicate=1 inflight=0 stale_duplicate=0" \
+        duplicate
+    ' _ "$ROOT/tools/run-com-staircase.sh" "$TMPDIR/source-only"
+  )"
+  if [ "$output" != "1" ]; then
+    echo "FAIL: summary counter parser expected duplicate=1 got '$output'" >&2
+    exit 1
+  fi
+}
+
+test_summary_counter_parser
+
 LOGDIR="$TMPDIR/default" DRY_RUN=1 \
   "$ROOT/tools/run-com-staircase.sh" dry_default >/dev/null
 default_summary="$TMPDIR/default/dry_default.summary.log"
