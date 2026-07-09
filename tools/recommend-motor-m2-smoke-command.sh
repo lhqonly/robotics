@@ -146,7 +146,16 @@ MICROROS_AGENT_VERBOSITY=6 tools/run-bridge.sh $(shell_quote "$M2_MOTOR_SERIAL")
 
 source /opt/ros/jazzy/setup.bash
 source ros2_ws/install/setup.bash
-tools/check-motor-m2-smoke-evidence.py --template >"\$evidence_dir/evidence.env"
+cat >"\$evidence_dir/evidence.env" <<'EVIDENCE_ENV'
+sample_only=false
+template_generated=false
+swd_status=ok
+firmware_build=ok
+firmware_flash=ok
+agent_connected=ok
+reject_baseline_target_enabled=false
+clamp_target_ttl_us=100000
+EVIDENCE_ENV
 ros2 topic list | tee "\$evidence_dir/topics.txt" | grep -E '^/(com|motor)/'
 ros2 topic info -v /motor/tp_joint_target | tee "\$evidence_dir/info.motor_target.txt"
 ros2 topic info -v /motor/tp_joint_state | tee "\$evidence_dir/info.motor_state.txt"
@@ -188,8 +197,9 @@ ros2 topic echo --once /motor/tp_joint_state | tee "\$evidence_dir/state.after_e
 ros2 topic echo --once /motor/tp_motor_health | tee "\$evidence_dir/health.after_enabled_soak.yaml"
 
 tools/measure-stack-hwm.sh $(shell_quote "$elf") | tee "\$evidence_dir/stack-hwm.txt"
-# Set sample_only=false in evidence.env after the hardware run; rate and stack files are parsed automatically.
-tools/check-motor-m2-smoke-evidence.py "\$evidence_dir" --min-motor-state-hz $M2_MOTOR_STATE_MIN_HZ --max-motor-state-hz $M2_MOTOR_STATE_MAX_HZ --min-motor-health-hz $M2_MOTOR_HEALTH_MIN_HZ --max-motor-health-hz $M2_MOTOR_HEALTH_MAX_HZ --min-enabled-soak-target-hz $M2_MOTOR_ENABLED_SOAK_MIN_HZ --max-enabled-soak-target-hz $M2_MOTOR_ENABLED_SOAK_MAX_HZ
+# Generate this only after all runtime raw files are complete and agent.log is no longer appending.
+(cd "\$evidence_dir" && sha256sum topics.txt info.motor_target.txt info.motor_state.txt info.motor_health.txt info.com_status.txt state.before_seq42.yaml state.after_seq42.yaml health.before_reject.yaml state.after_reject_seq43.yaml health.after_reject_seq43.yaml state.after_seq44.yaml state.after_clamp_seq45.yaml health.before_ttl.yaml state.after_ttl.yaml health.after_ttl.yaml health.before_enabled_soak.yaml enabled_soak.summary.txt health.mid_enabled_soak.yaml state.mid_enabled_soak.yaml rate.motor_state.txt rate.motor_health.txt rate.com_status.txt rate.com_status.soak.txt state.after_enabled_soak.yaml health.after_enabled_soak.yaml stack-hwm.txt agent.log > raw.sha256)
+tools/check-motor-m2-smoke-evidence.py "\$evidence_dir" --min-motor-state-hz $M2_MOTOR_STATE_MIN_HZ --max-motor-state-hz $M2_MOTOR_STATE_MAX_HZ --min-motor-health-hz $M2_MOTOR_HEALTH_MIN_HZ --max-motor-health-hz $M2_MOTOR_HEALTH_MAX_HZ --min-enabled-soak-target-hz $M2_MOTOR_ENABLED_SOAK_MIN_HZ --max-enabled-soak-target-hz $M2_MOTOR_ENABLED_SOAK_MAX_HZ --min-enabled-soak-duration-s $M2_MOTOR_ENABLED_SOAK_DURATION_S
 EOF
 }
 

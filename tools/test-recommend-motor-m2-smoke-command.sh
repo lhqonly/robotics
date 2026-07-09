@@ -55,8 +55,14 @@ assert_contains "$out" 'tee "$evidence_dir/agent.log"' \
   "agent log evidence capture"
 assert_contains "$out" "evidence dir: log/motor-m2-smoke/" \
   "default evidence directory"
-assert_contains "$out" "tools/check-motor-m2-smoke-evidence.py --template" \
-  "evidence template command"
+assert_contains "$out" "cat >\"\$evidence_dir/evidence.env\" <<'EVIDENCE_ENV'" \
+  "minimal evidence env command"
+assert_contains "$out" "template_generated=false" \
+  "directory evidence is not template-generated"
+assert_contains "$out" "sha256sum topics.txt info.motor_target.txt" \
+  "runtime raw manifest command"
+assert_contains "$out" "> raw.sha256" \
+  "runtime raw manifest output"
 assert_contains "$out" "ros2 topic info -v /motor/tp_joint_target" \
   "target topic info command"
 assert_contains "$out" "ros2 topic info -v /motor/tp_joint_state" \
@@ -109,6 +115,8 @@ assert_contains "$out" "enabled_soak.summary.txt" \
   "enabled soak publisher summary"
 assert_contains "$out" "--min-enabled-soak-target-hz 180.000000 --max-enabled-soak-target-hz 220.000000" \
   "enabled soak checker rate band"
+assert_contains "$out" "--min-enabled-soak-duration-s 2" \
+  "enabled soak checker duration floor"
 assert_contains "$out" "tools/measure-stack-hwm.sh 'firmware/f103-microros/build-motor/f103-microros.elf'" \
   "motor stack HWM command"
 assert_contains "$out" "newlib_heap\` MSP/heap margin" \
@@ -158,6 +166,8 @@ assert_contains "$commands" "tools/run-bridge.sh '/dev/ttyACM0' '921600'" \
   "custom serial in commands format"
 assert_contains "$commands" 'tee "$evidence_dir/agent.log"' \
   "agent log evidence capture in commands format"
+assert_contains "$commands" "> raw.sha256" \
+  "raw manifest in commands format"
 assert_contains "$commands" "tools/pub-motor-m2-enabled-target-soak.py --hz 200" \
   "enabled soak publisher in commands format"
 assert_contains "$commands" "cmake --build 'firmware/f103-microros/build-motor-921k'" \

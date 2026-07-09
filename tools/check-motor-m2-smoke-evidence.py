@@ -9,8 +9,40 @@ the checker depend on live ROS tooling.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import re
 from pathlib import Path
+
+
+REQUIRED_RAW_FILES = (
+    "topics.txt",
+    "info.motor_target.txt",
+    "info.motor_state.txt",
+    "info.motor_health.txt",
+    "info.com_status.txt",
+    "state.before_seq42.yaml",
+    "state.after_seq42.yaml",
+    "health.before_reject.yaml",
+    "state.after_reject_seq43.yaml",
+    "health.after_reject_seq43.yaml",
+    "state.after_seq44.yaml",
+    "state.after_clamp_seq45.yaml",
+    "health.before_ttl.yaml",
+    "state.after_ttl.yaml",
+    "health.after_ttl.yaml",
+    "health.before_enabled_soak.yaml",
+    "enabled_soak.summary.txt",
+    "health.mid_enabled_soak.yaml",
+    "state.mid_enabled_soak.yaml",
+    "rate.motor_state.txt",
+    "rate.motor_health.txt",
+    "rate.com_status.txt",
+    "rate.com_status.soak.txt",
+    "state.after_enabled_soak.yaml",
+    "health.after_enabled_soak.yaml",
+    "stack-hwm.txt",
+    "agent.log",
+)
 
 
 TEMPLATE = """# M2 motor smoke evidence.
@@ -74,6 +106,7 @@ com_status_hz=5.0
 # Enabled 200Hz target soak. This is separate from the disabled seq42/43/44
 # frame_id negative-test sequence above.
 enabled_soak_target_hz=200.0
+enabled_soak_duration_s=2.0
 enabled_soak_targets_sent=400
 enabled_soak_first_target_seq=1000
 enabled_soak_last_target_seq=1399
@@ -150,6 +183,15 @@ def average_rate_from_text(text: str) -> str | None:
     return rate
 
 
+def key_value_from_text(text: str, key: str) -> str | None:
+    prefix = f"{key}="
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line.startswith(prefix):
+            return line[len(prefix):].strip().strip("'\"")
+    return None
+
+
 def microros_stack_free_words_from_text(text: str) -> str | None:
     for raw in text.splitlines():
         line = raw.strip()
@@ -197,6 +239,53 @@ def read_text_if_exists(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def reason_file_name(name: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", name)
+
+
+def raw_manifest_reasons(path: Path) -> tuple[list[str], str | None]:
+    manifest = path / "raw.sha256"
+    if not manifest.exists():
+        manifest = path / "manifest.sha256"
+    if not manifest.exists():
+        return ["missing_raw_manifest_sha256"], None
+
+    entries: dict[str, str] = {}
+    for lineno, raw in enumerate(manifest.read_text(encoding="utf-8").splitlines(), 1):
+        line = raw.strip()
+        if not line:
+            continue
+        parts = line.split()
+        if len(parts) < 2 or not re.fullmatch(r"[0-9a-fA-F]{64}", parts[0]):
+            return [f"raw_manifest_parse_failed_line_{lineno}"], None
+        name = parts[-1].lstrip("*")
+        if name.startswith("/") or ".." in Path(name).parts or Path(name).name != name:
+            return [f"raw_manifest_invalid_path_{reason_file_name(name)}"], None
+        entries[name] = parts[0].lower()
+
+    reasons: list[str] = []
+    for name in REQUIRED_RAW_FILES:
+        expected = entries.get(name)
+        safe_name = reason_file_name(name)
+        raw_path = path / name
+        if expected is None:
+            reasons.append(f"missing_raw_manifest_entry_{safe_name}")
+            continue
+        if not raw_path.exists():
+            reasons.append(f"missing_raw_file_{safe_name}")
+            continue
+        data = raw_path.read_bytes()
+        if not data:
+            reasons.append(f"missing_raw_file_content_{safe_name}")
+            continue
+        actual = hashlib.sha256(data).hexdigest()
+        if actual != expected:
+            reasons.append(f"raw_hash_mismatch_{safe_name}")
+
+    capture_id = hashlib.sha256(manifest.read_bytes()).hexdigest()[:16]
+    return reasons, capture_id
+
+
 def key_values_from_text(text: str) -> dict[str, str]:
     values: dict[str, str] = {}
     for raw in text.splitlines():
@@ -220,6 +309,11 @@ def read_evidence_dir(path: Path) -> dict[str, str]:
     values["template_generated"] = "false"
     values["evidence_source"] = "directory_raw_capture"
     values["evidence_capture_id"] = "directory_raw_capture"
+    manifest_reasons, capture_id = raw_manifest_reasons(path)
+    if manifest_reasons:
+        values["_raw_manifest_reasons"] = ";".join(manifest_reasons)
+    elif capture_id is not None:
+        values["evidence_capture_id"] = f"raw_sha256_{capture_id}"
 
     topics = {
         line.strip()
@@ -337,6 +431,26 @@ def read_evidence_dir(path: Path) -> dict[str, str]:
                 values.pop(dest_key, None)
 
     derived_files = {
+        "enabled_soak_duration_s": (
+            path / "enabled_soak.summary.txt",
+            lambda text: key_value_from_text(text, "enabled_soak_duration_s"),
+        ),
+        "enabled_soak_target_hz": (
+            path / "enabled_soak.summary.txt",
+            lambda text: key_value_from_text(text, "enabled_soak_target_hz"),
+        ),
+        "enabled_soak_targets_sent": (
+            path / "enabled_soak.summary.txt",
+            lambda text: key_value_from_text(text, "enabled_soak_targets_sent"),
+        ),
+        "enabled_soak_first_target_seq": (
+            path / "enabled_soak.summary.txt",
+            lambda text: key_value_from_text(text, "enabled_soak_first_target_seq"),
+        ),
+        "enabled_soak_last_target_seq": (
+            path / "enabled_soak.summary.txt",
+            lambda text: key_value_from_text(text, "enabled_soak_last_target_seq"),
+        ),
         "motor_state_hz": (path / "rate.motor_state.txt", average_rate_from_text),
         "motor_health_hz": (path / "rate.motor_health.txt", average_rate_from_text),
         "com_status_hz": (path / "rate.com_status.txt", average_rate_from_text),
@@ -506,6 +620,13 @@ class Checker:
                 f"{args.max_enabled_soak_target_hz:g}_got_{target_hz:g}"
             )
 
+        duration_s = self.require_float("enabled_soak_duration_s")
+        if duration_s is not None and duration_s < args.min_enabled_soak_duration_s:
+            self.reason(
+                "enabled_soak_duration_s_low_"
+                f"{duration_s:g}_lt_{args.min_enabled_soak_duration_s:g}"
+            )
+
         sent = self.require_int("enabled_soak_targets_sent")
         first_seq = self.require_int("enabled_soak_first_target_seq")
         last_seq = self.require_int("enabled_soak_last_target_seq")
@@ -531,6 +652,16 @@ class Checker:
                 self.reason(
                     "enabled_soak_last_target_seq_expected_"
                     f"{expected_last}_got_{last_seq}"
+                )
+        if sent is not None and duration_s is not None and target_hz is not None:
+            expected_hz = sent / duration_s if duration_s > 0.0 else 0.0
+            mismatch = abs(expected_hz - target_hz)
+            if mismatch > args.max_enabled_soak_hz_consistency_error:
+                self.reason(
+                    "enabled_soak_hz_inconsistent_"
+                    f"sent_over_duration_{expected_hz:g}_"
+                    f"reported_{target_hz:g}_"
+                    f"gt_{args.max_enabled_soak_hz_consistency_error:g}"
                 )
         if state_last_seq is not None and last_seq is not None:
             lag = last_seq - state_last_seq
@@ -596,6 +727,11 @@ class Checker:
         path_kind = self.value("_evidence_path_kind")
         if path_kind == "file":
             self.reason("file_evidence_not_raw_capture_use_directory")
+        raw_manifest_reasons = self.value("_raw_manifest_reasons")
+        if raw_manifest_reasons:
+            for reason in raw_manifest_reasons.split(";"):
+                if reason:
+                    self.reason(reason)
 
         sample_only = self.value("sample_only")
         if sample_only is not None and as_bool(sample_only) is True:
@@ -736,6 +872,9 @@ class Checker:
             f"com_status_hz_range={args.min_com_status_hz:g}..{args.max_com_status_hz:g} "
             f"enabled_soak_target_hz_range="
             f"{args.min_enabled_soak_target_hz:g}..{args.max_enabled_soak_target_hz:g} "
+            f"min_enabled_soak_duration_s={args.min_enabled_soak_duration_s:g} "
+            f"max_enabled_soak_hz_consistency_error="
+            f"{args.max_enabled_soak_hz_consistency_error:g} "
             f"min_enabled_soak_targets_sent={args.min_enabled_soak_targets_sent} "
             f"min_enabled_soak_received_ratio={args.min_enabled_soak_received_ratio:g} "
             f"min_enabled_soak_applied_per_received="
@@ -766,6 +905,8 @@ def main() -> int:
     parser.add_argument("--max-com-status-hz", type=float, default=5.5)
     parser.add_argument("--min-enabled-soak-target-hz", type=float, default=180.0)
     parser.add_argument("--max-enabled-soak-target-hz", type=float, default=220.0)
+    parser.add_argument("--min-enabled-soak-duration-s", type=float, default=2.0)
+    parser.add_argument("--max-enabled-soak-hz-consistency-error", type=float, default=1.0)
     parser.add_argument("--min-enabled-soak-targets-sent", type=int, default=100)
     parser.add_argument("--min-enabled-soak-received-ratio", type=float, default=0.9)
     parser.add_argument("--min-enabled-soak-applied-per-received", type=float, default=40.0)

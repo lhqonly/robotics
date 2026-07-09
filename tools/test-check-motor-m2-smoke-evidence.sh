@@ -33,6 +33,41 @@ run_expect_fail() {
   printf '%s\n' "$out"
 }
 
+create_raw_manifest() {
+  local dir="$1"
+  (
+    cd "$dir"
+    sha256sum \
+      topics.txt \
+      info.motor_target.txt \
+      info.motor_state.txt \
+      info.motor_health.txt \
+      info.com_status.txt \
+      state.before_seq42.yaml \
+      state.after_seq42.yaml \
+      health.before_reject.yaml \
+      state.after_reject_seq43.yaml \
+      health.after_reject_seq43.yaml \
+      state.after_seq44.yaml \
+      state.after_clamp_seq45.yaml \
+      health.before_ttl.yaml \
+      state.after_ttl.yaml \
+      health.after_ttl.yaml \
+      health.before_enabled_soak.yaml \
+      enabled_soak.summary.txt \
+      health.mid_enabled_soak.yaml \
+      state.mid_enabled_soak.yaml \
+      rate.motor_state.txt \
+      rate.motor_health.txt \
+      rate.com_status.txt \
+      rate.com_status.soak.txt \
+      state.after_enabled_soak.yaml \
+      health.after_enabled_soak.yaml \
+      stack-hwm.txt \
+      agent.log >raw.sha256
+  )
+}
+
 python3 -m py_compile "$ROOT/tools/check-motor-m2-smoke-evidence.py"
 
 template="$TMPDIR/template.env"
@@ -47,6 +82,8 @@ assert_contains "$(cat "$template")" "evidence_capture_id=template" \
   "template marks capture id"
 assert_contains "$(cat "$template")" "state_after_ttl_fault_bits=2" \
   "template includes TTL stale evidence"
+assert_contains "$(cat "$template")" "enabled_soak_duration_s=2.0" \
+  "template includes enabled soak duration evidence"
 assert_contains "$(cat "$template")" "newlib_heap_free_before_msp_reserve_bytes=1024" \
   "template includes newlib heap MSP margin"
 assert_contains "$(cat "$template")" "agent_session_loss_events=0" \
@@ -154,6 +191,20 @@ sed -i 's/^enabled_soak_target_hz=.*/enabled_soak_target_hz=100.0/' "$enabled_ra
 out="$(run_expect_fail "enabled soak target rate low" "$ROOT/tools/check-motor-m2-smoke-evidence.py" "$enabled_rate")"
 assert_contains "$out" "enabled_soak_target_hz_out_of_range_180_220_got_100" \
   "enabled soak target rate reason"
+
+enabled_duration="$TMPDIR/enabled-duration.env"
+cp "$template" "$enabled_duration"
+sed -i 's/^enabled_soak_duration_s=.*/enabled_soak_duration_s=0.5/' "$enabled_duration"
+out="$(run_expect_fail "enabled soak duration low" "$ROOT/tools/check-motor-m2-smoke-evidence.py" "$enabled_duration")"
+assert_contains "$out" "enabled_soak_duration_s_low_0.5_lt_2" \
+  "enabled soak duration reason"
+
+enabled_hz_consistency="$TMPDIR/enabled-hz-consistency.env"
+cp "$template" "$enabled_hz_consistency"
+sed -i 's/^enabled_soak_duration_s=.*/enabled_soak_duration_s=3.0/' "$enabled_hz_consistency"
+out="$(run_expect_fail "enabled soak hz inconsistent" "$ROOT/tools/check-motor-m2-smoke-evidence.py" "$enabled_hz_consistency")"
+assert_contains "$out" "enabled_soak_hz_inconsistent_sent_over_duration_133.333_reported_200_gt_1" \
+  "enabled soak hz consistency reason"
 
 enabled_last_seq="$TMPDIR/enabled-last-seq.env"
 cp "$template" "$enabled_last_seq"
@@ -331,6 +382,7 @@ targets_applied: 0
 EOF
 cat >"$dir/enabled_soak.summary.txt" <<'EOF'
 enabled_soak_target_hz=200.0
+enabled_soak_duration_s=2.0
 enabled_soak_targets_sent=400
 enabled_soak_first_target_seq=1000
 enabled_soak_last_target_seq=1399
@@ -338,6 +390,12 @@ EOF
 cat >"$dir/health.mid_enabled_soak.yaml" <<'EOF'
 targets_received: 202
 targets_applied: 8000
+EOF
+cat >"$dir/state.mid_enabled_soak.yaml" <<'EOF'
+last_target_seq: 1199
+target_fresh: true
+enabled: true
+fault_bits: 0
 EOF
 cat >"$dir/state.after_enabled_soak.yaml" <<'EOF'
 last_target_seq: 1399
@@ -374,6 +432,7 @@ cat >"$dir/agent.log" <<'EOF'
 [run-bridge] micro_ros_agent serial --dev /dev/ttyUSB0 -b 2000000 -v6
 [INFO] session established
 EOF
+create_raw_manifest "$dir"
 
 out="$("$ROOT/tools/check-motor-m2-smoke-evidence.py" "$dir")"
 assert_contains "$out" "PASS motor_m2_smoke" \
@@ -384,12 +443,33 @@ assert_contains "$out" "motor_health_hz_range=4.5..5.5" \
   "passing health rate contract"
 assert_contains "$out" "enabled_soak_target_hz_range=180..220" \
   "passing enabled soak rate contract"
+assert_contains "$out" "min_enabled_soak_duration_s=2" \
+  "passing enabled soak duration contract"
+assert_contains "$out" "max_enabled_soak_hz_consistency_error=1" \
+  "passing enabled soak hz consistency contract"
 assert_contains "$out" "min_enabled_soak_applied_per_received=40" \
   "passing enabled soak applied/received contract"
 assert_contains "$out" "min_newlib_heap_msp_reserved_bytes=512" \
   "passing MSP reserve contract"
 assert_contains "$out" "max_agent_session_loss_events=0" \
   "passing agent reconnect contract"
+
+missing_manifest_dir="$TMPDIR/missing-manifest-dir"
+cp -a "$dir" "$missing_manifest_dir"
+rm "$missing_manifest_dir/raw.sha256"
+out="$(run_expect_fail "missing raw manifest" "$ROOT/tools/check-motor-m2-smoke-evidence.py" "$missing_manifest_dir")"
+assert_contains "$out" "BLOCKED_MISSING_EVIDENCE motor_m2_smoke" \
+  "missing raw manifest status"
+assert_contains "$out" "missing_raw_manifest_sha256" \
+  "missing raw manifest reason"
+
+tampered_raw_dir="$TMPDIR/tampered-raw-dir"
+cp -a "$dir" "$tampered_raw_dir"
+sed -i 's/^last_target_seq:.*/last_target_seq: 41/' \
+  "$tampered_raw_dir/state.after_seq42.yaml"
+out="$(run_expect_fail "tampered raw evidence" "$ROOT/tools/check-motor-m2-smoke-evidence.py" "$tampered_raw_dir")"
+assert_contains "$out" "raw_hash_mismatch_state.after_seq42.yaml" \
+  "tampered raw file reason"
 
 bad_dir="$TMPDIR/bad-evidence-dir"
 cp -a "$dir" "$bad_dir"
