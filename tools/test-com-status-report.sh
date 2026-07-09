@@ -71,7 +71,12 @@ assert_contains "$report" "combined_stack_linker_min_static" \
   "combined stack/linker recommendation row"
 assert_contains "$report" "meta_stream_history=2" \
   "micro-ROS stream history"
-assert_contains "$report" "generated_stream_history=in:2/out:2" \
+if [ -d "$ROOT/firmware/f103-microros/ThirdParty/microros/include/exo_motor_msgs" ]; then
+  expected_generated_stream_history="generated_stream_history=in:4/out:4"
+else
+  expected_generated_stream_history="generated_stream_history=in:2/out:2"
+fi
+assert_contains "$report" "$expected_generated_stream_history" \
   "generated stream history"
 assert_contains "$report" "## overnight no-flash 趋势" \
   "overnight section"

@@ -31,7 +31,13 @@ assert_contains "$ANNOTATED" "-DRMW_UXRCE_STREAM_HISTORY=2" "annotated stream hi
 assert_contains "$ANNOTATED" "-DRMW_UXRCE_CREATION_MODE=bin" "annotated creation mode"
 
 assert_contains "$UXR_CONFIG" "#define UXR_CONFIG_CUSTOM_TRANSPORT_MTU               128" "generated custom MTU"
-assert_contains "$RMW_CONFIG" "#define RMW_UXRCE_STREAM_HISTORY_INPUT 2" "generated input stream history"
-assert_contains "$RMW_CONFIG" "#define RMW_UXRCE_STREAM_HISTORY_OUTPUT 2" "generated output stream history"
+
+if [ -d "$ROOT/firmware/f103-microros/ThirdParty/microros/include/exo_motor_msgs" ]; then
+  assert_contains "$RMW_CONFIG" "#define RMW_UXRCE_STREAM_HISTORY_INPUT 4" "generated motor input stream history"
+  assert_contains "$RMW_CONFIG" "#define RMW_UXRCE_STREAM_HISTORY_OUTPUT 4" "generated motor output stream history"
+else
+  assert_contains "$RMW_CONFIG" "#define RMW_UXRCE_STREAM_HISTORY_INPUT 2" "generated input stream history"
+  assert_contains "$RMW_CONFIG" "#define RMW_UXRCE_STREAM_HISTORY_OUTPUT 2" "generated output stream history"
+fi
 
 echo "PASS: micro-ROS config contract"

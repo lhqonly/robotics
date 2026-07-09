@@ -59,6 +59,10 @@
 #  define EXO_QOS_BEST_EFFORT 0
 #endif
 
+#ifndef EXO_MOTOR_ROS_ENTITIES
+#  define EXO_MOTOR_ROS_ENTITIES 0
+#endif
+
 #ifndef EXO_CONTROL_LOOP_HZ
 #  define EXO_CONTROL_LOOP_HZ 1000u
 #endif
@@ -69,6 +73,14 @@
 
 #ifndef EXO_EXECUTOR_SPIN_TIMEOUT_US
 #  define EXO_EXECUTOR_SPIN_TIMEOUT_US 1000u
+#endif
+
+#ifndef EXO_MOTOR_STATE_PERIOD_MS
+#  define EXO_MOTOR_STATE_PERIOD_MS 20u
+#endif
+
+#ifndef EXO_MOTOR_HEALTH_PERIOD_MS
+#  define EXO_MOTOR_HEALTH_PERIOD_MS 200u
 #endif
 
 #if EXO_STATUS_EVERY_N < 1u
@@ -159,6 +171,15 @@ uint32_t com_control_latest_seq(void)
 #endif
 
 #ifdef MICROROS_HEADERS_AVAILABLE
+#if EXO_MOTOR_ROS_ENTITIES
+#  if defined(__has_include)
+#    if !__has_include(<exo_motor_msgs/msg/joint_target.h>) || \
+        !__has_include(<exo_motor_msgs/msg/joint_state.h>) || \
+        !__has_include(<exo_motor_msgs/msg/motor_health.h>)
+#      error "EXO_MOTOR_ROS_ENTITIES requires generated exo_motor_msgs headers"
+#    endif
+#  endif
+#endif
 /* ====================== 真实实现(lib 就位后编译) ====================== */
 
 #include <rcl/rcl.h>
@@ -168,6 +189,11 @@ uint32_t com_control_latest_seq(void)
 #include <rmw_microros/rmw_microros.h>
 #include <exo_msgs/msg/exo_cmd.h>
 #include <exo_msgs/msg/exo_status.h>
+#if EXO_MOTOR_ROS_ENTITIES
+#include <exo_motor_msgs/msg/joint_target.h>
+#include <exo_motor_msgs/msg/joint_state.h>
+#include <exo_motor_msgs/msg/motor_health.h>
+#endif
 
 /* 主 agent 用 USART1 自检串观察 micro-ROS 进度;复用 main.c 的阻塞 puts。
  * 注:micro-ROS 建链后,该串口同时被 XRCE 占用——自检串只在「未建链/建链失败」
@@ -179,20 +205,42 @@ static rcl_allocator_t      g_allocator;          /* micro-ROS 默认 allocator(
 static rclc_support_t       g_support;            /* support(含 rcl context / init options) */
 static rcl_node_t           g_node;               /* 节点 node_com_mcu */
 static rcl_publisher_t      g_pub_status;         /* /com/tp_mcu_status */
+#if EXO_MOTOR_ROS_ENTITIES
+static rcl_publisher_t      g_pub_joint_state;    /* /motor/tp_joint_state */
+static rcl_publisher_t      g_pub_motor_health;   /* /motor/tp_motor_health */
+#endif
 static rcl_subscription_t   g_sub_cmd;            /* /com/tp_cmd_heartbeat */
+#if EXO_MOTOR_ROS_ENTITIES
+static rcl_subscription_t   g_sub_joint_target;   /* /motor/tp_joint_target */
+#endif
 static rclc_executor_t      g_executor;           /* 单线程 executor */
 
 /* 消息体:sub 收的 ExoCmd、pub 发的 ExoStatus,各一个(header 16B + payload 4B = 20B)。静态。 */
 static exo_msgs__msg__ExoCmd    g_msg_cmd;         /* 订阅回调写入 */
 static exo_msgs__msg__ExoStatus g_msg_status;      /* 回填后发布 */
+#if EXO_MOTOR_ROS_ENTITIES
+static exo_motor_msgs__msg__JointTarget g_msg_joint_target;
+static exo_motor_msgs__msg__JointState  g_msg_joint_state;
+static exo_motor_msgs__msg__MotorHealth g_msg_motor_health;
+#endif
 static uint32_t g_cmd_rx_count = 0u;                /* 收到的 PC 命令计数,用于状态降频 */
+
+#if EXO_MOTOR_ROS_ENTITIES
+static char g_joint_target_frame_id[1] = "";
+static char g_joint_state_frame_id[1] = "";
+static char g_motor_health_frame_id[1] = "";
+#endif
 
 /* CRC 自检失败计数(§7.9,crc_enabled 时收到 cmd 的 crc 与重算不符则 +1,不阻断)。
  * volatile + used:保留为可观测探针(调试器/将来诊断 topic 可读),不让编译器优化掉。 */
 static volatile uint32_t g_crc_mismatch_count __attribute__((used)) = 0u;
 
-/* executor 句柄数 = 1(只有 1 个 subscription)。rclc_executor 需要这个上界。 */
-#define EXECUTOR_HANDLES  1u
+/* executor 句柄数:默认只启用 /com heartbeat;M2 实体实验打开后再加 /motor target。 */
+#if EXO_MOTOR_ROS_ENTITIES
+#  define EXECUTOR_HANDLES  2u
+#else
+#  define EXECUTOR_HANDLES  1u
+#endif
 
 /* 自检/错误处理宏:出错就把当前任务停在死循环(暴露,不静默继续)。
  * 注:micro-ROS 在 20KB 上不宜做复杂错误恢复;最小闭环里「初始化失败」= 配置/内存问题,
@@ -217,6 +265,156 @@ static void fail_stop(void)
      * → agent 日志侧可见,暴露问题(符合「不静默掩盖」哲学)。 */
     for (;;) { vTaskDelay(pdMS_TO_TICKS(1000)); }
 }
+
+#if EXO_MOTOR_ROS_ENTITIES
+static void bind_empty_frame_id(rosidl_runtime_c__String *frame_id, char *storage)
+{
+    storage[0] = '\0';
+    frame_id->data = storage;
+    frame_id->size = 0u;
+    frame_id->capacity = 1u;
+}
+
+static bool double_to_milli(double value, int32_t *out)
+{
+    if (out == NULL || value != value) {
+        return false;
+    }
+
+    double scaled = value * 1000.0;
+    if (scaled > 2147483647.0) {
+        *out = INT32_MAX;
+        return true;
+    }
+    if (scaled < -2147483648.0) {
+        *out = INT32_MIN;
+        return true;
+    }
+    *out = (int32_t)scaled;
+    return true;
+}
+
+static double milli_to_double(int32_t value)
+{
+    return ((double)value) / 1000.0;
+}
+
+static void set_header_stamp_from_ns(std_msgs__msg__Header *header, uint64_t stamp_ns)
+{
+    header->stamp.sec = (int32_t)(stamp_ns / 1000000000ull);
+    header->stamp.nanosec = (uint32_t)(stamp_ns % 1000000000ull);
+}
+
+static void motor_joint_target_callback(const void *msgin)
+{
+    const exo_motor_msgs__msg__JointTarget *m =
+        (const exo_motor_msgs__msg__JointTarget *)msgin;
+
+    /* M2 keeps std_msgs/Header only as host-side metadata. On F103 we only
+     * support empty frame_id so XRCE deserialization never needs heap-backed
+     * strings in the hot path. */
+    if (m->header.frame_id.size != 0u) {
+        return;
+    }
+
+    int32_t position_mrad = 0;
+    int32_t velocity_mrad_s = 0;
+    int32_t torque_mnm = 0;
+    int32_t kp_mnm_per_rad = 0;
+    int32_t kd_mnm_s_per_rad = 0;
+    int32_t max_torque_mnm = 0;
+    int32_t max_velocity_mrad_s = 0;
+    int32_t max_position_mrad = 0;
+    int32_t min_position_mrad = 0;
+
+    if (!double_to_milli(m->position_rad, &position_mrad) ||
+        !double_to_milli(m->velocity_rad_s, &velocity_mrad_s) ||
+        !double_to_milli(m->torque_nm, &torque_mnm) ||
+        !double_to_milli(m->kp_nm_per_rad, &kp_mnm_per_rad) ||
+        !double_to_milli(m->kd_nm_s_per_rad, &kd_mnm_s_per_rad) ||
+        !double_to_milli(m->max_torque_nm, &max_torque_mnm) ||
+        !double_to_milli(m->max_velocity_rad_s, &max_velocity_mrad_s) ||
+        !double_to_milli(m->max_position_rad, &max_position_mrad) ||
+        !double_to_milli(m->min_position_rad, &min_position_mrad)) {
+        return;
+    }
+
+    motor_control_target_t target = {0};
+    target.seq = m->seq;
+    target.joint_id = m->joint_id;
+    target.control_mode = m->control_mode;
+    target.position_mrad = position_mrad;
+    target.velocity_mrad_s = velocity_mrad_s;
+    target.torque_mnm = torque_mnm;
+    target.kp_mnm_per_rad = kp_mnm_per_rad;
+    target.kd_mnm_s_per_rad = kd_mnm_s_per_rad;
+    target.max_torque_mnm = max_torque_mnm;
+    target.max_velocity_mrad_s = max_velocity_mrad_s;
+    target.max_position_mrad = max_position_mrad;
+    target.min_position_mrad = min_position_mrad;
+    target.ttl_us = m->ttl_us;
+    target.flags = m->flags;
+
+    motor_control_submit_target(&target);
+}
+
+static void publish_motor_state(void)
+{
+    motor_control_state_t state;
+
+    taskDISABLE_INTERRUPTS();
+    motor_control_get_state(&state);
+    taskENABLE_INTERRUPTS();
+
+    uint64_t stamp_ns = dwt_now_ns();
+    set_header_stamp_from_ns(&g_msg_joint_state.header, stamp_ns);
+    bind_empty_frame_id(&g_msg_joint_state.header.frame_id, g_joint_state_frame_id);
+    g_msg_joint_state.seq = state.seq;
+    g_msg_joint_state.joint_id = state.joint_id;
+    g_msg_joint_state.control_mode = state.control_mode;
+    g_msg_joint_state.position_rad = milli_to_double(state.position_mrad);
+    g_msg_joint_state.velocity_rad_s = milli_to_double(state.velocity_mrad_s);
+    g_msg_joint_state.torque_est_nm = milli_to_double(state.torque_mnm);
+    g_msg_joint_state.current_a = 0.0;
+    g_msg_joint_state.bus_voltage_v = 0.0;
+    g_msg_joint_state.temperature_c = 0.0;
+    g_msg_joint_state.fault_bits = state.fault_bits;
+    g_msg_joint_state.vendor_fault_bits = 0u;
+    g_msg_joint_state.last_target_seq = state.last_target_seq;
+    g_msg_joint_state.sample_age_us = state.sample_age_us;
+    g_msg_joint_state.target_fresh = state.target_fresh;
+    g_msg_joint_state.enabled = state.enabled;
+
+    ignore_rcl_ret(rcl_publish(&g_pub_joint_state, &g_msg_joint_state, NULL));
+}
+
+static void publish_motor_health(void)
+{
+    motor_control_health_t health;
+
+    taskDISABLE_INTERRUPTS();
+    motor_control_get_health(&health);
+    taskENABLE_INTERRUPTS();
+
+    uint64_t stamp_ns = dwt_now_ns();
+    set_header_stamp_from_ns(&g_msg_motor_health.header, stamp_ns);
+    bind_empty_frame_id(&g_msg_motor_health.header.frame_id, g_motor_health_frame_id);
+    g_msg_motor_health.bus_id = 0u;
+    g_msg_motor_health.joint_count = 1u;
+    g_msg_motor_health.targets_received = health.targets_received;
+    g_msg_motor_health.targets_applied = health.targets_applied;
+    g_msg_motor_health.stale_targets = health.stale_ticks;
+    g_msg_motor_health.motor_tx = 0u;
+    g_msg_motor_health.motor_rx = 0u;
+    g_msg_motor_health.motor_timeout = 0u;
+    g_msg_motor_health.motor_fault = 0u;
+    g_msg_motor_health.target_apply_latency_p99_ms = 0.0;
+    g_msg_motor_health.can_gap_p99_ms = 0.0;
+    g_msg_motor_health.reconciles = health.reconciles;
+
+    ignore_rcl_ret(rcl_publish(&g_pub_motor_health, &g_msg_motor_health, NULL));
+}
+#endif
 
 /* ===== 订阅回调:收到 ExoCmd → 解包 → 回填 ExoStatus → 发布 mcu_status ===== */
 /* ON_NEW_DATA 触发:msgin 指向 g_msg_cmd。解包 cmd、按 §1.2/H1 回填 status、立即 publish。
@@ -307,6 +505,24 @@ static bool microros_entities_init(void)
     }
 #endif
 
+#if EXO_MOTOR_ROS_ENTITIES
+    if (!RCSOFT(rclc_publisher_init_default(
+            &g_pub_joint_state,
+            &g_node,
+            ROSIDL_GET_MSG_TYPE_SUPPORT(exo_motor_msgs, msg, JointState),
+            "motor/tp_joint_state"))) {
+        return false;
+    }
+
+    if (!RCSOFT(rclc_publisher_init_default(
+            &g_pub_motor_health,
+            &g_node,
+            ROSIDL_GET_MSG_TYPE_SUPPORT(exo_motor_msgs, msg, MotorHealth),
+            "motor/tp_motor_health"))) {
+        return false;
+    }
+#endif
+
     /* subscription /com/tp_cmd_heartbeat,RELIABLE QoS(同上,_init_default = reliable)。
      * 用 rosidl 的 exo_msgs/ExoCmd type support。 */
 #if EXO_QOS_BEST_EFFORT
@@ -327,7 +543,19 @@ static bool microros_entities_init(void)
     }
 #endif
 
-    /* executor:1 个句柄(只挂 1 个 subscription)。 */
+#if EXO_MOTOR_ROS_ENTITIES
+    /* /motor target 是 latest-target 输入:best-effort subscription 能兼容 reliable
+     * publisher,也能兼容 PC high-rate best-effort publisher。 */
+    if (!RCSOFT(rclc_subscription_init_best_effort(
+            &g_sub_joint_target,
+            &g_node,
+            ROSIDL_GET_MSG_TYPE_SUPPORT(exo_motor_msgs, msg, JointTarget),
+            "motor/tp_joint_target"))) {
+        return false;
+    }
+#endif
+
+    /* executor:2 个句柄(/com + /motor subscriptions)。 */
     g_executor = rclc_executor_get_zero_initialized_executor();
     if (!RCSOFT(rclc_executor_init(&g_executor, &g_support.context,
                                    EXECUTOR_HANDLES, &g_allocator))) {
@@ -341,6 +569,14 @@ static bool microros_entities_init(void)
         return false;
     }
 
+#if EXO_MOTOR_ROS_ENTITIES
+    if (!RCSOFT(rclc_executor_add_subscription(
+            &g_executor, &g_sub_joint_target, &g_msg_joint_target,
+            &motor_joint_target_callback, ON_NEW_DATA))) {
+        return false;
+    }
+#endif
+
     return true;
 }
 
@@ -348,9 +584,14 @@ static bool microros_entities_init(void)
 static void microros_entities_fini(void)
 {
     /* 逆序销毁。fini 失败不致命(本就在清理重连路径),忽略返回值。 */
+    ignore_rcl_ret(rclc_executor_fini(&g_executor));
+#if EXO_MOTOR_ROS_ENTITIES
+    ignore_rcl_ret(rcl_subscription_fini(&g_sub_joint_target, &g_node));
+    ignore_rcl_ret(rcl_publisher_fini(&g_pub_motor_health, &g_node));
+    ignore_rcl_ret(rcl_publisher_fini(&g_pub_joint_state, &g_node));
+#endif
     ignore_rcl_ret(rcl_publisher_fini(&g_pub_status, &g_node));
     ignore_rcl_ret(rcl_subscription_fini(&g_sub_cmd, &g_node));
-    ignore_rcl_ret(rclc_executor_fini(&g_executor));
     ignore_rcl_ret(rcl_node_fini(&g_node));
     ignore_rcl_ret(rclc_support_fini(&g_support));
 }
@@ -376,6 +617,12 @@ void microros_app_task(void *arg)
     g_msg_cmd.header.stamp_mono_ns    = 0u;
     g_msg_cmd.header.crc              = 0u;
     g_msg_cmd.payload                 = 0;
+#if EXO_MOTOR_ROS_ENTITIES
+    bind_empty_frame_id(&g_msg_joint_target.header.frame_id, g_joint_target_frame_id);
+    bind_empty_frame_id(&g_msg_joint_state.header.frame_id, g_joint_state_frame_id);
+    bind_empty_frame_id(&g_msg_motor_health.header.frame_id, g_motor_health_frame_id);
+#endif
+    motor_control_init();
 
     /* 2. 外层重连循环:等 agent 在线 → 建实体 → spin → 断链则清理重连。 */
     for (;;) {
@@ -396,6 +643,10 @@ void microros_app_task(void *arg)
         /* 3. spin:周期性处理 executor(收 cmd → 触发回调 → 回填 publish)。
          *    每轮 spin_some 处理已到数据,期间定期 ping 检测 agent 是否掉线。 */
         TickType_t last_ping = xTaskGetTickCount();
+#if EXO_MOTOR_ROS_ENTITIES
+        TickType_t last_motor_state = last_ping;
+        TickType_t last_motor_health = last_ping;
+#endif
         for (;;) {
             /* spin_some 超时默认 1000us,可编译期下调到 500/200/100us 做延迟阶梯。
              * ping 用 FreeRTOS tick 计时,不再假设"1000 次循环约等于 1s"。 */
@@ -403,9 +654,21 @@ void microros_app_task(void *arg)
                 &g_executor,
                 ((uint64_t)EXO_EXECUTOR_SPIN_TIMEOUT_US) * 1000ull);
 
+            TickType_t now = xTaskGetTickCount();
+#if EXO_MOTOR_ROS_ENTITIES
+            if ((now - last_motor_state) >= pdMS_TO_TICKS(EXO_MOTOR_STATE_PERIOD_MS)) {
+                last_motor_state = now;
+                publish_motor_state();
+            }
+            if ((now - last_motor_health) >= pdMS_TO_TICKS(EXO_MOTOR_HEALTH_PERIOD_MS)) {
+                last_motor_health = now;
+                publish_motor_health();
+            }
+#endif
+
             /* 每 ~1s ping 一次 agent;连续多次失败判定掉线,跳出去重连。 */
-            if ((xTaskGetTickCount() - last_ping) >= pdMS_TO_TICKS(1000)) {
-                last_ping = xTaskGetTickCount();
+            if ((now - last_ping) >= pdMS_TO_TICKS(1000)) {
+                last_ping = now;
                 if (rmw_uros_ping_agent(50, 2) != RMW_RET_OK) {
                     break;            /* agent 掉线 → 清理重连 */
                 }

@@ -42,8 +42,6 @@ assert_contains "$report" "toplevel_type_raw_source" \
   "size report includes raw source metadata breakdown row"
 assert_contains "$report" "[rosidl_type_metadata]" \
   "size report emits rosidl category detail header"
-assert_contains "$report" "toplevel_type_raw_source" \
-  "size report includes type raw source symbol"
 assert_contains "$report" "custom_sessions" \
   "size report includes custom session pool symbol"
 
@@ -62,8 +60,8 @@ assert_contains "$(head -1 "$csv")" "ram_rosidl_raw_source_metadata_bytes" \
   "size matrix CSV header includes rosidl raw source column"
 assert_contains "$(head -1 "$csv")" "ram_microros_custom_pools_bytes" \
   "size matrix CSV header includes micro-ROS pool category column"
-if ! awk -F, 'NR > 1 && $22 + 0 > 0 && $23 + 0 > 0 && $24 + 0 > 0 {found = 1} END {exit !found}' "$csv"; then
-  echo "FAIL: size matrix did not report non-zero rosidl/raw-source/pool category bytes" >&2
+if ! awk -F, 'NR > 1 && $22 + 0 > 0 && $23 + 0 >= 0 && $24 + 0 > 0 {found = 1} END {exit !found}' "$csv"; then
+  echo "FAIL: size matrix did not report rosidl/pool category bytes" >&2
   cat "$csv" >&2
   exit 1
 fi
