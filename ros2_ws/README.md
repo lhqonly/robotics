@@ -359,7 +359,25 @@ RUNS=2 tools/run-pc-scheduler-sweep.sh pc_sched_custom_$(date +%Y%m%d_%H%M)
 候选好坏；如果要让任一失败 case 使脚本整体返回非 0，追加
 `FAIL_ON_CASE_ERROR=1`。
 
-要按阶梯一次跑完整验证矩阵，用：
+要无人值守地跑一轮“先诊断、再选择最好可用路径”的验证 cycle，用：
+
+```bash
+tools/run-com-validation-cycle.sh validation_$(date +%Y%m%d_%H%M)
+```
+
+这个入口会先运行只读 SWD 诊断。日志里如果出现 `PATH full_staircase`，说明
+`SWD_STATUS=ok`，脚本会继续跑完整 1/2/5/10kHz × 921600/2000000 staircase，
+再用 `tools/check-com-staircase-contract.py` 做上板验收检查；如果出现
+`PATH no_flash_fallback`，说明当前不能可靠烧录/访问 target，脚本会自动跑
+no-flash smoke 和 `tools/com-status-report.sh`，保留串口/ROS 侧证据和未解决项，
+但不会把 fallback 当成完整上板验收。只想预览路径、不碰硬件：
+
+```bash
+DRY_RUN=1 tools/run-com-validation-cycle.sh dry_cycle
+SWD_STATUS_OVERRIDE=ok DRY_RUN=1 tools/run-com-validation-cycle.sh dry_full
+```
+
+要按阶梯拆开跑完整验证矩阵，用：
 
 ```bash
 tools/diagnose-swd.sh

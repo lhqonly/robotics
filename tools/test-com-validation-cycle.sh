@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TMPDIR="$(mktemp -d)"
+trap 'rm -rf "$TMPDIR"' EXIT
+
+assert_contains() {
+  local file="$1"
+  local needle="$2"
+  local label="$3"
+  if ! grep -Fq -- "$needle" "$file"; then
+    echo "FAIL: $label missing '$needle' in $file" >&2
+    exit 1
+  fi
+}
+
+assert_not_contains() {
+  local file="$1"
+  local needle="$2"
+  local label="$3"
+  if grep -Fq -- "$needle" "$file"; then
+    echo "FAIL: $label unexpectedly found '$needle' in $file" >&2
+    exit 1
+  fi
+}
+
+run_cycle() {
+  local tag="$1"
+  shift
+  env LOGDIR="$TMPDIR/logs" HANDOFF_DIR="$TMPDIR/handoff" DRY_RUN=1 "$@" \
+    "$ROOT/tools/run-com-validation-cycle.sh" "$tag" >/dev/null
+}
+
+run_cycle dry_ok SWD_STATUS_OVERRIDE=ok
+ok_log="$TMPDIR/logs/dry_ok.log"
+assert_contains "$ok_log" "SWD_STATUS=ok" \
+  "SWD OK status is recorded"
+assert_contains "$ok_log" "PATH full_staircase" \
+  "SWD OK selects full staircase"
+assert_contains "$ok_log" "DRY_RUN $ROOT/tools/run-com-staircase.sh dry_ok" \
+  "full staircase command is recorded"
+assert_contains "$ok_log" \
+  "DRY_RUN $ROOT/tools/check-com-staircase-contract.py $ROOT/log/com-staircase/dry_ok.metrics.csv" \
+  "staircase contract command is recorded"
+assert_contains "$ok_log" "DRY_RUN $ROOT/tools/com-status-report.sh dry_ok_handoff" \
+  "handoff report command is recorded on OK path"
+assert_not_contains "$ok_log" "run-com-perf.sh dry_ok_noflash_smoke" \
+  "OK path does not run no-flash fallback"
+
+run_cycle dry_bad SWD_STATUS_OVERRIDE=bad_unknown_target
+bad_log="$TMPDIR/logs/dry_bad.log"
+assert_contains "$bad_log" "SWD_STATUS=bad_unknown_target" \
+  "SWD failure status is recorded"
+assert_contains "$bad_log" "PATH no_flash_fallback" \
+  "SWD failure selects no-flash fallback"
+assert_contains "$bad_log" "DRY_RUN $ROOT/tools/run-com-perf.sh dry_bad_noflash_smoke" \
+  "no-flash smoke command is recorded"
+assert_contains "$bad_log" "DRY_RUN $ROOT/tools/com-status-report.sh dry_bad_handoff" \
+  "handoff report command is recorded on fallback path"
+assert_not_contains "$bad_log" "run-com-staircase.sh dry_bad" \
+  "fallback path does not run full staircase"
+
+run_cycle dry_skip SWD_STATUS_OVERRIDE=bad_probe_failed RUN_NO_FLASH_ON_SWD_FAIL=0
+skip_log="$TMPDIR/logs/dry_skip.log"
+assert_contains "$skip_log" "SKIP no_flash_fallback RUN_NO_FLASH_ON_SWD_FAIL=0" \
+  "fallback can be explicitly skipped"
+assert_not_contains "$skip_log" "run-com-perf.sh dry_skip_noflash_smoke" \
+  "skip path does not run no-flash smoke"
+
+echo "PASS: communication validation cycle dry-run checks"
