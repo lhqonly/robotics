@@ -72,7 +72,7 @@ assert_contains "$out" "motor_health_hz_range=4.5..5.5" \
   "passing health rate contract"
 assert_contains "$out" "enabled_soak_target_hz_range=180..220" \
   "passing enabled soak rate contract"
-assert_contains "$out" "min_enabled_soak_applied_per_received=10" \
+assert_contains "$out" "min_enabled_soak_applied_per_received=40" \
   "passing enabled soak applied/received contract"
 
 offline="$TMPDIR/offline.env"
@@ -168,14 +168,14 @@ enabled_applied="$TMPDIR/enabled-applied.env"
 cp "$template" "$enabled_applied"
 sed -i 's/^enabled_soak_targets_applied_after=.*/enabled_soak_targets_applied_after=400/' "$enabled_applied"
 out="$(run_expect_fail "enabled soak applied too low" "$ROOT/tools/check-motor-m2-smoke-evidence.py" "$enabled_applied")"
-assert_contains "$out" "enabled_soak_targets_applied_delta_low_400_lt_4000" \
+assert_contains "$out" "enabled_soak_targets_applied_delta_low_400_lt_16000" \
   "enabled soak applied delta reason"
 
 enabled_mid="$TMPDIR/enabled-mid.env"
 cp "$template" "$enabled_mid"
-sed -i 's/^enabled_soak_targets_applied_mid=.*/enabled_soak_targets_applied_mid=4000/' "$enabled_mid"
+sed -i 's/^enabled_soak_targets_applied_mid=.*/enabled_soak_targets_applied_mid=16000/' "$enabled_mid"
 out="$(run_expect_fail "enabled soak applied not monotonic" "$ROOT/tools/check-motor-m2-smoke-evidence.py" "$enabled_mid")"
-assert_contains "$out" "enabled_soak_targets_applied_not_monotonic_0_4000_4000" \
+assert_contains "$out" "enabled_soak_targets_applied_not_monotonic_0_16000_16000" \
   "enabled soak applied monotonic reason"
 
 enabled_fault="$TMPDIR/enabled-fault.env"
@@ -311,7 +311,7 @@ enabled_soak_last_target_seq=1399
 EOF
 cat >"$dir/health.mid_enabled_soak.yaml" <<'EOF'
 targets_received: 202
-targets_applied: 2000
+targets_applied: 8000
 EOF
 cat >"$dir/state.after_enabled_soak.yaml" <<'EOF'
 last_target_seq: 1399
@@ -321,7 +321,7 @@ fault_bits: 0
 EOF
 cat >"$dir/health.after_enabled_soak.yaml" <<'EOF'
 targets_received: 402
-targets_applied: 4000
+targets_applied: 16000
 EOF
 cat >"$dir/rate.motor_state.txt" <<'EOF'
 average rate: 50.000
@@ -354,6 +354,14 @@ sed -i 's/^Subscription count:.*/Subscription count: 0/' "$bad_dir/info.motor_ta
 out="$(run_expect_fail "missing motor target subscriber" "$ROOT/tools/check-motor-m2-smoke-evidence.py" "$bad_dir")"
 assert_contains "$out" "info_motor_target_not_ok" \
   "topic info subscription count reason"
+
+substring_topic_dir="$TMPDIR/substring-topic-dir"
+cp -a "$dir" "$substring_topic_dir"
+sed -i 's#^/motor/tp_joint_target$#/motor/tp_joint_target_extra#' \
+  "$substring_topic_dir/topics.txt"
+out="$(run_expect_fail "substring motor target topic" "$ROOT/tools/check-motor-m2-smoke-evidence.py" "$substring_topic_dir")"
+assert_contains "$out" "topic_motor_target_not_ok" \
+  "topic list requires exact motor target match"
 
 template_dir="$TMPDIR/template-dir"
 mkdir -p "$template_dir"

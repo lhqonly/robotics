@@ -68,11 +68,17 @@ assert_contains "$CMAKE" \
   'set(EXO_MOTOR_HEALTH_PERIOD_MS "200" CACHE STRING "M2 motor MotorHealth publish period in milliseconds")' \
   "default motor health publish period"
 assert_contains "$CMAKE" \
+  'set(EXO_MOTOR_FRAME_ID_RX_CAPACITY "16" CACHE STRING "M2 JointTarget frame_id RX storage bytes")' \
+  "default motor frame_id RX capacity"
+assert_contains "$CMAKE" \
   "add_compile_definitions(EXO_MOTOR_STATE_PERIOD_MS=\${EXO_MOTOR_STATE_PERIOD_MS})" \
   "motor state period compile definition"
 assert_contains "$CMAKE" \
   "add_compile_definitions(EXO_MOTOR_HEALTH_PERIOD_MS=\${EXO_MOTOR_HEALTH_PERIOD_MS})" \
   "motor health period compile definition"
+assert_contains "$CMAKE" \
+  "add_compile_definitions(EXO_MOTOR_FRAME_ID_RX_CAPACITY=\${EXO_MOTOR_FRAME_ID_RX_CAPACITY})" \
+  "motor frame_id RX capacity compile definition"
 assert_contains "$APP" \
   "#if EXO_MOTOR_STATE_PERIOD_MS < 10u || EXO_MOTOR_STATE_PERIOD_MS > 1000u" \
   "motor state period range guard"
@@ -82,6 +88,12 @@ assert_contains "$APP" \
 assert_contains "$APP" \
   "#if EXO_MOTOR_HEALTH_PERIOD_MS < EXO_MOTOR_STATE_PERIOD_MS" \
   "motor health period slower-than-state guard"
+assert_contains "$APP" \
+  "#    define EXO_MOTOR_FRAME_ID_RX_CAPACITY 16u" \
+  "motor frame_id RX fallback capacity"
+assert_contains "$APP" \
+  "#  if EXO_MOTOR_FRAME_ID_RX_CAPACITY < 8u" \
+  "motor frame_id RX capacity lower bound"
 
 assert_contains "$MAIN" "#if EXO_CONTROL_LOOP_HZ <= 1000u" \
   "1kHz-and-below FreeRTOS task branch"

@@ -50,6 +50,9 @@ assert_contains "$report" "[rosidl_type_metadata]" \
   "size report emits rosidl category detail header"
 assert_contains "$report" "custom_sessions" \
   "size report includes custom session pool symbol"
+assert_contains "$(cat "$ROOT/tools/firmware-size-report.sh")" \
+  'name ~ /^g_joint_.*_frame_id$/' \
+  "size report classifies motor joint frame_id buffers as app ROS state"
 
 matrix_tag="test_size_report_categories"
 OUTDIR="$(mktemp -d)"

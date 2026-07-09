@@ -84,8 +84,8 @@ enabled_soak_targets_received_before=2
 enabled_soak_targets_received_mid=202
 enabled_soak_targets_received_after=402
 enabled_soak_targets_applied_before=0
-enabled_soak_targets_applied_mid=2000
-enabled_soak_targets_applied_after=4000
+enabled_soak_targets_applied_mid=8000
+enabled_soak_targets_applied_after=16000
 com_status_soak_hz=5.0
 
 # Motor-enabled runtime memory evidence.
@@ -187,7 +187,11 @@ def read_evidence_dir(path: Path) -> dict[str, str]:
     values["evidence_source"] = "directory_raw_capture"
     values["evidence_capture_id"] = "directory_raw_capture"
 
-    topics = read_text_if_exists(path / "topics.txt")
+    topics = {
+        line.strip()
+        for line in read_text_if_exists(path / "topics.txt").splitlines()
+        if line.strip()
+    }
     topic_map = {
         "topic_motor_target": "/motor/tp_joint_target",
         "topic_motor_state": "/motor/tp_joint_state",
@@ -674,7 +678,7 @@ def main() -> int:
     parser.add_argument("--max-enabled-soak-target-hz", type=float, default=220.0)
     parser.add_argument("--min-enabled-soak-targets-sent", type=int, default=100)
     parser.add_argument("--min-enabled-soak-received-ratio", type=float, default=0.9)
-    parser.add_argument("--min-enabled-soak-applied-per-received", type=float, default=10.0)
+    parser.add_argument("--min-enabled-soak-applied-per-received", type=float, default=40.0)
     parser.add_argument("--min-enabled-soak-applied-delta", type=int, default=1)
     parser.add_argument("--max-enabled-soak-last-target-lag", type=int, default=0)
     parser.add_argument("--min-microros-stack-free-words", type=int, default=128)

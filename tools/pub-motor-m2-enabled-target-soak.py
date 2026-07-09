@@ -27,6 +27,7 @@ def main() -> int:
         parser.error("--ttl-us must be > 0")
 
     import rclpy
+    from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
     from exo_motor_msgs.msg import JointTarget
 
     count = max(1, int(round(args.hz * args.duration_s)))
@@ -35,8 +36,14 @@ def main() -> int:
 
     rclpy.init()
     node = rclpy.create_node("motor_m2_enabled_target_soak_pub")
-    pub = node.create_publisher(JointTarget, "/motor/tp_joint_target", 10)
+    qos = QoSProfile(
+        history=HistoryPolicy.KEEP_LAST,
+        depth=1,
+        reliability=ReliabilityPolicy.BEST_EFFORT,
+    )
+    pub = node.create_publisher(JointTarget, "/motor/tp_joint_target", qos)
 
+    started_at = time.monotonic()
     deadline = time.monotonic()
     for offset in range(count):
         msg = JointTarget()
@@ -61,12 +68,15 @@ def main() -> int:
         sleep_s = deadline - time.monotonic()
         if sleep_s > 0.0:
             time.sleep(sleep_s)
+    elapsed_s = time.monotonic() - started_at
+    actual_hz = count / elapsed_s if elapsed_s > 0.0 else 0.0
 
     node.destroy_node()
     rclpy.shutdown()
 
-    print(f"enabled_soak_target_hz={args.hz:.6f}")
-    print(f"enabled_soak_duration_s={args.duration_s:.6f}")
+    print(f"enabled_soak_requested_hz={args.hz:.6f}")
+    print(f"enabled_soak_target_hz={actual_hz:.6f}")
+    print(f"enabled_soak_duration_s={elapsed_s:.6f}")
     print(f"enabled_soak_targets_sent={count}")
     print(f"enabled_soak_first_target_seq={args.start_seq}")
     print(f"enabled_soak_last_target_seq={last_seq}")

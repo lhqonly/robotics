@@ -124,7 +124,7 @@ M2_MOTOR_ENABLED_SOAK_MAX_HZ="$(rate_max_from_hz "$M2_MOTOR_ENABLED_SOAK_HZ")"
 
 print_commands() {
   cat <<EOF
-tools/diagnose-swd.sh
+STRICT=1 tools/diagnose-swd.sh
 tools/com-wire-budget.py --profile motor-m2 --cmd-hz 200 --motor-state-hz $M2_MOTOR_STATE_HZ --motor-health-hz $M2_MOTOR_HEALTH_HZ --baud "$M2_MOTOR_REQUIRE_BUDGET_BAUDS" --max-baud-util-pct 30 --fail-on-over-budget --show-wire-time
 tools/com-wire-budget.py --profile motor-m2 --cmd-hz 200 --motor-state-hz $M2_MOTOR_STATE_HZ --motor-health-hz $M2_MOTOR_HEALTH_HZ --baud '921600 2000000' --max-baud-util-pct 30 --show-wire-time
 cmake -S firmware/f103-microros -B $(shell_quote "$M2_MOTOR_BUILD_DIR") \\

@@ -242,10 +242,10 @@ static uint32_t g_cmd_rx_count = 0u;                /* 收到的 PC 命令计数
 
 #if EXO_MOTOR_ROS_ENTITIES
 #  ifndef EXO_MOTOR_FRAME_ID_RX_CAPACITY
-#    define EXO_MOTOR_FRAME_ID_RX_CAPACITY RMW_UXRCE_MAX_INPUT_BUFFER_SIZE
+#    define EXO_MOTOR_FRAME_ID_RX_CAPACITY 16u
 #  endif
-#  if EXO_MOTOR_FRAME_ID_RX_CAPACITY < 1u
-#    error "EXO_MOTOR_FRAME_ID_RX_CAPACITY must be >= 1"
+#  if EXO_MOTOR_FRAME_ID_RX_CAPACITY < 8u
+#    error "EXO_MOTOR_FRAME_ID_RX_CAPACITY must be >= 8"
 #  endif
 static char g_joint_target_frame_id[EXO_MOTOR_FRAME_ID_RX_CAPACITY] = "";
 static char g_joint_state_frame_id[1] = "";
@@ -350,9 +350,9 @@ static void motor_joint_target_callback(const void *msgin)
         (const exo_motor_msgs__msg__JointTarget *)msgin;
 
     /* M2 keeps std_msgs/Header only as host-side metadata. On F103 we only
-     * support empty frame_id. The receive buffer is sized to the XRCE input
-     * stream so non-empty frame_id values that fit on the wire are visible
-     * here and rejected instead of being silently skipped by generated code. */
+     * support empty frame_id. The small RX buffer lets short negative tests
+     * reach this callback and be rejected; longer frame_id values fail closed
+     * during deserialization instead of being applied as targets. */
     if (m->header.frame_id.size != 0u) {
         return;
     }

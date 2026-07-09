@@ -71,6 +71,8 @@ arm-none-eabi-nm -S --size-sort "$ELF" |
         name ~ /^_impure_ptr$/ ||
         name ~ /^impure_data$/
       is_app_ros = name ~ /^g_msg_/ ||
+        name ~ /^g_joint_.*_frame_id$/ ||
+        name ~ /^g_motor_health_frame_id$/ ||
         name ~ /^g_executor$/ ||
         name ~ /^g_pub_/ ||
         name ~ /^g_sub_/ ||
@@ -225,6 +227,8 @@ for category in \
           name ~ /^_impure_ptr$/ ||
           name ~ /^impure_data$/
         is_app_ros = name ~ /^g_msg_/ ||
+          name ~ /^g_joint_.*_frame_id$/ ||
+          name ~ /^g_motor_health_frame_id$/ ||
           name ~ /^g_executor$/ ||
           name ~ /^g_pub_/ ||
           name ~ /^g_sub_/ ||

@@ -79,6 +79,20 @@ assert_contains "$report" "combined_stack_linker_min_static" \
   "combined stack/linker recommendation row"
 assert_contains "$report" "meta_stream_history=2" \
   "micro-ROS stream history"
+assert_contains "$report" "M2 motor ELF 中 \`rosidl_type_metadata\` 当前约" \
+  "M2 motor unresolved ROSIDL metadata uses current ELF values"
+assert_contains "$report" "\`toplevel_type_raw_source\`=0B" \
+  "M2 motor unresolved raw source reflects notypedesc build"
+assert_contains "$report" "下一步重点是验证 vanilla Agent/HardFault 兼容性并评估剩余 type metadata" \
+  "M2 motor unresolved metadata next step"
+assert_not_contains "$report" "\`toplevel_type_raw_source\` 约 1.5KB" \
+  "M2 motor unresolved metadata must not use stale raw source estimate"
+assert_contains "$report" "M2 ON 默认静态 RAM 当前约" \
+  "M2 motor unresolved RAM uses current ELF values"
+assert_contains "$report" "\`build-motor-opt\` 的 stack/linker reserve 候选当前约" \
+  "M2 motor optimized RAM uses current ELF values"
+assert_not_contains "$report" "当前约 unknownB" \
+  "M2 motor unresolved RAM should parse current ELF values"
 if [ -d "$ROOT/firmware/f103-microros/ThirdParty/microros/include/exo_motor_msgs" ]; then
   expected_generated_stream_history="generated_stream_history=in:4/out:4"
 else

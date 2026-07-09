@@ -288,6 +288,44 @@ firmware_rosidl_metadata_breakdown() {
     '
 }
 
+rosidl_breakdown_bytes() {
+  local label="$1"
+  awk -v label="$label" '
+    /^rosidl_type_metadata_breakdown:/ {
+      next
+    }
+    {
+      row = $1
+      value = ""
+      for (i = 1; i <= NF; i++) {
+        if ($i == "bytes=" && (i + 1) <= NF) {
+          value = $(i + 1) + 0
+        } else if ($i ~ /^bytes=./) {
+          field = $i
+          sub(/^bytes=/, "", field)
+          value = field + 0
+        }
+      }
+      if (value == "") {
+        next
+      }
+      if (label == "__total") {
+        total += value
+      } else if (row == label) {
+        print value
+        found = 1
+      }
+    }
+    END {
+      if (label == "__total") {
+        print total + 0
+      } else if (!found) {
+        print ""
+      }
+    }
+  '
+}
+
 firmware_size_brief() {
   local elf="$1"
   if [ ! -f "$elf" ]; then
@@ -300,6 +338,23 @@ firmware_size_brief() {
   fi
   "$ROOT/tools/firmware-size-report.sh" "$elf" 2>/dev/null |
     awk 'NR == 1 || /^flash_bytes=/ || /^linker_user_heap_stack_bytes=/ {print}'
+}
+
+size_brief_metric() {
+  local report="$1"
+  local key="$2"
+  printf '%s\n' "$report" |
+    awk -v key="$key" '
+      {
+        for (i = 1; i <= NF; i++) {
+          if ($i ~ ("^" key "=")) {
+            split($i, parts, "=")
+            print parts[2]
+            exit
+          }
+        }
+      }
+    '
 }
 
 firmware_optimization_recommendations() {
@@ -523,6 +578,12 @@ ram_categories="$(firmware_ram_categories)"
 rosidl_metadata_breakdown="$(firmware_rosidl_metadata_breakdown)"
 motor_rosidl_metadata_breakdown="$(
   firmware_rosidl_metadata_breakdown "$FIRMWARE_MOTOR_ELF")"
+motor_rosidl_metadata_bytes="$(
+  printf '%s\n' "$motor_rosidl_metadata_breakdown" |
+    rosidl_breakdown_bytes __total)"
+motor_rosidl_raw_source_bytes="$(
+  printf '%s\n' "$motor_rosidl_metadata_breakdown" |
+    rosidl_breakdown_bytes toplevel_type_raw_source)"
 ram_category_symbols="$(firmware_ram_category_symbols)"
 firmware_optimization_recs="$(firmware_optimization_recommendations)"
 communication_optimization_recs="$(communication_optimization_recommendations)"
@@ -714,6 +775,8 @@ if [ -d "$ROOT/firmware/f103-microros/ThirdParty/microros/include/exo_motor_msgs
 fi
 motor_default_size="$(firmware_size_brief "$FIRMWARE_MOTOR_ELF")"
 motor_opt_size="$(firmware_size_brief "$FIRMWARE_MOTOR_OPT_ELF")"
+motor_default_ram_bytes="$(size_brief_metric "$motor_default_size" ram_static_bytes)"
+motor_opt_ram_bytes="$(size_brief_metric "$motor_opt_size" ram_static_bytes)"
 
 recovery_sampler="$COM_LOGDIR/noflash_recovery_20hz_after_200hz.sampler.log"
 recovery_hz="$COM_LOGDIR/noflash_recovery_20hz_after_200hz.hz.log"
@@ -1153,7 +1216,7 @@ preflight_commands="$(printf '%s\n' "$staircase_preflight" |
   fi
   echo "- 10kHz/200Hz/best_effort/status_every_40 和 2Mbps profile 已能编译，但运行收益待 SWD 恢复后实测。"
   echo "- M2 motor micro-ROS 实体已完成离线接入和构建验证，但尚未完成真机 micro-ROS Agent 联通、ROS graph topic 可见性、\`/motor/tp_joint_target\` 发布到 \`/motor/tp_joint_state\` 的闭环验证，也尚未完成 200Hz enabled target soak 的 \`targets_received/targets_applied\` 增长证据。"
-  echo "- M2 ON 默认静态 RAM 约 18KB，余量偏紧；\`build-motor-opt\` 的 stack/linker reserve 候选能降到约 16.6KB，但必须等 motor-enabled 栈水位、MSP/heap、reconnect soak 证据后再改默认。"
+  echo "- M2 ON 默认静态 RAM 当前约 ${motor_default_ram_bytes:-unknown}B，余量偏紧；\`build-motor-opt\` 的 stack/linker reserve 候选当前约 ${motor_opt_ram_bytes:-unknown}B，但必须等 motor-enabled 栈水位、MSP/heap、reconnect soak 证据后再改默认。"
   echo "- M2 motor 默认静态通信预算显示 200Hz target + 20ms state + 200ms health（50Hz/5Hz）在 921600 baud 超过 30% 预算，2Mbps 通过；低遥测候选 500ms state + 1000ms health 在 921600 baud 静态约低于 30%，但需要真机同时测 921600/2000000，并确认 \`/com/tp_mcu_status\` 不被 motor reliable traffic 挤压。"
   echo "- M2 非空 \`header.frame_id\` 已做静态防护，但还需要运行期注入非空 frame_id，确认它被干净拒绝且不会影响 executor/reconnect。"
   echo "- 1000Hz PC-only scheduler probe 当前只证明 PC 侧发包节拍候选（threads4 p99≈1.17ms/max≈5.02ms）；它尚未经过 matching best-effort firmware、2Mbps/921600 线速、MCU 接收率和 1/2/5/10kHz 本地闭环联合验证，不能替代 200Hz 上板验收默认。"
@@ -1161,7 +1224,11 @@ preflight_commands="$(printf '%s\n' "$staircase_preflight" |
   echo "- executor spin timeout 候选 \`EXO_EXECUTOR_SPIN_TIMEOUT_US=500/200/100\` 仅完成编译/size 验证，是否改善 RTT/gap 长尾待上板实测。"
   echo "- linker heap/MSP reserve 候选 \`EXO_NEWLIB_HEAP_BYTES=0\`、\`EXO_MSP_STACK_BYTES=512/768\` 仅完成静态验证；默认仍保持 512B/1024B，必须等 SWD 恢复后确认 MSP/ISR 栈和 newlib malloc 失败路径。"
   echo "- combined stack/linker 候选不能只把单项 saved_bytes 相加后直接采用；必须跑 combined sweep，并在同一个高频 firmware profile 下同时验证 HWM、MSP/heap 和 HardFault 行为。"
-  echo "- 当前 ELF 中 \`rosidl_type_metadata\` 约 2.8KB RAM，其中 \`toplevel_type_raw_source\` 约 1.5KB，是新的内存优化重点；但 \`ROSIDL_TYPESUPPORT_SINGLE_TYPESUPPORT\` 曾是 T5 HardFault/agent 兼容修复的一部分，需用独立 libmicroros rebuild/strip type-description 矩阵验证后再改默认。"
+  if [ "${motor_rosidl_raw_source_bytes:-0}" -gt 0 ] 2>/dev/null; then
+    echo "- M2 motor ELF 中 \`rosidl_type_metadata\` 当前约 ${motor_rosidl_metadata_bytes:-unknown}B RAM，其中 \`toplevel_type_raw_source\`=${motor_rosidl_raw_source_bytes}B，仍是内存优化重点；但 \`ROSIDL_TYPESUPPORT_SINGLE_TYPESUPPORT\` 曾是 T5 HardFault/agent 兼容修复的一部分，需用独立 libmicroros rebuild/strip type-description 矩阵验证后再改默认。"
+  else
+    echo "- M2 motor ELF 中 \`rosidl_type_metadata\` 当前约 ${motor_rosidl_metadata_bytes:-unknown}B RAM，\`toplevel_type_raw_source\`=0B；\`colcon.motor.notypedesc.meta\` 已消除 raw source 文本，下一步重点是验证 vanilla Agent/HardFault 兼容性并评估剩余 type metadata，不能只凭静态值改默认 libmicroros。"
+  fi
   echo "- DWT snapshot 算法已有 host-side 模型测试 \`tools/test-dwt-snapshot-model.sh\`，但真实 stamp 单调性仍需 SWD 恢复后做 >60s 静默恢复对抗。"
   echo "- idle stack 96 words、micro-ROS stack 704/640 words 目前是静态候选，必须上板用 \`tools/measure-stack-hwm.sh\` 复测后再设为默认。"
   if [ -n "$latest_watch_fail_count" ] && [ "$latest_watch_fail_count" -gt 0 ] 2>/dev/null &&

@@ -18,6 +18,15 @@ assert_contains() {
 
 bash -n "$ROOT/tools/recommend-motor-m2-smoke-command.sh"
 python3 -m py_compile "$ROOT/tools/pub-motor-m2-enabled-target-soak.py"
+assert_contains "$ROOT/tools/pub-motor-m2-enabled-target-soak.py" \
+  "reliability=ReliabilityPolicy.BEST_EFFORT" \
+  "enabled soak publisher best-effort QoS"
+assert_contains "$ROOT/tools/pub-motor-m2-enabled-target-soak.py" \
+  "depth=1" \
+  "enabled soak publisher latest-only depth"
+assert_contains "$ROOT/tools/pub-motor-m2-enabled-target-soak.py" \
+  "enabled_soak_target_hz={actual_hz:.6f}" \
+  "enabled soak publisher reports measured Hz"
 
 out="$TMPDIR/default.md"
 "$ROOT/tools/recommend-motor-m2-smoke-command.sh" >"$out"
@@ -38,7 +47,7 @@ assert_contains "$out" "--baud \"2000000\" --max-baud-util-pct 30 --fail-on-over
   "default target baud budget gate"
 assert_contains "$out" "--motor-state-hz 50.000000 --motor-health-hz 5.000000" \
   "default motor wire budget rates"
-assert_contains "$out" "tools/diagnose-swd.sh" \
+assert_contains "$out" "STRICT=1 tools/diagnose-swd.sh" \
   "SWD gate"
 assert_contains "$out" "tools/run-bridge.sh '/dev/ttyUSB0' '2000000'" \
   "default bridge command"
