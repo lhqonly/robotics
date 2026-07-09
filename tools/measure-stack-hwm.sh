@@ -42,9 +42,10 @@ check_stlink_ready() {
     echo "ERROR: ST-LINK preflight failed; cannot measure stack watermarks" >&2
     return 1
   fi
-  if printf '%s\n' "$out" | grep -Eq 'dev-type:[[:space:]]+unknown|chipid:[[:space:]]+0x000'; then
+  if printf '%s\n' "$out" |
+      grep -Eq 'Found[[:space:]]+0 stlink programmers|dev-type:[[:space:]]+unknown|chipid:[[:space:]]+0x000'; then
     echo "$out" >&2
-    echo "ERROR: ST-LINK is visible but target probe is invalid; cannot measure stack watermarks" >&2
+    echo "ERROR: ST-LINK/SWD preflight is invalid; cannot measure stack watermarks" >&2
     return 1
   fi
 }

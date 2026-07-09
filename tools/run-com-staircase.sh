@@ -217,9 +217,9 @@ check_stlink_ready() {
     return 1
   fi
   if printf '%s\n' "$out" |
-      grep -Eq 'dev-type:[[:space:]]+unknown|chipid:[[:space:]]+0x000'; then
+      grep -Eq 'Found[[:space:]]+0 stlink programmers|dev-type:[[:space:]]+unknown|chipid:[[:space:]]+0x000'; then
     record "$out"
-    record "BLOCKED ST-LINK target probe invalid before staircase flash stages"
+    record "BLOCKED ST-LINK/SWD probe invalid before staircase flash stages"
     return 1
   fi
 }

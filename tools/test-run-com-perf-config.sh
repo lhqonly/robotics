@@ -39,6 +39,8 @@ assert_contains "$SCRIPT" 'pc_cmd_catchup_extra=' \
   "PC catch-up extra command metric output"
 assert_contains "$SCRIPT" 'ros2 topic info -v "$topic"' \
   "topic endpoint QoS graph snapshot"
+assert_contains "$SCRIPT" 'Found[[:space:]]+0 stlink programmers' \
+  "ST-LINK preflight rejects zero programmers"
 
 latest_config="$(
   PRINT_CONFIG_ONLY=1 \

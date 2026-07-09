@@ -92,6 +92,13 @@ probe_stlink() {
   fi
 
   if printf '%s\n' "$stinfo_out" |
+      grep -Eq 'Found[[:space:]]+0 stlink programmers'; then
+    status="bad_no_stlink"
+    reason="no-stlink-programmer"
+    return 0
+  fi
+
+  if printf '%s\n' "$stinfo_out" |
       grep -Eq 'dev-type:[[:space:]]+unknown|chipid:[[:space:]]+0x000'; then
     status="bad_unknown_target"
     reason="probe-visible-but-target-invalid"

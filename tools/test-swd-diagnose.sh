@@ -59,6 +59,12 @@ Found 1 stlink programmers
 OUT
 EOF
       ;;
+    none)
+      cat >"$path" <<'EOF'
+#!/usr/bin/env bash
+echo "Found 0 stlink programmers"
+EOF
+      ;;
     fail)
       cat >"$path" <<'EOF'
 #!/usr/bin/env bash
@@ -90,6 +96,10 @@ run_diag() {
 touch "$TMPDIR/ttyUSB0" "$TMPDIR/ttyACM0"
 write_fake_lsusb "$TMPDIR/lsusb"
 
+assert_contains "$(cat "$ROOT/tools/measure-stack-hwm.sh")" \
+  "Found[[:space:]]+0 stlink programmers" \
+  "stack HWM preflight rejects zero programmers"
+
 write_fake_stinfo "$TMPDIR/st-info-ok" ok
 out="$(run_diag "$TMPDIR/st-info-ok" "$TMPDIR/lsusb")"
 assert_contains "$out" "SWD_STATUS=ok" "ok probe status"
@@ -109,6 +119,13 @@ assert_contains "$out" "SWD_STATUS=bad_unknown_target" \
   "unknown target status"
 assert_contains "$out" "SWD_REASON=probe-visible-but-target-invalid" \
   "unknown target reason"
+
+write_fake_stinfo "$TMPDIR/st-info-none" none
+out="$(run_diag "$TMPDIR/st-info-none" "$TMPDIR/lsusb")"
+assert_contains "$out" "SWD_STATUS=bad_no_stlink" \
+  "zero programmer status"
+assert_contains "$out" "SWD_REASON=no-stlink-programmer" \
+  "zero programmer reason"
 
 write_fake_stinfo "$TMPDIR/st-info-fail" fail
 out="$(run_diag "$TMPDIR/st-info-fail" "$TMPDIR/lsusb")"

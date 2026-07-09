@@ -137,9 +137,10 @@ check_stlink_ready() {
     echo "ERROR: ST-LINK preflight failed; check USB/SWD before flashing" >&2
     return 1
   fi
-  if printf '%s\n' "$out" | grep -Eq 'dev-type:[[:space:]]+unknown|chipid:[[:space:]]+0x000'; then
+  if printf '%s\n' "$out" |
+      grep -Eq 'Found[[:space:]]+0 stlink programmers|dev-type:[[:space:]]+unknown|chipid:[[:space:]]+0x000'; then
     echo "$out" >&2
-    echo "ERROR: ST-LINK is visible but target probe is invalid; check SWD/reset/USBIP before flashing" >&2
+    echo "ERROR: ST-LINK/SWD preflight is invalid; check USBIP/ST-LINK/SWD/reset before flashing" >&2
     return 1
   fi
 }

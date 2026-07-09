@@ -86,6 +86,10 @@ test_record_stage_metrics_includes_catchup() {
 
 test_record_stage_metrics_includes_catchup
 
+assert_contains "$ROOT/tools/run-com-staircase.sh" \
+  'Found[[:space:]]+0 stlink programmers' \
+  "staircase ST-LINK preflight rejects zero programmers"
+
 LOGDIR="$TMPDIR/default" DRY_RUN=1 \
   "$ROOT/tools/run-com-staircase.sh" dry_default >/dev/null
 default_summary="$TMPDIR/default/dry_default.summary.log"
