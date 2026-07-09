@@ -187,7 +187,11 @@ size_report="$(firmware_size_report)"
 default_ram="$(csv_value "$SIZE_MATRIX_CSV" profile default_reliable_1khz ram_static_bytes)"
 best_10k_ram="$(csv_value "$SIZE_MATRIX_CSV" profile besteffort_10000hz_status40 ram_static_bytes)"
 rosidl_metadata_bytes="$(csv_value "$SIZE_MATRIX_CSV" profile default_reliable_1khz ram_rosidl_type_metadata_bytes)"
-rosidl_raw_source_bytes="$(size_report_breakdown_bytes "$size_report" toplevel_type_raw_source)"
+rosidl_raw_source_bytes="$(
+  csv_value "$SIZE_MATRIX_CSV" profile default_reliable_1khz ram_rosidl_raw_source_metadata_bytes)"
+if [ -z "$rosidl_raw_source_bytes" ]; then
+  rosidl_raw_source_bytes="$(size_report_breakdown_bytes "$size_report" toplevel_type_raw_source)"
+fi
 microros_pools_bytes="$(csv_value "$SIZE_MATRIX_CSV" profile default_reliable_1khz ram_microros_custom_pools_bytes)"
 default_stack_ram="$(csv_value "$STACK_CSV" microros_stack_words 768 ram_static_bytes)"
 best_stack_row="$(csv_min_row "$STACK_CSV" ram_static_bytes verdict PASS_STATIC)"

@@ -38,9 +38,9 @@ assert_contains "$actual_out" "SWD_STATUS=ok" \
   "runtime SWD gate"
 
 cat >"$TMPDIR/size.csv" <<'EOF'
-profile,ram_static_bytes,ram_rosidl_type_metadata_bytes,ram_microros_custom_pools_bytes
-default_reliable_1khz,15000,3000,2000
-besteffort_10000hz_status40,14000,3000,2000
+profile,ram_static_bytes,ram_rosidl_type_metadata_bytes,ram_rosidl_raw_source_metadata_bytes,ram_microros_custom_pools_bytes
+default_reliable_1khz,15000,3000,1555,2000
+besteffort_10000hz_status40,14000,3000,1555,2000
 EOF
 cat >"$TMPDIR/stack.csv" <<'EOF'
 microros_stack_words,verdict,ram_static_bytes

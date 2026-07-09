@@ -682,6 +682,8 @@ tools/firmware-size-matrix.sh current
 `firmware/f103-microros/build-size-matrix/`。这只做编译和 size 统计，
 不会烧录、不会碰 ST-LINK/SWD。表格默认按 F103RB `Flash=131072B`、
 `SRAM=20480B`、`RAM_STATIC_WARN_BYTES=18432B` 输出 `verdict/reason` 和余量。
+矩阵也会单列 `ram_rosidl_raw_source_metadata_bytes`，用于跟踪
+`toplevel_type_raw_source` 这类 ROSIDL type-description/raw-source 静态 RAM 热点。
 要把关键 profile 的静态 Flash/RAM 预算当作门槛检查：
 
 ```bash
