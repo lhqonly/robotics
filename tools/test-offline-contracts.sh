@@ -16,6 +16,7 @@ tests=(
   "tools/test-com-staircase-dry-run.sh"
   "tools/test-com-validation-cycle.sh"
   "tools/test-pc-scheduler-sweep.sh"
+  "tools/test-pc-latest-scheduler-sweep.sh"
   "tools/test-recommend-staircase-command.sh"
   "tools/test-run-com-perf-config.sh"
   "tools/test-swd-diagnose.sh"

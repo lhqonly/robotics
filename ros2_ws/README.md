@@ -329,18 +329,12 @@ tools/run-pc-scheduler-sweep.sh pc_sched_$(date +%Y%m%d_%H%M)
 case 自动分配独立 `ROS_DOMAIN_ID`，避免连续 case 之间 DDS graph 残留导致重复节点或
 串台；做完整 MCU 通信指标时会复用当前 domain。也可以显式设为 `0` 或 `1`。
 
-对 200Hz latest-target 方向做 PC 调度对比时，把 high-rate 参数也一起显式传入；
-脚本会把这些参数写进 summary，并原样传给 `run-com-perf.sh`：
+对 200Hz latest-target 方向做 PC 调度对比时，优先用专用 wrapper。它默认设置
+`200Hz + best_effort + sampled + status_every_n=40 + cmd_catchup_max=0`，并比较
+`default|`、`threads2||2`、`threads4||4`：
 
 ```bash
-CMD_RATE_HZ=200 CMD_CATCHUP_MAX=0 \
-QOS_RELIABILITY=best_effort QOS_DEPTH=1 \
-TRACKING_MODE=sampled STATUS_EVERY_N=40 \
-SUMMARY_PERIOD_S=5.0 LINK_HEALTH_PERIOD_S=5.0 \
-REQUIRE_CORE_METRICS=0 REQUIRE_HEALTH_PASS=0 \
-MAX_CATCHUP_EVENTS=0 MAX_CATCHUP_EXTRA=0 \
-EXECUTOR_THREADS=0 TASKSET_CPUS="2 3" RUNS=2 \
-tools/run-pc-scheduler-sweep.sh pc_sched_200hz_$(date +%Y%m%d_%H%M)
+RUNS=2 tools/run-pc-latest-scheduler-sweep.sh pc_sched_200hz_$(date +%Y%m%d_%H%M)
 ```
 
 `REQUIRE_CORE_METRICS=0 REQUIRE_HEALTH_PASS=0` 用于当前“PC 侧 200Hz 发包证据”
@@ -359,7 +353,7 @@ PC timer 补发标成 WARN；不设置这两个变量时只展示补发计数，
 
 ```bash
 PC_SCHEDULER_CASES=$'default|\nthreads2||2\ntaskset_cpu2_threads2|taskset -c 2|2\nbatch|chrt -b 0' \
-RUNS=2 tools/run-pc-scheduler-sweep.sh pc_sched_custom_$(date +%Y%m%d_%H%M)
+RUNS=2 tools/run-pc-latest-scheduler-sweep.sh pc_sched_custom_$(date +%Y%m%d_%H%M)
 ```
 
 `chrt -b 0` 通常不需要额外权限；`chrt -f/-r` 这类实时调度通常需要 root 或
@@ -401,7 +395,7 @@ tools/recommend-staircase-command.sh
 ```
 
 它会读取最新 `log/pc-scheduler-sweep/*.metrics.csv`，选出 `pc_wire_gap_p99_ms`
-最小、且 catch-up 最少的 case，例如 `threads2||2`，并输出带
+最小、且 catch-up 最少的 case，例如 `threads4||4`，并输出带
 `STAIRCASE_PC_LAUNCH_PREFIX_CASES=...` 的 `tools/run-com-staircase.sh` 命令。
 这条命令仍必须等 `tools/diagnose-swd.sh` 显示 `SWD_STATUS=ok` 后再执行。
 
