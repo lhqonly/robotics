@@ -23,6 +23,14 @@ assert_contains "stack640_heap0_stack512:640:0:512" \
   "combined minimum static RAM case"
 assert_contains "-DEXO_MICROROS_TASK_STACK_WORDS" \
   "micro-ROS stack CMake flag"
+assert_contains "MOTOR_ROS_ENTITIES" \
+  "motor entity sweep configuration"
+assert_contains "-DEXO_MOTOR_ROS_ENTITIES" \
+  "motor entity CMake flag"
+assert_contains "motor_ros_entities" \
+  "motor entity CSV column"
+assert_contains "motor entities" \
+  "motor entity markdown column"
 assert_contains "-DEXO_NEWLIB_HEAP_BYTES" \
   "newlib heap CMake flag"
 assert_contains "-DEXO_MSP_STACK_BYTES" \

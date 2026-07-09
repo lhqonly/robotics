@@ -26,6 +26,8 @@ assert_contains "$actual_out" \
   "default keep policy"
 assert_contains "$actual_out" "CANDIDATE microros_stack_min_static" \
   "stack recommendation"
+assert_contains "$actual_out" "stack sweep motor entities:" \
+  "stack profile marker"
 assert_contains "$actual_out" \
   "CANDIDATE control_loop_staircase_order loops=1000,2000,5000,10000 pc_cmd_hz=200 status_every_n=40 bauds=921600,2000000" \
   "control-loop staircase order recommendation"
@@ -46,10 +48,10 @@ default_reliable_1khz,15000,3000,1555,2000
 besteffort_10000hz_status40,14000,3000,1555,2000
 EOF
 cat >"$TMPDIR/stack.csv" <<'EOF'
-microros_stack_words,verdict,ram_static_bytes
-768,PASS_STATIC,14000
-704,PASS_STATIC,13744
-640,PASS_STATIC,13488
+microros_stack_words,verdict,ram_static_bytes,motor_ros_entities
+768,PASS_STATIC,14000,ON
+704,PASS_STATIC,13744,ON
+640,PASS_STATIC,13488,ON
 EOF
 cat >"$TMPDIR/spin.csv" <<'EOF'
 executor_spin_timeout_us,verdict,ram_static_bytes
@@ -57,14 +59,14 @@ executor_spin_timeout_us,verdict,ram_static_bytes
 200,PASS_STATIC,14000
 EOF
 cat >"$TMPDIR/linker.csv" <<'EOF'
-case,verdict,ram_static_bytes
-default,PASS_STATIC,14000
-heap0_stack512,PASS_STATIC,13000
+case,verdict,ram_static_bytes,motor_ros_entities
+default,PASS_STATIC,14000,ON
+heap0_stack512,PASS_STATIC,13000,ON
 EOF
 cat >"$TMPDIR/combined.csv" <<'EOF'
-case,verdict,ram_static_bytes
-baseline,PASS_STATIC,14000
-stack640_heap0_stack512,PASS_STATIC,12488
+case,verdict,ram_static_bytes,motor_ros_entities
+baseline,PASS_STATIC,14000,ON
+stack640_heap0_stack512,PASS_STATIC,12488,ON
 EOF
 cat >"$TMPDIR/size-report.txt" <<'EOF'
 rosidl_type_metadata_breakdown:
@@ -91,11 +93,20 @@ assert_contains "$synthetic_out" \
   "CANDIDATE microros_stack_min_static words=640 saved_bytes=512" \
   "synthetic stack saving"
 assert_contains "$synthetic_out" \
+  "stack sweep motor entities: ON" \
+  "synthetic stack motor marker"
+assert_contains "$synthetic_out" \
   "CANDIDATE linker_reserve_min_static case=heap0_stack512 saved_bytes=1000" \
   "synthetic linker reserve saving"
 assert_contains "$synthetic_out" \
+  "CANDIDATE linker_reserve_min_static case=heap0_stack512 saved_bytes=1000 ram_static_bytes=13000 motor_ros_entities=ON" \
+  "synthetic linker motor marker"
+assert_contains "$synthetic_out" \
   "CANDIDATE combined_stack_linker_min_static case=stack640_heap0_stack512 saved_bytes=1512" \
   "synthetic combined stack/linker saving"
+assert_contains "$synthetic_out" \
+  "CANDIDATE combined_stack_linker_min_static case=stack640_heap0_stack512 saved_bytes=1512 baseline_ram=14000 ram_static_bytes=12488 motor_ros_entities=ON" \
+  "synthetic combined motor marker"
 assert_contains "$synthetic_out" \
   "CANDIDATE rosidl_type_metadata bytes=3000" \
   "synthetic ROSIDL metadata bytes"

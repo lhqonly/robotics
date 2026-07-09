@@ -12,6 +12,7 @@ STACK_WORDS="${STACK_WORDS:-768 704 640}"
 CONTROL_LOOP_HZ="${CONTROL_LOOP_HZ:-10000}"
 CONTROL_TIMER_IRQ_PRIORITY="${CONTROL_TIMER_IRQ_PRIORITY:-4}"
 QOS_BEST_EFFORT="${QOS_BEST_EFFORT:-ON}"
+MOTOR_ROS_ENTITIES="${MOTOR_ROS_ENTITIES:-OFF}"
 STATUS_EVERY_N="${STATUS_EVERY_N:-40}"
 UART_BAUD="${UART_BAUD:-921600}"
 JOBS="${JOBS:-}"
@@ -29,11 +30,11 @@ if [ -n "$JOBS" ]; then
 fi
 
 cat >"$CSV" <<'EOF'
-microros_stack_words,microros_stack_bytes,verdict,reason,control_loop_hz,control_timer_irq_priority,qos_best_effort,status_every_n,uart_baud,flash_bytes,flash_margin_bytes,ram_static_bytes,ram_static_margin_bytes,data_bytes,bss_bytes
+microros_stack_words,microros_stack_bytes,verdict,reason,control_loop_hz,control_timer_irq_priority,qos_best_effort,motor_ros_entities,status_every_n,uart_baud,flash_bytes,flash_margin_bytes,ram_static_bytes,ram_static_margin_bytes,data_bytes,bss_bytes
 EOF
 cat >"$MD" <<'EOF'
-| micro-ROS stack words | stack B | verdict | reason | loop Hz | timer IRQ prio | QoS best-effort | status every | baud | Flash B | Flash margin B | static RAM B | RAM margin B | data B | bss B |
-|---:|---:|---|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| micro-ROS stack words | stack B | verdict | reason | loop Hz | timer IRQ prio | QoS best-effort | motor entities | status every | baud | Flash B | Flash margin B | static RAM B | RAM margin B | data B | bss B |
+|---:|---:|---|---|---:|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
 EOF
 
 metric_from_report() {
@@ -77,7 +78,7 @@ static_budget_verdict() {
 for stack_words in $STACK_WORDS; do
   build_dir="$BUILD_ROOT/${stack_words}w"
   report="$OUTDIR/$TAG.${stack_words}w.report.log"
-  echo "[stack-sweep] build stack_words=$stack_words loop_hz=$CONTROL_LOOP_HZ timer_irq_prio=$CONTROL_TIMER_IRQ_PRIORITY qos_best_effort=$QOS_BEST_EFFORT status_every=$STATUS_EVERY_N baud=$UART_BAUD"
+  echo "[stack-sweep] build stack_words=$stack_words loop_hz=$CONTROL_LOOP_HZ timer_irq_prio=$CONTROL_TIMER_IRQ_PRIORITY qos_best_effort=$QOS_BEST_EFFORT motor_entities=$MOTOR_ROS_ENTITIES status_every=$STATUS_EVERY_N baud=$UART_BAUD"
 
   cmake -S "$SRC" -B "$build_dir" \
     -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN_FILE" \
@@ -86,6 +87,7 @@ for stack_words in $STACK_WORDS; do
     -DEXO_CONTROL_LOOP_HZ="$CONTROL_LOOP_HZ" \
     -DEXO_CONTROL_TIMER_IRQ_PRIORITY="$CONTROL_TIMER_IRQ_PRIORITY" \
     -DEXO_QOS_BEST_EFFORT="$QOS_BEST_EFFORT" \
+    -DEXO_MOTOR_ROS_ENTITIES="$MOTOR_ROS_ENTITIES" \
     -DEXO_STATUS_EVERY_N="$STATUS_EVERY_N" \
     -DEXO_UART_BAUD="$UART_BAUD" \
     >"$OUTDIR/$TAG.${stack_words}w.cmake.log" 2>&1
@@ -104,16 +106,16 @@ for stack_words in $STACK_WORDS; do
   verdict="${verdict_csv%%,*}"
   reason="${verdict_csv#*,}"
 
-  printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
+  printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
     "$stack_words" "$stack_bytes" "$verdict" "$reason" \
     "$CONTROL_LOOP_HZ" "$CONTROL_TIMER_IRQ_PRIORITY" "$QOS_BEST_EFFORT" \
-    "$STATUS_EVERY_N" "$UART_BAUD" "$flash_bytes" "$flash_margin" \
+    "$MOTOR_ROS_ENTITIES" "$STATUS_EVERY_N" "$UART_BAUD" "$flash_bytes" "$flash_margin" \
     "$ram_static_bytes" "$ram_static_margin" \
     "$data_bytes" "$bss_bytes" >>"$CSV"
-  printf '| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n' \
+  printf '| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n' \
     "$stack_words" "$stack_bytes" "$verdict" "$reason" \
     "$CONTROL_LOOP_HZ" "$CONTROL_TIMER_IRQ_PRIORITY" "$QOS_BEST_EFFORT" \
-    "$STATUS_EVERY_N" "$UART_BAUD" "$flash_bytes" "$flash_margin" \
+    "$MOTOR_ROS_ENTITIES" "$STATUS_EVERY_N" "$UART_BAUD" "$flash_bytes" "$flash_margin" \
     "$ram_static_bytes" "$ram_static_margin" \
     "$data_bytes" "$bss_bytes" >>"$MD"
 done

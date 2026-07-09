@@ -194,17 +194,23 @@ if [ -z "$rosidl_raw_source_bytes" ]; then
 fi
 microros_pools_bytes="$(csv_value "$SIZE_MATRIX_CSV" profile default_reliable_1khz ram_microros_custom_pools_bytes)"
 default_stack_ram="$(csv_value "$STACK_CSV" microros_stack_words 768 ram_static_bytes)"
+stack_motor_entities="$(csv_unique_values "$STACK_CSV" motor_ros_entities)"
 best_stack_row="$(csv_min_row "$STACK_CSV" ram_static_bytes verdict PASS_STATIC)"
 best_stack_words="$(row_field "$best_stack_row" microros_stack_words)"
 best_stack_ram="$(row_field "$best_stack_row" ram_static_bytes)"
+best_stack_motor_entities="$(row_field "$best_stack_row" motor_ros_entities)"
 default_linker_ram="$(csv_value "$LINKER_CSV" case default ram_static_bytes)"
+linker_motor_entities="$(csv_unique_values "$LINKER_CSV" motor_ros_entities)"
 best_linker_row="$(csv_min_row "$LINKER_CSV" ram_static_bytes verdict PASS_STATIC)"
 best_linker_case="$(row_field "$best_linker_row" case)"
 best_linker_ram="$(row_field "$best_linker_row" ram_static_bytes)"
+best_linker_motor_entities="$(row_field "$best_linker_row" motor_ros_entities)"
 baseline_combined_ram="$(csv_value "$COMBINED_CSV" case baseline ram_static_bytes)"
+combined_motor_entities="$(csv_unique_values "$COMBINED_CSV" motor_ros_entities)"
 best_combined_row="$(csv_min_row "$COMBINED_CSV" ram_static_bytes verdict PASS_STATIC)"
 best_combined_case="$(row_field "$best_combined_row" case)"
 best_combined_ram="$(row_field "$best_combined_row" ram_static_bytes)"
+best_combined_motor_entities="$(row_field "$best_combined_row" motor_ros_entities)"
 spin_values="$(csv_unique_values "$SPIN_CSV" executor_spin_timeout_us)"
 
 default_ram_n="$(num_or_zero "$default_ram")"
@@ -225,9 +231,12 @@ cat <<EOF
 
 - size matrix: $(relpath "$SIZE_MATRIX_CSV")
 - stack sweep: $(relpath "$STACK_CSV")
+- stack sweep motor entities: ${stack_motor_entities:-NA}
 - spin-timeout sweep: $(relpath "$SPIN_CSV")
 - linker reserve sweep: $(relpath "$LINKER_CSV")
+- linker reserve motor entities: ${linker_motor_entities:-NA}
 - combined memory sweep: $(relpath "$COMBINED_CSV")
+- combined memory motor entities: ${combined_motor_entities:-NA}
 - firmware ELF: $(relpath "$FIRMWARE_ELF")
 
 ## Current Safe Recommendation
@@ -244,11 +253,11 @@ CANDIDATE tim2_high_loop_static_saving saved_bytes=$tim2_static_saving default_p
 
 CANDIDATE control_loop_staircase_order loops=1000,2000,5000,10000 pc_cmd_hz=200 status_every_n=40 bauds=921600,2000000 adoption=runtime_sequence gate=advance_next_loop_only_after_contract_pass
 
-CANDIDATE microros_stack_min_static words=${best_stack_words:-NA} saved_bytes=$stack_static_saving ram_static_bytes=${best_stack_ram:-NA} adoption=hold gate=measure_stack_hwm_after_high_rate margin_rule="min_free_words>=128"
+CANDIDATE microros_stack_min_static words=${best_stack_words:-NA} saved_bytes=$stack_static_saving ram_static_bytes=${best_stack_ram:-NA} motor_ros_entities=${best_stack_motor_entities:-NA} adoption=hold gate=measure_stack_hwm_after_high_rate margin_rule="min_free_words>=128"
 
-CANDIDATE linker_reserve_min_static case=${best_linker_case:-NA} saved_bytes=$linker_static_saving ram_static_bytes=${best_linker_ram:-NA} adoption=hold gate=verify_msp_heap_malloc_hardfault
+CANDIDATE linker_reserve_min_static case=${best_linker_case:-NA} saved_bytes=$linker_static_saving ram_static_bytes=${best_linker_ram:-NA} motor_ros_entities=${best_linker_motor_entities:-NA} adoption=hold gate=verify_msp_heap_malloc_hardfault
 
-CANDIDATE combined_stack_linker_min_static case=${best_combined_case:-NA} saved_bytes=$combined_static_saving baseline_ram=${baseline_combined_ram:-NA} ram_static_bytes=${best_combined_ram:-NA} adoption=hold gate=verify_stack_hwm_msp_heap_together
+CANDIDATE combined_stack_linker_min_static case=${best_combined_case:-NA} saved_bytes=$combined_static_saving baseline_ram=${baseline_combined_ram:-NA} ram_static_bytes=${best_combined_ram:-NA} motor_ros_entities=${best_combined_motor_entities:-NA} adoption=hold gate=verify_stack_hwm_msp_heap_together
 
 CANDIDATE executor_spin_timeout values="${spin_values:-NA}" saved_bytes=0 adoption=runtime_latency_only gate=compare_staircase_gap_and_cpu
 

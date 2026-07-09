@@ -18,6 +18,7 @@ RAM_STATIC_WARN_BYTES="${RAM_STATIC_WARN_BYTES:-18432}"
 CONTROL_LOOP_HZ="${CONTROL_LOOP_HZ:-10000}"
 CONTROL_TIMER_IRQ_PRIORITY="${CONTROL_TIMER_IRQ_PRIORITY:-4}"
 QOS_BEST_EFFORT="${QOS_BEST_EFFORT:-ON}"
+MOTOR_ROS_ENTITIES="${MOTOR_ROS_ENTITIES:-OFF}"
 STATUS_EVERY_N="${STATUS_EVERY_N:-40}"
 UART_BAUD="${UART_BAUD:-921600}"
 UART_READ_POLL_YIELDS="${UART_READ_POLL_YIELDS:-0}"
@@ -29,10 +30,10 @@ cmake_build_args=()
 if [ -n "$BUILD_JOBS" ]; then
   cmake_build_args+=(--parallel "$BUILD_JOBS")
 fi
-echo "case,verdict,reason,newlib_heap_bytes,msp_stack_bytes,linker_user_heap_stack_bytes,control_loop_hz,control_timer_irq_priority,qos_best_effort,status_every_n,uart_baud,flash_bytes,flash_margin_bytes,ram_static_bytes,ram_static_margin_bytes,data_bytes,bss_bytes" >"$CSV"
+echo "case,verdict,reason,newlib_heap_bytes,msp_stack_bytes,linker_user_heap_stack_bytes,control_loop_hz,control_timer_irq_priority,qos_best_effort,motor_ros_entities,status_every_n,uart_baud,flash_bytes,flash_margin_bytes,ram_static_bytes,ram_static_margin_bytes,data_bytes,bss_bytes" >"$CSV"
 {
-  echo "| Case | verdict | reason | newlib heap B | MSP stack B | linker reserve B | loop Hz | timer IRQ prio | QoS best-effort | status every | baud | Flash B | Flash margin B | static RAM B | RAM margin B | data B | bss B |"
-  echo "|---|---|---|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|"
+  echo "| Case | verdict | reason | newlib heap B | MSP stack B | linker reserve B | loop Hz | timer IRQ prio | QoS best-effort | motor entities | status every | baud | Flash B | Flash margin B | static RAM B | RAM margin B | data B | bss B |"
+  echo "|---|---|---|---:|---:|---:|---:|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|"
 } >"$MD"
 
 metric_from_report() {
@@ -84,7 +85,7 @@ EOF_CASE
     echo "[linker-reserve-sweep] remove non-ARM cached build dir: $build_dir"
     rm -rf "$build_dir"
   fi
-  echo "[linker-reserve-sweep] build case=$label heap=$heap_bytes stack=$stack_bytes loop_hz=$CONTROL_LOOP_HZ"
+  echo "[linker-reserve-sweep] build case=$label heap=$heap_bytes stack=$stack_bytes loop_hz=$CONTROL_LOOP_HZ motor_entities=$MOTOR_ROS_ENTITIES"
   cmake -S "$SRC" -B "$build_dir" \
     -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN_FILE" \
     -DCMAKE_BUILD_TYPE=MinSizeRel \
@@ -93,6 +94,7 @@ EOF_CASE
     -DEXO_CONTROL_LOOP_HZ="$CONTROL_LOOP_HZ" \
     -DEXO_CONTROL_TIMER_IRQ_PRIORITY="$CONTROL_TIMER_IRQ_PRIORITY" \
     -DEXO_QOS_BEST_EFFORT="$QOS_BEST_EFFORT" \
+    -DEXO_MOTOR_ROS_ENTITIES="$MOTOR_ROS_ENTITIES" \
     -DEXO_STATUS_EVERY_N="$STATUS_EVERY_N" \
     -DEXO_UART_BAUD="$UART_BAUD" \
     -DEXO_UART_READ_POLL_YIELDS="$UART_READ_POLL_YIELDS" \
@@ -114,16 +116,16 @@ EOF_CASE
   verdict="${verdict_csv%%,*}"
   reason="${verdict_csv#*,}"
 
-  printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
+  printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
     "$label" "$verdict" "$reason" "$heap_bytes" "$stack_bytes" \
     "$linker_reserve_bytes" "$CONTROL_LOOP_HZ" "$CONTROL_TIMER_IRQ_PRIORITY" \
-    "$QOS_BEST_EFFORT" "$STATUS_EVERY_N" "$UART_BAUD" "$flash_bytes" \
+    "$QOS_BEST_EFFORT" "$MOTOR_ROS_ENTITIES" "$STATUS_EVERY_N" "$UART_BAUD" "$flash_bytes" \
     "$flash_margin" "$ram_static_bytes" "$ram_static_margin" \
     "$data_bytes" "$bss_bytes" >>"$CSV"
-  printf '| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n' \
+  printf '| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n' \
     "$label" "$verdict" "$reason" "$heap_bytes" "$stack_bytes" \
     "$linker_reserve_bytes" "$CONTROL_LOOP_HZ" "$CONTROL_TIMER_IRQ_PRIORITY" \
-    "$QOS_BEST_EFFORT" "$STATUS_EVERY_N" "$UART_BAUD" "$flash_bytes" \
+    "$QOS_BEST_EFFORT" "$MOTOR_ROS_ENTITIES" "$STATUS_EVERY_N" "$UART_BAUD" "$flash_bytes" \
     "$flash_margin" "$ram_static_bytes" "$ram_static_margin" \
     "$data_bytes" "$bss_bytes" >>"$MD"
 done
