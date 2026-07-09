@@ -28,7 +28,7 @@ LOGDIR="$TMPDIR/scheduler" COM_PERF_LOGDIR="$TMPDIR/com-perf" DRY_RUN=1 \
 
 summary="$TMPDIR/scheduler/dry_pc_sched.summary.log"
 assert_contains "$summary" \
-  "profile cmd_rate_hz=200 cmd_catchup_max=1 qos=best_effort depth=1 tracking=sampled status_every_n=40 sample_window=1024 summary_period_s=5.0 link_health_period_s=5.0 startup_grace_s=3.0 executor_threads=2 require_core_metrics=0 require_health_pass=0 max_catchup_events=0 max_catchup_extra=0 isolate_ros_domain_per_case=1 ros_domain_base=0" \
+  "profile cmd_rate_hz=200 cmd_catchup_max=1 qos=best_effort depth=1 tracking=sampled status_every_n=40 sample_window=1024 summary_period_s=5.0 link_health_period_s=5.0 startup_grace_s=3.0 executor_threads=2 require_core_metrics=0 require_health_pass=0 max_catchup_events=0 max_catchup_extra=0 isolate_ros_domain_per_case=auto resolved_isolate_ros_domain_per_case=1 ros_domain_base=0" \
   "high-rate scheduler profile"
 assert_contains "$summary" \
   "DRY_RUN tag=dry_pc_sched_default_r1 PC_LAUNCH_PREFIX= EXECUTOR_THREADS=2 ROS_DOMAIN_ID=0" \
@@ -36,5 +36,17 @@ assert_contains "$summary" \
 assert_contains "$summary" \
   "DRY_RUN tag=dry_pc_sched_taskset_cpu2_r1 PC_LAUNCH_PREFIX=taskset -c 2 EXECUTOR_THREADS=2 ROS_DOMAIN_ID=1" \
   "dry-run records executor threads for taskset case"
+
+LOGDIR="$TMPDIR/scheduler_strict" COM_PERF_LOGDIR="$TMPDIR/com-perf" DRY_RUN=1 \
+  PC_SCHEDULER_CASES=$'default|\ntaskset_cpu2|taskset -c 2' \
+  "$ROOT/tools/run-pc-scheduler-sweep.sh" dry_pc_sched_strict >/dev/null
+
+strict_summary="$TMPDIR/scheduler_strict/dry_pc_sched_strict.summary.log"
+assert_contains "$strict_summary" \
+  "require_core_metrics=1 require_health_pass=1 max_catchup_events=NA max_catchup_extra=NA isolate_ros_domain_per_case=auto resolved_isolate_ros_domain_per_case=0 ros_domain_base=0" \
+  "strict communication scheduler profile reuses ROS domain by default"
+assert_contains "$strict_summary" \
+  "DRY_RUN tag=dry_pc_sched_strict_taskset_cpu2_r1 PC_LAUNCH_PREFIX=taskset -c 2 EXECUTOR_THREADS=0 ROS_DOMAIN_ID=0" \
+  "strict communication mode keeps taskset case in base ROS domain"
 
 echo "PASS: PC scheduler sweep tests"

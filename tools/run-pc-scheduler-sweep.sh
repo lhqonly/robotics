@@ -35,8 +35,25 @@ REQUIRE_CORE_METRICS="${REQUIRE_CORE_METRICS:-1}"
 REQUIRE_HEALTH_PASS="${REQUIRE_HEALTH_PASS:-1}"
 MAX_CATCHUP_EVENTS="${MAX_CATCHUP_EVENTS:-}"
 MAX_CATCHUP_EXTRA="${MAX_CATCHUP_EXTRA:-}"
-PC_SCHEDULER_ISOLATE_ROS_DOMAIN_PER_CASE="${PC_SCHEDULER_ISOLATE_ROS_DOMAIN_PER_CASE:-1}"
+PC_SCHEDULER_ISOLATE_ROS_DOMAIN_PER_CASE="${PC_SCHEDULER_ISOLATE_ROS_DOMAIN_PER_CASE:-auto}"
 PC_SCHEDULER_ROS_DOMAIN_BASE="${PC_SCHEDULER_ROS_DOMAIN_BASE:-${ROS_DOMAIN_ID:-0}}"
+
+case "$PC_SCHEDULER_ISOLATE_ROS_DOMAIN_PER_CASE" in
+  auto)
+    if [ "$REQUIRE_CORE_METRICS" = "0" ] && [ "$REQUIRE_HEALTH_PASS" = "0" ]; then
+      PC_SCHEDULER_ISOLATE_ROS_DOMAIN_PER_CASE_RESOLVED=1
+    else
+      PC_SCHEDULER_ISOLATE_ROS_DOMAIN_PER_CASE_RESOLVED=0
+    fi
+    ;;
+  0|1)
+    PC_SCHEDULER_ISOLATE_ROS_DOMAIN_PER_CASE_RESOLVED="$PC_SCHEDULER_ISOLATE_ROS_DOMAIN_PER_CASE"
+    ;;
+  *)
+    echo "ERROR: PC_SCHEDULER_ISOLATE_ROS_DOMAIN_PER_CASE must be auto, 0, or 1" >&2
+    exit 1
+    ;;
+esac
 
 mkdir -p "$LOGDIR" "$COM_PERF_LOGDIR"
 : >"$SUMMARY"
@@ -81,7 +98,7 @@ run_case() {
   tag="${TAG_PREFIX}_${safe_label}_r${run_index}"
   console_log="$LOGDIR/$tag.console.log"
   stage_ros_domain_id="$PC_SCHEDULER_ROS_DOMAIN_BASE"
-  if [ "$PC_SCHEDULER_ISOLATE_ROS_DOMAIN_PER_CASE" = "1" ]; then
+  if [ "$PC_SCHEDULER_ISOLATE_ROS_DOMAIN_PER_CASE_RESOLVED" = "1" ]; then
     stage_ros_domain_id=$((PC_SCHEDULER_ROS_DOMAIN_BASE + case_index))
   fi
   case_index=$((case_index + 1))
@@ -130,7 +147,7 @@ run_case() {
 }
 
 record "pc_scheduler_sweep tag_prefix=$TAG_PREFIX runs=$RUNS dry_run=$DRY_RUN fail_on_case_error=$FAIL_ON_CASE_ERROR"
-record "profile cmd_rate_hz=$CMD_RATE_HZ cmd_catchup_max=$CMD_CATCHUP_MAX qos=$QOS_RELIABILITY depth=$QOS_DEPTH tracking=$TRACKING_MODE status_every_n=$STATUS_EVERY_N sample_window=$SAMPLE_WINDOW summary_period_s=$SUMMARY_PERIOD_S link_health_period_s=$LINK_HEALTH_PERIOD_S startup_grace_s=$STARTUP_GRACE_S executor_threads=$EXECUTOR_THREADS require_core_metrics=$REQUIRE_CORE_METRICS require_health_pass=$REQUIRE_HEALTH_PASS max_catchup_events=${MAX_CATCHUP_EVENTS:-NA} max_catchup_extra=${MAX_CATCHUP_EXTRA:-NA} isolate_ros_domain_per_case=$PC_SCHEDULER_ISOLATE_ROS_DOMAIN_PER_CASE ros_domain_base=$PC_SCHEDULER_ROS_DOMAIN_BASE run_seconds=$RUN_SECONDS warmup_seconds=$WARMUP_SECONDS hz_seconds=$HZ_SECONDS"
+record "profile cmd_rate_hz=$CMD_RATE_HZ cmd_catchup_max=$CMD_CATCHUP_MAX qos=$QOS_RELIABILITY depth=$QOS_DEPTH tracking=$TRACKING_MODE status_every_n=$STATUS_EVERY_N sample_window=$SAMPLE_WINDOW summary_period_s=$SUMMARY_PERIOD_S link_health_period_s=$LINK_HEALTH_PERIOD_S startup_grace_s=$STARTUP_GRACE_S executor_threads=$EXECUTOR_THREADS require_core_metrics=$REQUIRE_CORE_METRICS require_health_pass=$REQUIRE_HEALTH_PASS max_catchup_events=${MAX_CATCHUP_EVENTS:-NA} max_catchup_extra=${MAX_CATCHUP_EXTRA:-NA} isolate_ros_domain_per_case=$PC_SCHEDULER_ISOLATE_ROS_DOMAIN_PER_CASE resolved_isolate_ros_domain_per_case=$PC_SCHEDULER_ISOLATE_ROS_DOMAIN_PER_CASE_RESOLVED ros_domain_base=$PC_SCHEDULER_ROS_DOMAIN_BASE run_seconds=$RUN_SECONDS warmup_seconds=$WARMUP_SECONDS hz_seconds=$HZ_SECONDS"
 record "logdir=$LOGDIR com_perf_logdir=$COM_PERF_LOGDIR"
 : >"$LOGDIR/$TAG_PREFIX.tags"
 

@@ -324,9 +324,10 @@ tools/run-pc-scheduler-sweep.sh pc_sched_$(date +%Y%m%d_%H%M)
 ```
 
 结果会写到 `log/pc-scheduler-sweep/<tag>.metrics.md/.csv`，原始通信日志仍在
-`log/com-perf/`。sweep 默认给每个 case 分配独立 `ROS_DOMAIN_ID`，避免连续 case
-之间 DDS graph 残留导致重复节点或串台；需要复用当前 domain 时设置
-`PC_SCHEDULER_ISOLATE_ROS_DOMAIN_PER_CASE=0`。
+`log/com-perf/`。`PC_SCHEDULER_ISOLATE_ROS_DOMAIN_PER_CASE=auto` 是默认值：
+当 `REQUIRE_CORE_METRICS=0 REQUIRE_HEALTH_PASS=0` 用于 PC-only 发包证据时，每个
+case 自动分配独立 `ROS_DOMAIN_ID`，避免连续 case 之间 DDS graph 残留导致重复节点或
+串台；做完整 MCU 通信指标时会复用当前 domain。也可以显式设为 `0` 或 `1`。
 
 对 200Hz latest-target 方向做 PC 调度对比时，把 high-rate 参数也一起显式传入；
 脚本会把这些参数写进 summary，并原样传给 `run-com-perf.sh`：
