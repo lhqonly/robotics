@@ -140,6 +140,23 @@ assert_contains "$report" "STAIRCASE_CONTRACT_ARGS" \
 assert_not_contains "$report" "division by zero" \
   "status report contract output"
 
+fakebin="$TMPDIR/fakebin"
+mkdir -p "$fakebin"
+cat >"$fakebin/st-info" <<'EOF'
+#!/usr/bin/env bash
+echo "Found 0 stlink programmers"
+EOF
+chmod +x "$fakebin/st-info"
+PATH="$fakebin:$PATH" OUTDIR="$TMPDIR" COM_STATUS_PROBE_STLINK=1 \
+  "$ROOT/tools/com-status-report.sh" status_report_no_stlink >/dev/null
+no_stlink_report="$TMPDIR/status_report_no_stlink.md"
+assert_contains "$no_stlink_report" "status=bad_no_stlink" \
+  "zero ST-LINK programmers must be reported as bad"
+assert_contains "$no_stlink_report" "PREFLIGHT_READY=no" \
+  "zero ST-LINK programmers must block staircase preflight"
+assert_contains "$no_stlink_report" "PREFLIGHT_BLOCKER=swd_not_ok:bad_no_stlink" \
+  "zero ST-LINK programmers must surface preflight blocker"
+
 unresolved="$(
   OUTDIR="$TMPDIR" COM_STATUS_PROBE_STLINK=0 \
     "$ROOT/tools/summarize-com-unresolved.sh" status_report_unresolved_smoke

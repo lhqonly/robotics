@@ -412,7 +412,9 @@ probe_stlink() {
     return 0
   fi
 
-  if printf '%s\n' "$out" | grep -Eq 'dev-type:[[:space:]]+unknown|chipid:[[:space:]]+0x000'; then
+  if printf '%s\n' "$out" | grep -Eq 'Found[[:space:]]+0 stlink programmers'; then
+    echo "status=bad_no_stlink"
+  elif printf '%s\n' "$out" | grep -Eq 'dev-type:[[:space:]]+unknown|chipid:[[:space:]]+0x000'; then
     echo "status=bad_unknown_target"
   else
     echo "status=ok"
