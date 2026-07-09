@@ -44,8 +44,16 @@ echo 'pid=123 elapsed_s=10 tag=night samples=2 freshness=fresh log=log/overnight
 EOF
 chmod +x "$fake_watch"
 
+fake_contract="$TMPDIR/fake-contract.sh"
+cat >"$fake_contract" <<'EOF'
+#!/usr/bin/env bash
+echo "PASS overnight_watch_contract log=$1 samples=2 fails=0 warns=0 lost=0 duplicate=0 catchup_events=0 catchup_extra=0 active=skipped"
+EOF
+chmod +x "$fake_contract"
+
 ok_out="$TMPDIR/ok.txt"
 SWD_STATUS_OVERRIDE=ok RECOMMEND_CMD="$fake_recommend" WATCH_STATUS_CMD="$fake_watch" \
+  WATCH_CONTRACT_CMD="$fake_contract" \
   "$ROOT/tools/com-staircase-preflight.sh" >"$ok_out"
 assert_contains "$ok_out" "PREFLIGHT_SWD_STATUS=ok" \
   "SWD OK status"
@@ -65,9 +73,12 @@ assert_contains "$ok_out" "PREFLIGHT_COMMAND=tools/recommend-staircase-command.s
   "ready command includes recommendation"
 assert_contains "$ok_out" "PREFLIGHT_WATCH pid=123" \
   "watch status included"
+assert_contains "$ok_out" "PREFLIGHT_WATCH_CONTRACT PASS overnight_watch_contract" \
+  "watch contract included"
 
 bad_out="$TMPDIR/bad.txt"
 SWD_STATUS_OVERRIDE=bad_unknown_target RECOMMEND_CMD="$fake_recommend" WATCH_STATUS_CMD="$fake_watch" \
+  WATCH_CONTRACT_CMD="$fake_contract" \
   "$ROOT/tools/com-staircase-preflight.sh" >"$bad_out"
 assert_contains "$bad_out" "PREFLIGHT_READY=no" \
   "preflight not ready when SWD is bad"
@@ -80,6 +91,7 @@ assert_contains "$bad_out" "PREFLIGHT_COMMAND=tools/diagnose-swd.sh" \
 
 missing_out="$TMPDIR/missing.txt"
 SWD_STATUS_OVERRIDE=ok RECOMMEND_CMD="$TMPDIR/missing-recommend" WATCH_STATUS_CMD="$fake_watch" \
+  WATCH_CONTRACT_CMD="$fake_contract" \
   "$ROOT/tools/com-staircase-preflight.sh" >"$missing_out"
 assert_contains "$missing_out" "PREFLIGHT_RECOMMEND_STATUS=missing" \
   "missing recommendation is reported"

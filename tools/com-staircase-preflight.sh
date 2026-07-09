@@ -6,6 +6,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIAGNOSE_CMD="${DIAGNOSE_CMD:-$ROOT/tools/diagnose-swd.sh}"
 RECOMMEND_CMD="${RECOMMEND_CMD:-$ROOT/tools/recommend-staircase-command.sh}"
 WATCH_STATUS_CMD="${WATCH_STATUS_CMD:-$ROOT/tools/overnight-watch-status.sh}"
+WATCH_CONTRACT_CMD="${WATCH_CONTRACT_CMD:-$ROOT/tools/check-overnight-watch-contract.sh}"
 PROBE_SWD="${PROBE_SWD:-1}"
 SWD_STATUS_OVERRIDE="${SWD_STATUS_OVERRIDE:-}"
 
@@ -16,6 +17,12 @@ extract_swd_status() {
 print_block() {
   local prefix="$1"
   sed "s/^/$prefix/"
+}
+
+token_value() {
+  local key="$1"
+  tr ' ' '\n' |
+    awk -F= -v key="$key" '$1 == key {print $2; exit}'
 }
 
 echo "# Communication Staircase Preflight"
@@ -65,6 +72,21 @@ if [ -x "$WATCH_STATUS_CMD" ]; then
   watch_status="${watch_status:-none}"
 fi
 printf '%s\n' "$watch_status" | print_block "PREFLIGHT_WATCH "
+
+watch_contract="WARN overnight_watch_contract reason=missing_checker"
+if [ -x "$WATCH_CONTRACT_CMD" ]; then
+  watch_log="$(printf '%s\n' "$watch_status" | token_value log)"
+  if [ -n "$watch_log" ]; then
+    if [ -f "$watch_log" ]; then
+      watch_contract="$("$WATCH_CONTRACT_CMD" "$watch_log" 2>&1 || true)"
+    else
+      watch_contract="$("$WATCH_CONTRACT_CMD" "$ROOT/$watch_log" 2>&1 || true)"
+    fi
+  else
+    watch_contract="WARN overnight_watch_contract reason=no_active_watch_log"
+  fi
+fi
+printf '%s\n' "$watch_contract" | print_block "PREFLIGHT_WATCH_CONTRACT "
 
 ready="no"
 next_action=""
