@@ -79,6 +79,8 @@ assert_contains "$report" "## 通信优化推荐" \
   "communication optimization recommendation section"
 assert_contains "$report" "CANDIDATE wire_budget_200hz_status40_921600" \
   "communication wire budget recommendation row"
+assert_contains "$report" "CANDIDATE staircase_acceptance_contract" \
+  "communication staircase acceptance recommendation row"
 assert_contains "$report" "graph/QoS" \
   "graph QoS source"
 assert_contains "$report" "## 最近 PASS 通信基线" \

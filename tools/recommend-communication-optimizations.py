@@ -339,13 +339,20 @@ def main() -> int:
         qos_incompatibility=int(qos_bad),
         adoption="block_latest_target_acceptance_until_zero",
     ))
+    print(candidate_line(
+        "staircase_acceptance_contract",
+        required="max_pc_catchup_events=0,max_pc_catchup_extra=0,rate_and_gap_defaults",
+        optional_wire=f"max_wire_baud_util_pct={args.baud_util_budget_pct:g}",
+        adoption="run_after_staircase",
+    ))
     print()
     print("## Runtime Gates")
     print()
     print("1. `tools/diagnose-swd.sh` must report `SWD_STATUS=ok`.")
     print("2. Flash the matching best-effort/status40 firmware before judging 200Hz latest-target.")
     print("3. Run staircase with `STAIRCASE_BAUDS=\"921600 2000000\"` and include the best PC scheduler case.")
-    print("4. Accept only stages with `qos_incompatibility=0`, `lost=0`, `duplicate=0`, PC p99/max gap inside contract, and low/zero catch-up bursts.")
+    print("4. Run `tools/check-com-staircase-contract.py <metrics.csv> --max-pc-catchup-events 0 --max-pc-catchup-extra 0`; add `--max-wire-baud-util-pct 30` when wire metrics were collected.")
+    print("5. Accept only stages with `qos_incompatibility=0`, `lost=0`, `duplicate=0`, 200Hz target/window rate inside contract, PC p99/max gap inside contract, and zero catch-up bursts.")
     return 0
 
 

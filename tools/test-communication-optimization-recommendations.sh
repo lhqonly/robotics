@@ -29,6 +29,8 @@ assert_contains "$actual" "CANDIDATE baud_2000000_for_200hz_status40" \
   "2Mbps candidate"
 assert_contains "$actual" "CANDIDATE qos_matching_required" \
   "QoS gate candidate"
+assert_contains "$actual" "CANDIDATE staircase_acceptance_contract" \
+  "staircase acceptance contract candidate"
 assert_contains "$actual" "qos_incompatibility=1" \
   "current QoS incompatibility is surfaced"
 
@@ -69,6 +71,12 @@ assert_contains "$synthetic" \
 assert_contains "$synthetic" \
   "CANDIDATE qos_matching_required qos_incompatibility=0" \
   "synthetic QoS gate clear"
+assert_contains "$synthetic" \
+  "CANDIDATE staircase_acceptance_contract required=max_pc_catchup_events=0,max_pc_catchup_extra=0,rate_and_gap_defaults optional_wire=max_wire_baud_util_pct=30 adoption=run_after_staircase" \
+  "synthetic staircase acceptance contract args"
+assert_contains "$synthetic" \
+  "tools/check-com-staircase-contract.py <metrics.csv> --max-pc-catchup-events 0 --max-pc-catchup-extra 0" \
+  "synthetic runtime gate includes acceptance command"
 
 auto_dir="$TMPDIR/auto"
 mkdir -p "$auto_dir"
