@@ -454,6 +454,11 @@ assert_contains "$out" "min_newlib_heap_msp_reserved_bytes=512" \
 assert_contains "$out" "max_agent_session_loss_events=0" \
   "passing agent reconnect contract"
 
+out="$(run_expect_fail "checker duration floor override" "$ROOT/tools/check-motor-m2-smoke-evidence.py" \
+  "$dir" --min-enabled-soak-duration-s 0.5)"
+assert_contains "$out" "--min-enabled-soak-duration-s must be >= 2" \
+  "checker rejects weakened enabled soak duration floor"
+
 missing_manifest_dir="$TMPDIR/missing-manifest-dir"
 cp -a "$dir" "$missing_manifest_dir"
 rm "$missing_manifest_dir/raw.sha256"
@@ -462,6 +467,13 @@ assert_contains "$out" "BLOCKED_MISSING_EVIDENCE motor_m2_smoke" \
   "missing raw manifest status"
 assert_contains "$out" "missing_raw_manifest_sha256" \
   "missing raw manifest reason"
+
+legacy_manifest_dir="$TMPDIR/legacy-manifest-dir"
+cp -a "$dir" "$legacy_manifest_dir"
+mv "$legacy_manifest_dir/raw.sha256" "$legacy_manifest_dir/manifest.sha256"
+out="$(run_expect_fail "legacy manifest name only" "$ROOT/tools/check-motor-m2-smoke-evidence.py" "$legacy_manifest_dir")"
+assert_contains "$out" "missing_raw_manifest_sha256" \
+  "legacy manifest name is not accepted as raw evidence manifest"
 
 tampered_raw_dir="$TMPDIR/tampered-raw-dir"
 cp -a "$dir" "$tampered_raw_dir"

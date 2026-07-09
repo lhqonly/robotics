@@ -243,6 +243,16 @@ def candidate_line(name: str, **fields: object) -> str:
     return " ".join(parts)
 
 
+def motor_static_verdict(util_pct: float, budget_pct: float,
+                         min_margin_pct: float = 1.0) -> str:
+    margin_pct = budget_pct - util_pct
+    if util_pct > budget_pct:
+        return "OVER_BUDGET"
+    if margin_pct < min_margin_pct:
+        return "PASS_THIN"
+    return "PASS_STATIC"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--wire-log", type=Path)
@@ -361,15 +371,22 @@ def main() -> int:
             adoption="avoid_for_control",
         ))
 
-    motor_verdict_921600 = (
-        "PASS_STATIC"
-        if motor_m2_921600.util_pct <= args.baud_util_budget_pct
-        else "OVER_BUDGET"
+    motor_verdict_921600 = motor_static_verdict(
+        motor_m2_921600.util_pct,
+        args.baud_util_budget_pct,
     )
-    motor_verdict_2m = (
-        "PASS_STATIC"
-        if motor_m2_2m.util_pct <= args.baud_util_budget_pct
-        else "OVER_BUDGET"
+    motor_verdict_2m = motor_static_verdict(
+        motor_m2_2m.util_pct,
+        args.baud_util_budget_pct,
+    )
+    motor_low_verdict_921600 = motor_static_verdict(
+        motor_m2_low_921600.util_pct,
+        args.baud_util_budget_pct,
+    )
+    motor_low_adoption_921600 = (
+        "comparison_only"
+        if motor_low_verdict_921600 == "PASS_THIN"
+        else "test_as_921600_low_telemetry_profile_after_default_2mbps_smoke"
     )
     print(candidate_line(
         "motor_m2_wire_budget_200hz_state50_health5_921600",
@@ -398,12 +415,8 @@ def main() -> int:
         target_wire_ms=fmt(motor_m2_low_921600.target_wire_ms, 3),
         state_wire_ms=fmt(motor_m2_low_921600.state_wire_ms, 3),
         health_wire_ms=fmt(motor_m2_low_921600.health_wire_ms, 3),
-        verdict=(
-            "PASS_STATIC"
-            if motor_m2_low_921600.util_pct <= args.baud_util_budget_pct
-            else "OVER_BUDGET"
-        ),
-        adoption="test_as_921600_low_telemetry_profile_after_default_2mbps_smoke",
+        verdict=motor_low_verdict_921600,
+        adoption=motor_low_adoption_921600,
     ))
 
     if best_sched:

@@ -67,8 +67,14 @@ assert_contains "SCOPE_NOTE default_non_motor_candidates_are_not_motor_memory_co
   "recommendation scope note"
 assert_contains "CANDIDATE linker_reserve_min_static" \
   "linker reserve recommendation"
+assert_contains "CANDIDATE linker_reserve_intermediate" \
+  "intermediate linker reserve recommendation"
+assert_contains "CANDIDATE motor_tim2_high_loop_static_saving" \
+  "motor high-loop static saving recommendation"
 assert_contains "CANDIDATE microros_stack_intermediate" \
   "intermediate stack recommendation"
+assert_contains "CANDIDATE combined_stack_linker_balanced_intermediate" \
+  "balanced intermediate combined stack/linker recommendation"
 assert_contains "CANDIDATE combined_stack_linker_intermediate" \
   "intermediate combined stack/linker recommendation"
 assert_contains "CANDIDATE combined_stack_linker_min_static" \

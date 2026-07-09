@@ -246,8 +246,6 @@ def reason_file_name(name: str) -> str:
 def raw_manifest_reasons(path: Path) -> tuple[list[str], str | None]:
     manifest = path / "raw.sha256"
     if not manifest.exists():
-        manifest = path / "manifest.sha256"
-    if not manifest.exists():
         return ["missing_raw_manifest_sha256"], None
 
     entries: dict[str, str] = {}
@@ -923,6 +921,8 @@ def main() -> int:
         return 0
     if args.evidence is None:
         parser.error("evidence file is required unless --template is used")
+    if args.min_enabled_soak_duration_s < 2.0:
+        parser.error("--min-enabled-soak-duration-s must be >= 2")
     try:
         if args.evidence.is_dir():
             values = read_evidence_dir(args.evidence)

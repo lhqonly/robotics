@@ -23,6 +23,12 @@ assert_contains "stack704:704:512:1024" \
   "intermediate stack-only candidate"
 assert_contains "stack704_heap0_stack512:704:0:512" \
   "intermediate combined stack/linker candidate"
+assert_contains "stack704_heap256_stack768:704:256:768" \
+  "balanced intermediate combined stack/linker candidate"
+assert_contains "stack704_heap0_stack768:704:0:768" \
+  "heap-only intermediate combined candidate"
+assert_contains "stack704_heap256_stack512:704:256:512" \
+  "msp-only intermediate combined candidate"
 assert_contains "stack640_heap0_stack512:640:0:512" \
   "combined minimum static RAM case"
 assert_contains "-DEXO_MICROROS_TASK_STACK_WORDS" \
