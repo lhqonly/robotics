@@ -393,6 +393,17 @@ tools/diagnose-swd.sh
 tools/run-com-staircase.sh staircase_$(date +%Y%m%d_%H%M)
 ```
 
+如果已经跑过 PC scheduler sweep，可以先生成一条带当前最佳 PC case 的推荐命令：
+
+```bash
+tools/recommend-staircase-command.sh
+```
+
+它会读取最新 `log/pc-scheduler-sweep/*.metrics.csv`，选出 `pc_wire_gap_p99_ms`
+最小、且 catch-up 最少的 case，例如 `threads2||2`，并输出带
+`STAIRCASE_PC_LAUNCH_PREFIX_CASES=...` 的 `tools/run-com-staircase.sh` 命令。
+这条命令仍必须等 `tools/diagnose-swd.sh` 显示 `SWD_STATUS=ok` 后再执行。
+
 `tools/diagnose-swd.sh` 只读检查 ST-LINK/SWD，不会 reset 或 flash。输出里
 `SWD_STATUS=ok` 时再跑完整 staircase；如果是 `bad_unknown_target` 或
 `bad_probe_failed`，先按脚本里的 recovery checklist 检查 usbip 独占、供电、

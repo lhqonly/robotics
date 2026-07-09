@@ -97,6 +97,8 @@ assert_contains "$report" "## 未解决项" \
   "unresolved section"
 assert_contains "$report" "tools/diagnose-swd.sh" \
   "SWD diagnostic command in next steps"
+assert_contains "$report" "tools/recommend-staircase-command.sh" \
+  "recommended staircase command in next steps"
 assert_not_contains "$report" "division by zero" \
   "status report contract output"
 

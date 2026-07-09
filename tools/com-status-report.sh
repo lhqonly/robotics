@@ -943,7 +943,7 @@ serial_users="$(serial_lsof)"
   echo
   echo "1. 先跑只读 SWD 诊断：\`tools/diagnose-swd.sh\`；若要自动化 gate，用 \`STRICT=1 tools/diagnose-swd.sh\`。"
   echo "2. 若 \`SWD_STATUS\` 不是 \`ok\`，按诊断输出检查线缆、供电、BOOT/RESET、SWDIO/SWCLK/NRST、usbip 独占和 ST-LINK 连接状态。"
-  echo "3. SWD 恢复后跑：\`STAIRCASE_BAUDS=\"921600 2000000\" tools/run-com-staircase.sh staircase_\$(date +%Y%m%d_%H%M)\`。"
+  echo "3. SWD 恢复后先生成推荐阶梯命令：\`tools/recommend-staircase-command.sh\`，再执行其中的 \`tools/run-com-staircase.sh ...\`。"
   echo "4. 高频 profile 跑通后读栈水位：\`tools/measure-stack-hwm.sh firmware/f103-microros/build/f103-microros.elf\`。"
   echo "5. 若 SWD 仍未恢复，继续 no-flash：\`BUILD_FIRMWARE=0 FLASH_FIRMWARE=0 tools/run-com-perf.sh noflash_\$(date +%H%M)\`。"
 } >"$REPORT"

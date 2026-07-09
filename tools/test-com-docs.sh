@@ -38,6 +38,8 @@ assert_contains "$README" "tools/check-com-staircase-contract.py" \
   "staircase acceptance contract command is documented"
 assert_contains "$README" "tools/run-com-validation-cycle.sh" \
   "unattended validation cycle command is documented"
+assert_contains "$README" "tools/recommend-staircase-command.sh" \
+  "recommended staircase command generator is documented"
 assert_contains "$README" "PATH full_staircase" \
   "validation cycle full staircase path is documented"
 assert_contains "$README" "PATH no_flash_fallback" \
