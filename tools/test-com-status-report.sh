@@ -119,6 +119,10 @@ assert_contains "$report" "tools/diagnose-swd.sh" \
   "SWD diagnostic command in next steps"
 assert_contains "$report" "tools/recommend-staircase-command.sh" \
   "recommended staircase command in next steps"
+assert_contains "$report" "tools/check-com-staircase-contract.py" \
+  "recommended staircase contract command in next steps"
+assert_contains "$report" "STAIRCASE_CONTRACT_ARGS" \
+  "recommended staircase contract args in next steps"
 assert_not_contains "$report" "division by zero" \
   "status report contract output"
 

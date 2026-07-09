@@ -98,8 +98,10 @@ assert_contains "$out" "USB_STLINK=present" "ST-LINK USB present"
 assert_contains "$out" "TTY_USB=present" "USB-TTL tty present"
 assert_contains "$out" "tools/recommend-staircase-command.sh" \
   "next recommended staircase command"
-assert_contains "$out" "Then run the recommended tools/run-com-staircase.sh command." \
-  "next staircase command guidance"
+assert_contains "$out" "tools/check-com-staircase-contract.py" \
+  "next staircase contract command guidance"
+assert_contains "$out" "--max-wire-baud-util-pct 30" \
+  "next staircase wire utilization contract guidance"
 
 write_fake_stinfo "$TMPDIR/st-info-unknown" unknown
 out="$(run_diag "$TMPDIR/st-info-unknown" "$TMPDIR/lsusb")"

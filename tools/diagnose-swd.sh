@@ -172,7 +172,10 @@ When SWD_STATUS=ok:
 
 \`\`\`bash
 tools/recommend-staircase-command.sh
-# Then run the recommended tools/run-com-staircase.sh command.
+# Then run the recommended tools/run-com-staircase.sh command and the matching
+# tools/check-com-staircase-contract.py command printed by the recommendation.
+# To include UART utilization in acceptance:
+STAIRCASE_CONTRACT_ARGS="--max-pc-catchup-events 0 --max-pc-catchup-extra 0 --max-wire-baud-util-pct 30" tools/recommend-staircase-command.sh
 tools/measure-stack-hwm.sh firmware/f103-microros/build/f103-microros.elf
 \`\`\`
 
