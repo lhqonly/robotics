@@ -20,8 +20,13 @@ write_row() {
   local qos_bad="${6:-0}"
   local catchup_events="${7:-0}"
   local catchup_extra="${8:-0}"
-  printf 'latest_%shz_%sbaud_irqp4_poll0_spin1000us_200hz_be_n40%s,%s,%s,%s,%s,4,0,1000,200,best_effort,40,taskset -c 2,2,5,5,200.0,0.050,0.060,0.080,0,5,40,40,40,200.0,200.0,5.0,6.0,8.0,%s,%s,94.0,10.2,48,46,0,0,0,%s\n' \
+  local target_rx_hz="${9:-200.0}"
+  local pc_target_window_hz="${10:-200.0}"
+  local pc_gap_p99_ms="${11:-6.0}"
+  local pc_gap_max_ms="${12:-8.0}"
+  printf 'latest_%shz_%sbaud_irqp4_poll0_spin1000us_200hz_be_n40%s,%s,%s,%s,%s,4,0,1000,200,best_effort,40,taskset -c 2,2,5,5,%s,0.050,0.060,0.080,0,5,40,40,40,200.0,%s,5.0,%s,%s,%s,%s,94.0,10.2,48,46,0,0,0,%s\n' \
     "$loop_hz" "$baud" "$suffix" "$verdict" "$reason" "$loop_hz" "$baud" \
+    "$target_rx_hz" "$pc_target_window_hz" "$pc_gap_p99_ms" "$pc_gap_max_ms" \
     "$catchup_events" "$catchup_extra" "$qos_bad"
 }
 
@@ -48,6 +53,10 @@ done
 out="$("$ROOT/tools/check-com-staircase-contract.py" "$pass_csv")"
 assert_contains "$out" "PASS com_staircase_contract" "passing contract"
 assert_contains "$out" "passed=8/8" "passing stage count"
+assert_contains "$out" "target_rx_hz_range=180..220" \
+  "default target receive rate range"
+assert_contains "$out" "pc_wire_gap_p99_ms_max=20" \
+  "default PC p99 gap gate"
 assert_contains "$out" "max_pc_catchup_events=0" "default catch-up event gate"
 assert_contains "$out" "max_pc_catchup_extra=0" "default catch-up extra gate"
 
@@ -156,5 +165,74 @@ assert_contains "$out" "PASS com_staircase_contract" \
   "catch-up gate can be explicitly relaxed"
 assert_contains "$out" "max_pc_catchup_extra=3" \
   "relaxed catch-up gate is reported"
+
+slow_rx_csv="$TMPDIR/slow_rx.csv"
+write_header >"$slow_rx_csv"
+for loop_hz in 1000 2000 5000 10000; do
+  for baud in 921600 2000000; do
+    if [ "$loop_hz" = "5000" ] && [ "$baud" = "921600" ]; then
+      write_row "$loop_hz" "$baud" "" "PASS" "-" "0" "0" "0" "150.0" "200.0" \
+        "6.0" "8.0" >>"$slow_rx_csv"
+    else
+      write_row "$loop_hz" "$baud" >>"$slow_rx_csv"
+    fi
+  done
+done
+
+set +e
+out="$("$ROOT/tools/check-com-staircase-contract.py" "$slow_rx_csv" 2>&1)"
+rc=$?
+set -e
+if [ "$rc" -eq 0 ]; then
+  echo "FAIL: slow target receive rate should fail by default" >&2
+  exit 1
+fi
+assert_contains "$out" "target_rx_hz=150.0" \
+  "slow target receive rate detail"
+
+gap_csv="$TMPDIR/gap.csv"
+write_header >"$gap_csv"
+for loop_hz in 1000 2000 5000 10000; do
+  for baud in 921600 2000000; do
+    if [ "$loop_hz" = "2000" ] && [ "$baud" = "2000000" ]; then
+      write_row "$loop_hz" "$baud" "" "PASS" "-" "0" "0" "0" "200.0" "200.0" \
+        "30.0" "60.0" >>"$gap_csv"
+    else
+      write_row "$loop_hz" "$baud" >>"$gap_csv"
+    fi
+  done
+done
+
+set +e
+out="$("$ROOT/tools/check-com-staircase-contract.py" "$gap_csv" 2>&1)"
+rc=$?
+set -e
+if [ "$rc" -eq 0 ]; then
+  echo "FAIL: high PC wire gap should fail by default" >&2
+  exit 1
+fi
+assert_contains "$out" "pc_wire_gap_p99_ms=30.0" \
+  "high PC p99 gap detail"
+assert_contains "$out" "pc_wire_gap_max_ms=60.0" \
+  "high PC max gap detail"
+
+out="$("$ROOT/tools/check-com-staircase-contract.py" "$gap_csv" \
+  --max-pc-p99-gap-ratio 6 --max-pc-max-gap-ratio 12)"
+assert_contains "$out" "PASS com_staircase_contract" \
+  "PC gap gates can be explicitly relaxed"
+assert_contains "$out" "pc_wire_gap_p99_ms_max=30" \
+  "relaxed PC p99 gap gate is reported"
+
+set +e
+out="$("$ROOT/tools/check-com-staircase-contract.py" "$pass_csv" \
+  --expected-pc-cmd-hz 0 2>&1)"
+rc=$?
+set -e
+if [ "$rc" -eq 0 ]; then
+  echo "FAIL: invalid expected PC rate should fail" >&2
+  exit 1
+fi
+assert_contains "$out" "invalid_expected_pc_cmd_hz" \
+  "invalid expected PC rate reason"
 
 echo "PASS: communication staircase contract tests"

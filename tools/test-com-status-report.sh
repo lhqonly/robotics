@@ -95,6 +95,10 @@ assert_contains "$report" "pc_cmd_catchup_events=0" \
   "staircase catch-up event acceptance gate"
 assert_contains "$report" "pc_cmd_catchup_extra=0" \
   "staircase catch-up extra acceptance gate"
+assert_contains "$report" "pc_wire_gap_p99_ms<=20" \
+  "staircase PC p99 gap acceptance gate"
+assert_contains "$report" "target_rx_hz 和 pc_target_window_hz" \
+  "staircase target-rate acceptance gate"
 assert_contains "$report" "missing_required_stage" \
   "staircase contract missing stage reason"
 if find "$ROOT/log/com-perf" -maxdepth 1 -type f -name '*.wire.log' | grep -q .; then

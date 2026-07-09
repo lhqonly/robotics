@@ -52,6 +52,15 @@ def numeric_lte(row: dict[str, str], name: str, maximum: float) -> bool:
         return False
 
 
+def numeric_between(row: dict[str, str], name: str,
+                    minimum: float, maximum: float) -> bool:
+    try:
+        value = float(field(row, name))
+    except ValueError:
+        return False
+    return minimum <= value <= maximum
+
+
 def row_matches(row: dict[str, str], loop_hz: int, baud: int,
                 pc_launch_prefix: str | None,
                 pc_executor_threads: int | None,
@@ -83,9 +92,25 @@ def row_matches(row: dict[str, str], loop_hz: int, baud: int,
 
 def row_passes(row: dict[str, str],
                max_pc_catchup_events: float,
-               max_pc_catchup_extra: float) -> bool:
+               max_pc_catchup_extra: float,
+               min_target_rx_hz: float,
+               max_target_rx_hz: float,
+               min_pc_target_window_hz: float,
+               max_pc_target_window_hz: float,
+               max_pc_wire_gap_p99_ms: float,
+               max_pc_wire_gap_max_ms: float) -> bool:
     return (
         field(row, "verdict") == "PASS"
+        and numeric_between(
+            row, "target_rx_hz", min_target_rx_hz, max_target_rx_hz
+        )
+        and numeric_between(
+            row, "pc_target_window_hz",
+            min_pc_target_window_hz,
+            max_pc_target_window_hz,
+        )
+        and numeric_lte(row, "pc_wire_gap_p99_ms", max_pc_wire_gap_p99_ms)
+        and numeric_lte(row, "pc_wire_gap_max_ms", max_pc_wire_gap_max_ms)
         and is_zero(row, "lost")
         and is_zero(row, "duplicate")
         and is_zero(row, "qos_incompatibility")
@@ -121,7 +146,22 @@ def main() -> int:
     parser.add_argument("--executor-spin-timeout-us", type=int)
     parser.add_argument("--max-pc-catchup-events", type=float, default=0.0)
     parser.add_argument("--max-pc-catchup-extra", type=float, default=0.0)
+    parser.add_argument("--expected-pc-cmd-hz", type=float, default=200.0)
+    parser.add_argument("--min-rate-ratio", type=float, default=0.90)
+    parser.add_argument("--max-rate-ratio", type=float, default=1.10)
+    parser.add_argument("--max-pc-p99-gap-ratio", type=float, default=4.0)
+    parser.add_argument("--max-pc-max-gap-ratio", type=float, default=10.0)
     args = parser.parse_args()
+
+    if args.expected_pc_cmd_hz <= 0:
+        print("FAIL com_staircase_contract reason=invalid_expected_pc_cmd_hz")
+        return 1
+    if args.min_rate_ratio <= 0 or args.max_rate_ratio < args.min_rate_ratio:
+        print("FAIL com_staircase_contract reason=invalid_rate_ratio")
+        return 1
+    if args.max_pc_p99_gap_ratio <= 0 or args.max_pc_max_gap_ratio <= 0:
+        print("FAIL com_staircase_contract reason=invalid_gap_ratio")
+        return 1
 
     csv_path = args.csv or latest_csv()
     if csv_path is None:
@@ -134,6 +174,13 @@ def main() -> int:
     rows = read_rows(csv_path)
     failures: list[str] = []
     pass_count = 0
+    min_target_rx_hz = args.expected_pc_cmd_hz * args.min_rate_ratio
+    max_target_rx_hz = args.expected_pc_cmd_hz * args.max_rate_ratio
+    min_pc_target_window_hz = args.expected_pc_cmd_hz * args.min_rate_ratio
+    max_pc_target_window_hz = args.expected_pc_cmd_hz * args.max_rate_ratio
+    period_ms = 1000.0 / args.expected_pc_cmd_hz
+    max_pc_wire_gap_p99_ms = period_ms * args.max_pc_p99_gap_ratio
+    max_pc_wire_gap_max_ms = period_ms * args.max_pc_max_gap_ratio
 
     for loop_hz in args.loops:
         for baud in args.bauds:
@@ -164,6 +211,12 @@ def main() -> int:
                     row,
                     args.max_pc_catchup_events,
                     args.max_pc_catchup_extra,
+                    min_target_rx_hz,
+                    max_target_rx_hz,
+                    min_pc_target_window_hz,
+                    max_pc_target_window_hz,
+                    max_pc_wire_gap_p99_ms,
+                    max_pc_wire_gap_max_ms,
                 )
             ]
             if not passing:
@@ -187,6 +240,10 @@ def main() -> int:
         f"csv={csv_path} passed={pass_count}/{required_count} "
         f"loops={','.join(str(item) for item in args.loops)} "
         f"bauds={','.join(str(item) for item in args.bauds)} "
+        f"target_rx_hz_range={min_target_rx_hz:g}..{max_target_rx_hz:g} "
+        f"pc_target_window_hz_range={min_pc_target_window_hz:g}..{max_pc_target_window_hz:g} "
+        f"pc_wire_gap_p99_ms_max={max_pc_wire_gap_p99_ms:g} "
+        f"pc_wire_gap_max_ms_max={max_pc_wire_gap_max_ms:g} "
         f"max_pc_catchup_events={args.max_pc_catchup_events:g} "
         f"max_pc_catchup_extra={args.max_pc_catchup_extra:g}"
     )
