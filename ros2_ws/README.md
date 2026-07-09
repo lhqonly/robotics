@@ -454,11 +454,13 @@ tools/run-com-staircase.sh spin_timeout_sweep
 ```
 
 要把 PC 侧调度策略也纳入 latest-target 阶梯，设置多行
-`STAIRCASE_PC_LAUNCH_PREFIX_CASES`。每行格式为 `label|launch_prefix`，空 prefix
-用 `label|`；多 case 时阶段名会追加 `pc<label>`，避免日志互相覆盖：
+`STAIRCASE_PC_LAUNCH_PREFIX_CASES`。每行格式为
+`label|launch_prefix[|executor_threads]`，空 prefix 用 `label|`；第三列可选，
+不写时继承 `STAIRCASE_PC_EXECUTOR_THREADS` / `EXECUTOR_THREADS` / `0`。
+多 case 时阶段名会追加 `pc<label>`，避免日志互相覆盖：
 
 ```bash
-STAIRCASE_PC_LAUNCH_PREFIX_CASES=$'default|\ntaskset_cpu2|taskset -c 2' \
+STAIRCASE_PC_LAUNCH_PREFIX_CASES=$'default|\nthreads2||2\ntaskset_cpu2_threads2|taskset -c 2|2' \
 tools/run-com-staircase.sh pc_sched_staircase
 ```
 

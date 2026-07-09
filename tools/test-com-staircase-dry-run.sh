@@ -142,22 +142,36 @@ assert_contains "$matrix_summary" "DONE failures=0" \
 
 LOGDIR="$TMPDIR/pc_cases" DRY_RUN=1 \
   STAIRCASE_BAUDS="921600" \
-  STAIRCASE_PC_LAUNCH_PREFIX_CASES=$'default|\ntaskset_cpu2|taskset -c 2' \
+  STAIRCASE_PC_LAUNCH_PREFIX_CASES=$'default|\nthreads2||2\ntaskset_cpu2_threads2|taskset -c 2|2' \
   "$ROOT/tools/run-com-staircase.sh" dry_pc_cases >/dev/null
 pc_cases_summary="$TMPDIR/pc_cases/dry_pc_cases.summary.log"
-assert_contains "$pc_cases_summary" "staircase_pc_launch_case_count=2" \
+assert_contains "$pc_cases_summary" "staircase_pc_launch_case_count=3" \
   "PC launch case count recorded"
 assert_contains "$pc_cases_summary" \
   "START latest_1000hz_921600baud_irqp4_poll0_spin1000us_200hz_be_n40_pcdefault" \
   "PC case default stage suffix"
 assert_contains "$pc_cases_summary" \
-  "START latest_1000hz_921600baud_irqp4_poll0_spin1000us_200hz_be_n40_pctaskset_cpu2" \
-  "PC case taskset stage suffix"
+  "START latest_1000hz_921600baud_irqp4_poll0_spin1000us_200hz_be_n40_pcthreads2" \
+  "PC case threads2 stage suffix"
+assert_contains "$pc_cases_summary" \
+  "START latest_1000hz_921600baud_irqp4_poll0_spin1000us_200hz_be_n40_pctaskset_cpu2_threads2" \
+  "PC case taskset+threads stage suffix"
+assert_contains "$pc_cases_summary" \
+  "EXECUTOR_THREADS=2" \
+  "PC case executor threads override is passed to run-com-perf"
 assert_contains "$pc_cases_summary" \
   "PC_LAUNCH_PREFIX=taskset\\ -c\\ 2" \
   "PC launch prefix is passed to run-com-perf"
-assert_count "$pc_cases_summary" '^START latest_' 8 \
-  "PC case matrix doubles one-baud latest stages"
+assert_count "$pc_cases_summary" '^START latest_' 12 \
+  "PC case matrix triples one-baud latest stages"
+
+LOGDIR="$TMPDIR/pc_cases_invalid" DRY_RUN=1 \
+  STAIRCASE_PC_LAUNCH_PREFIX_CASES=$'bad_threads||many' \
+  "$ROOT/tools/run-com-staircase.sh" dry_pc_cases_invalid >/dev/null
+pc_cases_invalid_summary="$TMPDIR/pc_cases_invalid/dry_pc_cases_invalid.summary.log"
+assert_contains "$pc_cases_invalid_summary" \
+  "reason=executor_threads_must_be_nonnegative_integer" \
+  "invalid PC case executor threads are rejected"
 
 LOGDIR="$TMPDIR/isolated" DRY_RUN=1 STAIRCASE_ISOLATE_ROS_DOMAIN_PER_STAGE=1 \
   "$ROOT/tools/run-com-staircase.sh" dry_isolated >/dev/null
