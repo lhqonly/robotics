@@ -740,7 +740,7 @@ preflight_commands="$(printf '%s\n' "$staircase_preflight" |
   printf '%s\n' "$stlink_probe"
   echo '```'
   echo
-  echo "结论：如果出现 \`status=bad_unknown_target\`、\`chipid: 0x000\` 或 \`dev-type: unknown\`，说明 ST-LINK 本身可见，但 SWD 没读到 STM32 目标；此时不要阻塞 ROS/串口 no-flash 验证，但不能烧录新固件或复测运行期栈水位。"
+  echo "结论：如果出现 \`status=bad_no_stlink\`、\`status=bad_unknown_target\`、\`chipid: 0x000\` 或 \`dev-type: unknown\`，说明 ST-LINK/SWD 还没满足烧录条件；此时不要阻塞 ROS/串口 no-flash 验证，但不能烧录新固件或复测运行期栈水位。"
   echo
   echo "## staircase preflight"
   echo
