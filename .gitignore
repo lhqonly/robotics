@@ -1,10 +1,14 @@
 # --- ROS2 / colcon 构建产物（绝不进库） ---
+/build/
+/install/
 ros2_ws/build/
 ros2_ws/install/
 ros2_ws/log/
 
 # --- 固件构建产物（CMake/ninja 输出，绝不进库；ThirdParty vendor 源码进库） ---
 firmware/f103-microros/build/
+firmware/f103-microros/build-*/
+firmware/f103-microros/build-size-matrix/
 
 # --- 主 agent 实跑 / 验证日志（本地产物） ---
 /log/
@@ -17,6 +21,7 @@ __pycache__/
 
 # --- Claude Code 本地设置（含本机权限，不进库；agents/ 定义要进库） ---
 .claude/settings.local.json
+.claude/worktrees/
 
 # --- 编辑器 / 系统杂项 ---
 .vscode/
