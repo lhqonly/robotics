@@ -17,6 +17,7 @@ assert_contains() {
 }
 
 bash -n "$ROOT/tools/recommend-motor-m2-smoke-command.sh"
+python3 -m py_compile "$ROOT/tools/pub-motor-m2-enabled-target-soak.py"
 
 out="$TMPDIR/default.md"
 "$ROOT/tools/recommend-motor-m2-smoke-command.sh" >"$out"
@@ -81,6 +82,22 @@ assert_contains "$out" "timeout 12 ros2 topic hz /motor/tp_motor_health" \
   "default motor health hz timeout"
 assert_contains "$out" "rate.motor_health.txt" \
   "motor health hz evidence capture"
+assert_contains "$out" "tools/pub-motor-m2-enabled-target-soak.py --hz 200" \
+  "enabled 200Hz soak publisher"
+assert_contains "$out" "health.before_enabled_soak.yaml" \
+  "enabled soak health before capture"
+assert_contains "$out" "health.mid_enabled_soak.yaml" \
+  "enabled soak health mid capture"
+assert_contains "$out" "health.after_enabled_soak.yaml" \
+  "enabled soak health after capture"
+assert_contains "$out" "state.after_enabled_soak.yaml" \
+  "enabled soak state after capture"
+assert_contains "$out" "rate.com_status.soak.txt" \
+  "com status rate during enabled soak"
+assert_contains "$out" "enabled_soak.summary.txt" \
+  "enabled soak publisher summary"
+assert_contains "$out" "--min-enabled-soak-target-hz 180.000000 --max-enabled-soak-target-hz 220.000000" \
+  "enabled soak checker rate band"
 assert_contains "$out" "tools/measure-stack-hwm.sh 'firmware/f103-microros/build-motor/f103-microros.elf'" \
   "motor stack HWM command"
 assert_contains "$out" "Passing \`/com\` 10kHz/200Hz validation is not a substitute" \
@@ -95,6 +112,8 @@ assert_contains "$out" "CHECK 921600_is_comparison_only_when_static_budget_is_ov
   "921600 budget warning checklist"
 assert_contains "$out" "seq42/seq43/seq44 targets intentionally use \`control_mode=0\`" \
   "disabled baseline warning"
+assert_contains "$out" "The enabled soak uses \`control_mode=1\`" \
+  "enabled soak boundary warning"
 
 commands="$TMPDIR/commands.sh"
 FORMAT=commands M2_MOTOR_BAUD=921600 M2_MOTOR_SERIAL=/dev/ttyACM0 \
@@ -122,6 +141,8 @@ assert_contains "$commands" "timeout 16 ros2 topic hz /motor/tp_motor_health" \
   "custom motor health hz timeout"
 assert_contains "$commands" "tools/run-bridge.sh '/dev/ttyACM0' '921600'" \
   "custom serial in commands format"
+assert_contains "$commands" "tools/pub-motor-m2-enabled-target-soak.py --hz 200" \
+  "enabled soak publisher in commands format"
 assert_contains "$commands" "cmake --build 'firmware/f103-microros/build-motor-921k'" \
   "custom build dir in commands format"
 assert_contains "$commands" "st-flash --connect-under-reset write 'firmware/f103-microros/build-motor-921k/f103-microros.bin' 0x08000000" \
@@ -141,6 +162,12 @@ assert_contains "$checklist" "M2_MOTOR_SMOKE_HEALTH_PERIOD_MS=200" \
   "health period in checklist"
 assert_contains "$checklist" "M2_MOTOR_SMOKE_REQUIRE_BUDGET_BAUDS=2000000" \
   "budget gate bauds in checklist"
+assert_contains "$checklist" "M2_MOTOR_SMOKE_ENABLED_SOAK_HZ=200" \
+  "enabled soak hz in checklist"
+assert_contains "$checklist" "CHECK enabled_200hz_target_soak_received_and_applied_grow" \
+  "enabled soak growth checklist"
+assert_contains "$checklist" "CHECK com_status_hz_during_enabled_soak_stays_in_range" \
+  "enabled soak com coexistence checklist"
 
 set +e
 bad_period_out="$(M2_MOTOR_STATE_PERIOD_MS=0 "$ROOT/tools/recommend-motor-m2-smoke-command.sh" 2>&1 >/dev/null)"

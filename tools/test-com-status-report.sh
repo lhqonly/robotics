@@ -263,6 +263,12 @@ assert_contains "$report" "tools/check-motor-m2-smoke-evidence.py" \
   "M2 motor smoke evidence checker in next steps"
 assert_contains "$report" "/motor/tp_joint_target" \
   "M2 motor target topic in report"
+assert_contains "$report" "200Hz enabled target soak" \
+  "M2 motor enabled soak gate in report"
+assert_contains "$report" "targets_received" \
+  "M2 motor enabled soak received counter in report"
+assert_contains "$report" "targets_applied" \
+  "M2 motor enabled soak applied counter in report"
 assert_contains "$report" "tools/diagnose-swd.sh" \
   "SWD diagnostic command in next steps"
 assert_contains "$report" "tools/recommend-staircase-command.sh" \

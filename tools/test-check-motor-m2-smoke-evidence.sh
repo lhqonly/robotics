@@ -41,6 +41,8 @@ assert_contains "$(cat "$template")" "topic_motor_target=present" \
   "template includes motor target topic"
 assert_contains "$(cat "$template")" "evidence_source=template" \
   "template marks evidence source"
+assert_contains "$(cat "$template")" "evidence_capture_id=template" \
+  "template marks capture id"
 assert_contains "$(cat "$template")" "state_after_ttl_fault_bits=2" \
   "template includes TTL stale evidence"
 
@@ -56,6 +58,11 @@ assert_contains "$out" "sample_template_not_filled" \
   "template source still blocked after sample_only flip"
 
 sed -i 's/^evidence_source=.*/evidence_source=manual_raw_capture/' "$template"
+out="$(run_expect_fail "template capture id without provenance" "$ROOT/tools/check-motor-m2-smoke-evidence.py" "$template")"
+assert_contains "$out" "sample_template_not_filled" \
+  "template capture id still blocked after source flip"
+
+sed -i 's/^evidence_capture_id=.*/evidence_capture_id=test_manual_capture/' "$template"
 out="$("$ROOT/tools/check-motor-m2-smoke-evidence.py" "$template")"
 assert_contains "$out" "PASS motor_m2_smoke" \
   "passing evidence"
@@ -63,6 +70,10 @@ assert_contains "$out" "motor_state_hz_range=45..55" \
   "passing rate contract"
 assert_contains "$out" "motor_health_hz_range=4.5..5.5" \
   "passing health rate contract"
+assert_contains "$out" "enabled_soak_target_hz_range=180..220" \
+  "passing enabled soak rate contract"
+assert_contains "$out" "min_enabled_soak_applied_per_received=10" \
+  "passing enabled soak applied/received contract"
 
 offline="$TMPDIR/offline.env"
 cp "$template" "$offline"
@@ -138,6 +149,56 @@ sed -i 's/^motor_health_hz=.*/motor_health_hz=1.0/' "$health_rate"
 out="$(run_expect_fail "motor health rate low" "$ROOT/tools/check-motor-m2-smoke-evidence.py" "$health_rate")"
 assert_contains "$out" "motor_health_hz_out_of_range_4.5_5.5_got_1" \
   "motor health rate reason"
+
+enabled_rate="$TMPDIR/enabled-rate.env"
+cp "$template" "$enabled_rate"
+sed -i 's/^enabled_soak_target_hz=.*/enabled_soak_target_hz=100.0/' "$enabled_rate"
+out="$(run_expect_fail "enabled soak target rate low" "$ROOT/tools/check-motor-m2-smoke-evidence.py" "$enabled_rate")"
+assert_contains "$out" "enabled_soak_target_hz_out_of_range_180_220_got_100" \
+  "enabled soak target rate reason"
+
+enabled_last_seq="$TMPDIR/enabled-last-seq.env"
+cp "$template" "$enabled_last_seq"
+sed -i 's/^enabled_soak_state_last_target_seq=.*/enabled_soak_state_last_target_seq=1398/' "$enabled_last_seq"
+out="$(run_expect_fail "enabled soak last seq stale" "$ROOT/tools/check-motor-m2-smoke-evidence.py" "$enabled_last_seq")"
+assert_contains "$out" "enabled_soak_state_last_target_seq_lag_1_gt_0" \
+  "enabled soak last target seq reason"
+
+enabled_applied="$TMPDIR/enabled-applied.env"
+cp "$template" "$enabled_applied"
+sed -i 's/^enabled_soak_targets_applied_after=.*/enabled_soak_targets_applied_after=400/' "$enabled_applied"
+out="$(run_expect_fail "enabled soak applied too low" "$ROOT/tools/check-motor-m2-smoke-evidence.py" "$enabled_applied")"
+assert_contains "$out" "enabled_soak_targets_applied_delta_low_400_lt_4000" \
+  "enabled soak applied delta reason"
+
+enabled_mid="$TMPDIR/enabled-mid.env"
+cp "$template" "$enabled_mid"
+sed -i 's/^enabled_soak_targets_applied_mid=.*/enabled_soak_targets_applied_mid=4000/' "$enabled_mid"
+out="$(run_expect_fail "enabled soak applied not monotonic" "$ROOT/tools/check-motor-m2-smoke-evidence.py" "$enabled_mid")"
+assert_contains "$out" "enabled_soak_targets_applied_not_monotonic_0_4000_4000" \
+  "enabled soak applied monotonic reason"
+
+enabled_fault="$TMPDIR/enabled-fault.env"
+cp "$template" "$enabled_fault"
+sed -i 's/^enabled_soak_state_fault_bits=.*/enabled_soak_state_fault_bits=2/' "$enabled_fault"
+out="$(run_expect_fail "enabled soak has fault" "$ROOT/tools/check-motor-m2-smoke-evidence.py" "$enabled_fault")"
+assert_contains "$out" "enabled_soak_state_fault_bits_expected_0_got_2" \
+  "enabled soak fault reason"
+
+enabled_com_rate="$TMPDIR/enabled-com-rate.env"
+cp "$template" "$enabled_com_rate"
+sed -i 's/^com_status_soak_hz=.*/com_status_soak_hz=1.0/' "$enabled_com_rate"
+out="$(run_expect_fail "enabled soak com status rate low" "$ROOT/tools/check-motor-m2-smoke-evidence.py" "$enabled_com_rate")"
+assert_contains "$out" "com_status_soak_hz_out_of_range_4.5_5.5_got_1" \
+  "enabled soak com status rate reason"
+
+missing_enabled="$TMPDIR/missing-enabled.env"
+grep -v '^enabled_soak_target_hz=' "$template" >"$missing_enabled"
+out="$(run_expect_fail "missing enabled soak evidence" "$ROOT/tools/check-motor-m2-smoke-evidence.py" "$missing_enabled")"
+assert_contains "$out" "BLOCKED_MISSING_EVIDENCE motor_m2_smoke" \
+  "missing enabled soak status"
+assert_contains "$out" "missing_enabled_soak_target_hz" \
+  "missing enabled soak reason"
 
 stack="$TMPDIR/stack.env"
 cp "$template" "$stack"
@@ -238,6 +299,30 @@ EOF
 cat >"$dir/health.after_ttl.yaml" <<'EOF'
 stale_targets: 1
 EOF
+cat >"$dir/health.before_enabled_soak.yaml" <<'EOF'
+targets_received: 2
+targets_applied: 0
+EOF
+cat >"$dir/enabled_soak.summary.txt" <<'EOF'
+enabled_soak_target_hz=200.0
+enabled_soak_targets_sent=400
+enabled_soak_first_target_seq=1000
+enabled_soak_last_target_seq=1399
+EOF
+cat >"$dir/health.mid_enabled_soak.yaml" <<'EOF'
+targets_received: 202
+targets_applied: 2000
+EOF
+cat >"$dir/state.after_enabled_soak.yaml" <<'EOF'
+last_target_seq: 1399
+target_fresh: true
+enabled: true
+fault_bits: 0
+EOF
+cat >"$dir/health.after_enabled_soak.yaml" <<'EOF'
+targets_received: 402
+targets_applied: 4000
+EOF
 cat >"$dir/rate.motor_state.txt" <<'EOF'
 average rate: 50.000
 min: 0.019s max: 0.021s std dev: 0.00100s window: 10
@@ -247,6 +332,10 @@ average rate: 5.000
 min: 0.190s max: 0.210s std dev: 0.00400s window: 10
 EOF
 cat >"$dir/rate.com_status.txt" <<'EOF'
+average rate: 5.000
+min: 0.190s max: 0.210s std dev: 0.00400s window: 10
+EOF
+cat >"$dir/rate.com_status.soak.txt" <<'EOF'
 average rate: 5.000
 min: 0.190s max: 0.210s std dev: 0.00400s window: 10
 EOF

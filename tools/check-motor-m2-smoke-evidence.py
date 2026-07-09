@@ -17,6 +17,7 @@ TEMPLATE = """# M2 motor smoke evidence.
 # Fill this file from the commands printed by tools/recommend-motor-m2-smoke-command.sh.
 sample_only=true
 evidence_source=template
+evidence_capture_id=template
 swd_status=ok
 firmware_build=ok
 firmware_flash=ok
@@ -68,6 +69,24 @@ health_after_ttl_stale_targets=1
 motor_state_hz=50.0
 motor_health_hz=5.0
 com_status_hz=5.0
+
+# Enabled 200Hz target soak. This is separate from the disabled seq42/43/44
+# frame_id negative-test sequence above.
+enabled_soak_target_hz=200.0
+enabled_soak_targets_sent=400
+enabled_soak_first_target_seq=1000
+enabled_soak_last_target_seq=1399
+enabled_soak_state_last_target_seq=1399
+enabled_soak_state_target_fresh=true
+enabled_soak_state_enabled=true
+enabled_soak_state_fault_bits=0
+enabled_soak_targets_received_before=2
+enabled_soak_targets_received_mid=202
+enabled_soak_targets_received_after=402
+enabled_soak_targets_applied_before=0
+enabled_soak_targets_applied_mid=2000
+enabled_soak_targets_applied_after=4000
+com_status_soak_hz=5.0
 
 # Motor-enabled runtime memory evidence.
 microros_stack_free_words=128
@@ -146,12 +165,27 @@ def read_text_if_exists(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def key_values_from_text(text: str) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if key:
+            values[key] = value
+    return values
+
+
 def read_evidence_dir(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
     env = path / "evidence.env"
     if env.exists():
         values.update(read_evidence(env))
     values["evidence_source"] = "directory_raw_capture"
+    values["evidence_capture_id"] = "directory_raw_capture"
 
     topics = read_text_if_exists(path / "topics.txt")
     topic_map = {
@@ -236,6 +270,24 @@ def read_evidence_dir(path: Path) -> dict[str, str]:
         "health.after_ttl.yaml": {
             "stale_targets": "health_after_ttl_stale_targets",
         },
+        "health.before_enabled_soak.yaml": {
+            "targets_received": "enabled_soak_targets_received_before",
+            "targets_applied": "enabled_soak_targets_applied_before",
+        },
+        "state.after_enabled_soak.yaml": {
+            "last_target_seq": "enabled_soak_state_last_target_seq",
+            "target_fresh": "enabled_soak_state_target_fresh",
+            "enabled": "enabled_soak_state_enabled",
+            "fault_bits": "enabled_soak_state_fault_bits",
+        },
+        "health.mid_enabled_soak.yaml": {
+            "targets_received": "enabled_soak_targets_received_mid",
+            "targets_applied": "enabled_soak_targets_applied_mid",
+        },
+        "health.after_enabled_soak.yaml": {
+            "targets_received": "enabled_soak_targets_received_after",
+            "targets_applied": "enabled_soak_targets_applied_after",
+        },
     }
     for filename, mapping in scalar_files.items():
         text = read_text_if_exists(path / filename)
@@ -250,6 +302,10 @@ def read_evidence_dir(path: Path) -> dict[str, str]:
         "motor_state_hz": (path / "rate.motor_state.txt", average_rate_from_text),
         "motor_health_hz": (path / "rate.motor_health.txt", average_rate_from_text),
         "com_status_hz": (path / "rate.com_status.txt", average_rate_from_text),
+        "com_status_soak_hz": (
+            path / "rate.com_status.soak.txt",
+            average_rate_from_text,
+        ),
         "microros_stack_free_words": (
             path / "stack-hwm.txt",
             microros_stack_free_words_from_text,
@@ -261,6 +317,11 @@ def read_evidence_dir(path: Path) -> dict[str, str]:
             values[key] = value
         else:
             values.pop(key, None)
+
+    for key, value in key_values_from_text(
+        read_text_if_exists(path / "enabled_soak.summary.txt")
+    ).items():
+        values[key] = value
 
     return values
 
@@ -371,6 +432,105 @@ class Checker:
         if value is not None and limit is not None and value > limit:
             self.reason(f"{key}_gt_{limit_key}_{value}_gt_{limit}")
 
+    def require_enabled_soak(self, args: argparse.Namespace) -> None:
+        target_hz = self.require_float("enabled_soak_target_hz")
+        if target_hz is not None and not (
+            args.min_enabled_soak_target_hz
+            <= target_hz
+            <= args.max_enabled_soak_target_hz
+        ):
+            self.reason(
+                "enabled_soak_target_hz_out_of_range_"
+                f"{args.min_enabled_soak_target_hz:g}_"
+                f"{args.max_enabled_soak_target_hz:g}_got_{target_hz:g}"
+            )
+
+        sent = self.require_int("enabled_soak_targets_sent")
+        first_seq = self.require_int("enabled_soak_first_target_seq")
+        last_seq = self.require_int("enabled_soak_last_target_seq")
+        state_last_seq = self.require_int("enabled_soak_state_last_target_seq")
+        received_before = self.require_int("enabled_soak_targets_received_before")
+        received_mid = self.require_int("enabled_soak_targets_received_mid")
+        received_after = self.require_int("enabled_soak_targets_received_after")
+        applied_before = self.require_int("enabled_soak_targets_applied_before")
+        applied_mid = self.require_int("enabled_soak_targets_applied_mid")
+        applied_after = self.require_int("enabled_soak_targets_applied_after")
+        target_fresh = self.require_bool("enabled_soak_state_target_fresh")
+        state_enabled = self.require_bool("enabled_soak_state_enabled")
+        fault_bits = self.require_int("enabled_soak_state_fault_bits")
+
+        if sent is not None and sent < args.min_enabled_soak_targets_sent:
+            self.reason(
+                "enabled_soak_targets_sent_low_"
+                f"{sent}_lt_{args.min_enabled_soak_targets_sent}"
+            )
+        if first_seq is not None and last_seq is not None and sent is not None:
+            expected_last = first_seq + sent - 1
+            if last_seq != expected_last:
+                self.reason(
+                    "enabled_soak_last_target_seq_expected_"
+                    f"{expected_last}_got_{last_seq}"
+                )
+        if state_last_seq is not None and last_seq is not None:
+            lag = last_seq - state_last_seq
+            if lag < 0:
+                self.reason(
+                    "enabled_soak_state_last_target_seq_ahead_"
+                    f"{state_last_seq}_gt_{last_seq}"
+                )
+            elif lag > args.max_enabled_soak_last_target_lag:
+                self.reason(
+                    "enabled_soak_state_last_target_seq_lag_"
+                    f"{lag}_gt_{args.max_enabled_soak_last_target_lag}"
+                )
+        if target_fresh is False:
+            self.reason("enabled_soak_state_target_not_fresh")
+        if state_enabled is False:
+            self.reason("enabled_soak_state_not_enabled")
+        if fault_bits is not None and fault_bits != 0:
+            self.reason(f"enabled_soak_state_fault_bits_expected_0_got_{fault_bits}")
+        if (
+            received_before is not None
+            and received_mid is not None
+            and received_after is not None
+            and sent is not None
+        ):
+            received_delta = received_after - received_before
+            min_received = int(sent * args.min_enabled_soak_received_ratio)
+            if received_delta < min_received:
+                self.reason(
+                    "enabled_soak_targets_received_delta_low_"
+                    f"{received_delta}_lt_{min_received}"
+                )
+            if not (received_before < received_mid < received_after):
+                self.reason(
+                    "enabled_soak_targets_received_not_monotonic_"
+                    f"{received_before}_{received_mid}_{received_after}"
+                )
+        if (
+            applied_before is not None
+            and applied_mid is not None
+            and applied_after is not None
+        ):
+            applied_delta = applied_after - applied_before
+            min_applied = args.min_enabled_soak_applied_delta
+            if received_before is not None and received_after is not None:
+                received_delta = received_after - received_before
+                min_applied = max(
+                    min_applied,
+                    int(received_delta * args.min_enabled_soak_applied_per_received),
+                )
+            if applied_delta < min_applied:
+                self.reason(
+                    "enabled_soak_targets_applied_delta_low_"
+                    f"{applied_delta}_lt_{min_applied}"
+                )
+            if not (applied_before < applied_mid < applied_after):
+                self.reason(
+                    "enabled_soak_targets_applied_not_monotonic_"
+                    f"{applied_before}_{applied_mid}_{applied_after}"
+                )
+
     def check(self, args: argparse.Namespace) -> int:
         sample_only = self.value("sample_only")
         if sample_only is not None and as_bool(sample_only) is True:
@@ -383,6 +543,12 @@ class Checker:
             self.reason("sample_template_not_filled")
         elif evidence_source not in {"manual_raw_capture", "directory_raw_capture"}:
             self.reason(f"invalid_evidence_source_{evidence_source}")
+
+        evidence_capture_id = self.value("evidence_capture_id")
+        if evidence_capture_id is None:
+            self.reason("missing_evidence_capture_id")
+        elif evidence_capture_id == "template":
+            self.reason("sample_template_not_filled")
 
         swd = self.value("swd_status")
         if swd is None:
@@ -446,9 +612,15 @@ class Checker:
                 "health_after_ttl_stale_targets_not_increased_"
                 f"{after_stale}_le_{before_stale}"
             )
+        self.require_enabled_soak(args)
         self.require_rate("motor_state_hz", args.min_motor_state_hz, args.max_motor_state_hz)
         self.require_rate("motor_health_hz", args.min_motor_health_hz, args.max_motor_health_hz)
         self.require_rate("com_status_hz", args.min_com_status_hz, args.max_com_status_hz)
+        self.require_rate(
+            "com_status_soak_hz",
+            args.min_com_status_hz,
+            args.max_com_status_hz,
+        )
         free_words = self.require_int("microros_stack_free_words")
         if free_words is not None and free_words < args.min_microros_stack_free_words:
             self.reason(
@@ -472,6 +644,13 @@ class Checker:
             f"motor_state_hz_range={args.min_motor_state_hz:g}..{args.max_motor_state_hz:g} "
             f"motor_health_hz_range={args.min_motor_health_hz:g}..{args.max_motor_health_hz:g} "
             f"com_status_hz_range={args.min_com_status_hz:g}..{args.max_com_status_hz:g} "
+            f"enabled_soak_target_hz_range="
+            f"{args.min_enabled_soak_target_hz:g}..{args.max_enabled_soak_target_hz:g} "
+            f"min_enabled_soak_targets_sent={args.min_enabled_soak_targets_sent} "
+            f"min_enabled_soak_received_ratio={args.min_enabled_soak_received_ratio:g} "
+            f"min_enabled_soak_applied_per_received="
+            f"{args.min_enabled_soak_applied_per_received:g} "
+            f"min_enabled_soak_applied_delta={args.min_enabled_soak_applied_delta} "
             f"min_microros_stack_free_words={args.min_microros_stack_free_words}"
         )
         return 0
@@ -491,6 +670,13 @@ def main() -> int:
     parser.add_argument("--max-motor-health-hz", type=float, default=5.5)
     parser.add_argument("--min-com-status-hz", type=float, default=4.5)
     parser.add_argument("--max-com-status-hz", type=float, default=5.5)
+    parser.add_argument("--min-enabled-soak-target-hz", type=float, default=180.0)
+    parser.add_argument("--max-enabled-soak-target-hz", type=float, default=220.0)
+    parser.add_argument("--min-enabled-soak-targets-sent", type=int, default=100)
+    parser.add_argument("--min-enabled-soak-received-ratio", type=float, default=0.9)
+    parser.add_argument("--min-enabled-soak-applied-per-received", type=float, default=10.0)
+    parser.add_argument("--min-enabled-soak-applied-delta", type=int, default=1)
+    parser.add_argument("--max-enabled-soak-last-target-lag", type=int, default=0)
     parser.add_argument("--min-microros-stack-free-words", type=int, default=128)
     args = parser.parse_args()
 

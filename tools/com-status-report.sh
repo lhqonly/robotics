@@ -1152,7 +1152,7 @@ preflight_commands="$(printf '%s\n' "$staircase_preflight" |
     echo "- SWD 当前为 ok；flash 与栈水位 gate 可执行，但 M2 runtime smoke 尚未完成。"
   fi
   echo "- 10kHz/200Hz/best_effort/status_every_40 和 2Mbps profile 已能编译，但运行收益待 SWD 恢复后实测。"
-  echo "- M2 motor micro-ROS 实体已完成离线接入和构建验证，但尚未完成真机 micro-ROS Agent 联通、ROS graph topic 可见性、\`/motor/tp_joint_target\` 发布到 \`/motor/tp_joint_state\` 的闭环验证。"
+  echo "- M2 motor micro-ROS 实体已完成离线接入和构建验证，但尚未完成真机 micro-ROS Agent 联通、ROS graph topic 可见性、\`/motor/tp_joint_target\` 发布到 \`/motor/tp_joint_state\` 的闭环验证，也尚未完成 200Hz enabled target soak 的 \`targets_received/targets_applied\` 增长证据。"
   echo "- M2 ON 默认静态 RAM 约 18KB，余量偏紧；\`build-motor-opt\` 的 stack/linker reserve 候选能降到约 16.6KB，但必须等 motor-enabled 栈水位、MSP/heap、reconnect soak 证据后再改默认。"
   echo "- M2 motor 默认静态通信预算显示 200Hz target + 20ms state + 200ms health（50Hz/5Hz）在 921600 baud 超过 30% 预算，2Mbps 通过；低遥测候选 500ms state + 1000ms health 在 921600 baud 静态约低于 30%，但需要真机同时测 921600/2000000，并确认 \`/com/tp_mcu_status\` 不被 motor reliable traffic 挤压。"
   echo "- M2 非空 \`header.frame_id\` 已做静态防护，但还需要运行期注入非空 frame_id，确认它被干净拒绝且不会影响 executor/reconnect。"
@@ -1186,7 +1186,7 @@ preflight_commands="$(printf '%s\n' "$staircase_preflight" |
   echo "3. SWD 恢复后先生成推荐阶梯命令：\`tools/recommend-staircase-command.sh\`，再执行其中的 \`tools/run-com-staircase.sh ...\` 和匹配的 \`tools/check-com-staircase-contract.py ...\`。"
   echo "   若要把 921600/2Mbps 串口占用收益也纳入验收，生成推荐命令时用：\`STAIRCASE_CONTRACT_ARGS=\"--max-pc-catchup-events 0 --max-pc-catchup-extra 0 --max-wire-baud-util-pct 30\" tools/recommend-staircase-command.sh\`。"
   echo "4. M2 motor 真机首轮先生成推荐命令：\`tools/recommend-motor-m2-smoke-command.sh\`。默认使用 2Mbps 烧 \`EXO_MOTOR_ROS_ENTITIES=ON\` 固件；若要跑 921600 对比，先看 \`tools/motor-m2-telemetry-sweep.py --pass-only\`，使用低遥测候选而不是默认 20ms/200ms。启动 micro-ROS Agent，确认 \`/motor/tp_joint_target\`、\`/motor/tp_joint_state\`、\`/motor/tp_motor_health\` 和 \`/com/tp_mcu_status\` 同时可见，并把证据保存到 \`log/motor-m2-smoke/<tag>/\`。"
-  echo "5. M2 motor topic 闭环按推荐命令执行：发空 \`frame_id\` 的 \`/motor/tp_joint_target\`，检查 \`JointState.last_target_seq\`；停止发布后检查 TTL stale；再注入非空 \`frame_id\` 确认被拒绝且 executor 不掉线。"
+  echo "5. M2 motor topic 闭环按推荐命令执行：发空 \`frame_id\` 的 \`/motor/tp_joint_target\`，检查 \`JointState.last_target_seq\`；停止发布后检查 TTL stale；再注入非空 \`frame_id\` 确认被拒绝且 executor 不掉线；随后跑 200Hz enabled target soak，要求 \`targets_received\` 约 200Hz 增长、\`targets_applied\` 在 before/mid/after 持续增长、最终 \`last_target_seq\` 跟随最新 seq，且 \`/com/tp_mcu_status\` 在 soak 期间不掉线。"
   echo "6. M2 evidence 判定：确认 \`evidence.env\` 的硬件状态字段并设置 \`sample_only=false\` 后运行 \`tools/check-motor-m2-smoke-evidence.py log/motor-m2-smoke/<tag>\`；rate 与 stack 输出会自动解析，不要把只有 \`/com\` 的证据当作 M2 PASS。"
   echo "7. 高频 profile 跑通后读栈水位：\`tools/measure-stack-hwm.sh firmware/f103-microros/build/f103-microros.elf\`，motor-enabled 构建需额外记录 \`firmware/f103-microros/build-motor/f103-microros.elf\` 的 size report。"
   echo "8. 若 SWD 仍未恢复，继续 no-flash：\`BUILD_FIRMWARE=0 FLASH_FIRMWARE=0 tools/run-com-perf.sh noflash_\$(date +%H%M)\`。"

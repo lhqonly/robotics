@@ -13,6 +13,9 @@ M2_MOTOR_STATE_PERIOD_MS="${M2_MOTOR_STATE_PERIOD_MS:-20}"
 M2_MOTOR_HEALTH_PERIOD_MS="${M2_MOTOR_HEALTH_PERIOD_MS:-200}"
 M2_MOTOR_REQUIRE_BUDGET_BAUDS="${M2_MOTOR_REQUIRE_BUDGET_BAUDS:-$M2_MOTOR_BAUD}"
 M2_MOTOR_QOS_BEST_EFFORT="${M2_MOTOR_QOS_BEST_EFFORT:-ON}"
+M2_MOTOR_ENABLED_SOAK_HZ="${M2_MOTOR_ENABLED_SOAK_HZ:-200}"
+M2_MOTOR_ENABLED_SOAK_DURATION_S="${M2_MOTOR_ENABLED_SOAK_DURATION_S:-2}"
+M2_MOTOR_ENABLED_SOAK_START_SEQ="${M2_MOTOR_ENABLED_SOAK_START_SEQ:-1000}"
 M2_MOTOR_TAG="${M2_MOTOR_TAG:-motor_m2_smoke_$(date +%Y%m%d_%H%M)}"
 M2_MOTOR_EVIDENCE_DIR="${M2_MOTOR_EVIDENCE_DIR:-log/motor-m2-smoke/$M2_MOTOR_TAG}"
 
@@ -108,6 +111,16 @@ M2_MOTOR_HEALTH_MIN_HZ="$(rate_min_from_hz "$M2_MOTOR_HEALTH_HZ")"
 M2_MOTOR_HEALTH_MAX_HZ="$(rate_max_from_hz "$M2_MOTOR_HEALTH_HZ")"
 M2_MOTOR_STATE_RATE_TIMEOUT_S="$(rate_timeout_from_period_ms "$M2_MOTOR_STATE_PERIOD_MS")"
 M2_MOTOR_HEALTH_RATE_TIMEOUT_S="$(rate_timeout_from_period_ms "$M2_MOTOR_HEALTH_PERIOD_MS")"
+M2_MOTOR_ENABLED_SOAK_MID_SLEEP_S="$(
+  awk -v seconds="$M2_MOTOR_ENABLED_SOAK_DURATION_S" 'BEGIN {
+    printf "%.3f", seconds / 2.0
+  }')"
+M2_MOTOR_ENABLED_SOAK_TIMEOUT_S="$(
+  awk -v seconds="$M2_MOTOR_ENABLED_SOAK_DURATION_S" 'BEGIN {
+    printf "%d", int(seconds + 10.999999)
+  }')"
+M2_MOTOR_ENABLED_SOAK_MIN_HZ="$(rate_min_from_hz "$M2_MOTOR_ENABLED_SOAK_HZ")"
+M2_MOTOR_ENABLED_SOAK_MAX_HZ="$(rate_max_from_hz "$M2_MOTOR_ENABLED_SOAK_HZ")"
 
 print_commands() {
   cat <<EOF
@@ -161,10 +174,22 @@ ros2 topic echo --once /motor/tp_motor_health | tee "\$evidence_dir/health.befor
 sleep 0.2
 ros2 topic echo --once /motor/tp_joint_state | tee "\$evidence_dir/state.after_ttl.yaml"
 ros2 topic echo --once /motor/tp_motor_health | tee "\$evidence_dir/health.after_ttl.yaml"
+ros2 topic echo --once /motor/tp_motor_health | tee "\$evidence_dir/health.before_enabled_soak.yaml"
+timeout $M2_MOTOR_ENABLED_SOAK_TIMEOUT_S ros2 topic hz /com/tp_mcu_status | tee "\$evidence_dir/rate.com_status.soak.txt" &
+com_soak_hz_pid=\$!
+tools/pub-motor-m2-enabled-target-soak.py --hz $M2_MOTOR_ENABLED_SOAK_HZ --duration-s $M2_MOTOR_ENABLED_SOAK_DURATION_S --start-seq $M2_MOTOR_ENABLED_SOAK_START_SEQ --control-mode 1 --ttl-us 100000 | tee "\$evidence_dir/enabled_soak.summary.txt" &
+enabled_soak_pid=\$!
+sleep $M2_MOTOR_ENABLED_SOAK_MID_SLEEP_S
+ros2 topic echo --once /motor/tp_motor_health | tee "\$evidence_dir/health.mid_enabled_soak.yaml"
+ros2 topic echo --once /motor/tp_joint_state | tee "\$evidence_dir/state.mid_enabled_soak.yaml"
+wait "\$enabled_soak_pid"
+wait "\$com_soak_hz_pid" || true
+ros2 topic echo --once /motor/tp_joint_state | tee "\$evidence_dir/state.after_enabled_soak.yaml"
+ros2 topic echo --once /motor/tp_motor_health | tee "\$evidence_dir/health.after_enabled_soak.yaml"
 
 tools/measure-stack-hwm.sh $(shell_quote "$elf") | tee "\$evidence_dir/stack-hwm.txt"
 # Set sample_only=false in evidence.env after the hardware run; rate and stack files are parsed automatically.
-tools/check-motor-m2-smoke-evidence.py "\$evidence_dir" --min-motor-state-hz $M2_MOTOR_STATE_MIN_HZ --max-motor-state-hz $M2_MOTOR_STATE_MAX_HZ --min-motor-health-hz $M2_MOTOR_HEALTH_MIN_HZ --max-motor-health-hz $M2_MOTOR_HEALTH_MAX_HZ
+tools/check-motor-m2-smoke-evidence.py "\$evidence_dir" --min-motor-state-hz $M2_MOTOR_STATE_MIN_HZ --max-motor-state-hz $M2_MOTOR_STATE_MAX_HZ --min-motor-health-hz $M2_MOTOR_HEALTH_MIN_HZ --max-motor-health-hz $M2_MOTOR_HEALTH_MAX_HZ --min-enabled-soak-target-hz $M2_MOTOR_ENABLED_SOAK_MIN_HZ --max-enabled-soak-target-hz $M2_MOTOR_ENABLED_SOAK_MAX_HZ
 EOF
 }
 
@@ -178,6 +203,9 @@ M2_MOTOR_SMOKE_EVIDENCE_DIR=$M2_MOTOR_EVIDENCE_DIR
 M2_MOTOR_SMOKE_STATE_PERIOD_MS=$M2_MOTOR_STATE_PERIOD_MS
 M2_MOTOR_SMOKE_HEALTH_PERIOD_MS=$M2_MOTOR_HEALTH_PERIOD_MS
 M2_MOTOR_SMOKE_REQUIRE_BUDGET_BAUDS=$M2_MOTOR_REQUIRE_BUDGET_BAUDS
+M2_MOTOR_SMOKE_ENABLED_SOAK_HZ=$M2_MOTOR_ENABLED_SOAK_HZ
+M2_MOTOR_SMOKE_ENABLED_SOAK_DURATION_S=$M2_MOTOR_ENABLED_SOAK_DURATION_S
+M2_MOTOR_SMOKE_ENABLED_SOAK_START_SEQ=$M2_MOTOR_ENABLED_SOAK_START_SEQ
 M2_MOTOR_SMOKE_STATE_RATE_TIMEOUT_S=$M2_MOTOR_STATE_RATE_TIMEOUT_S
 M2_MOTOR_SMOKE_HEALTH_RATE_TIMEOUT_S=$M2_MOTOR_HEALTH_RATE_TIMEOUT_S
 CHECK swd_status_ok
@@ -192,6 +220,9 @@ CHECK non_empty_frame_id_keeps_last_target_seq_at_previous_accepted_seq
 CHECK non_empty_frame_id_does_not_increment_targets_received_or_applied
 CHECK legal_target_after_reject_proves_executor_still_serves_topics
 CHECK motor_state_hz_and_com_status_hz_match_expected_decimation
+CHECK enabled_200hz_target_soak_received_and_applied_grow
+CHECK enabled_soak_last_target_seq_tracks_latest_seq
+CHECK com_status_hz_during_enabled_soak_stays_in_range
 CHECK stack_hwm_msp_heap_margin_recorded_before_default_memory_reduction
 CHECK 921600_is_comparison_only_when_static_budget_is_over_30_percent
 EOF
@@ -246,5 +277,6 @@ $(print_checklist)
 - Passing \`/com\` 10kHz/200Hz validation is not a substitute for this \`/motor\` topic smoke.
 - The non-empty \`header.frame_id\` command is a negative test. Do not count it as passing just because \`/motor/tp_joint_state\` still publishes: \`last_target_seq\` must remain at the previous accepted seq, \`targets_received/targets_applied\` must not increase because of the rejected target, and a later legal target must still be accepted.
 - The seq42/seq43/seq44 targets intentionally use \`control_mode=0\` so \`targets_applied\` is not naturally incremented by the enabled control loop during the negative frame_id check.
+- The enabled soak uses \`control_mode=1\` (ZERO_TORQUE) with empty \`frame_id\` and monotonic seq. It is the evidence for 200Hz target receive plus 10kHz control tick applied growth; do not substitute the disabled negative-test counters for this gate.
 - Do not reduce motor-enabled stack/linker reserve defaults until \`tools/measure-stack-hwm.sh\` and MSP/heap evidence are recorded on the motor-enabled firmware.
 EOF
