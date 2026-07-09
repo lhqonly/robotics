@@ -18,6 +18,7 @@ tests=(
   "tools/test-com-validation-cycle.sh"
   "tools/test-start-overnight-com-watch.sh"
   "tools/test-overnight-watch-status.sh"
+  "tools/test-overnight-watch-contract.sh"
   "tools/test-pc-scheduler-sweep.sh"
   "tools/test-pc-latest-scheduler-sweep.sh"
   "tools/test-recommend-staircase-command.sh"
