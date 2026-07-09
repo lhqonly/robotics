@@ -46,7 +46,8 @@ def is_zero(row: dict[str, str], name: str) -> bool:
 
 
 def row_matches(row: dict[str, str], loop_hz: int, baud: int,
-                pc_launch_prefix: str | None) -> bool:
+                pc_launch_prefix: str | None,
+                pc_executor_threads: int | None) -> bool:
     if field(row, "loop_hz") != str(loop_hz):
         return False
     if field(row, "baud") != str(baud):
@@ -58,6 +59,11 @@ def row_matches(row: dict[str, str], loop_hz: int, baud: int,
     if field(row, "status_every_n") != "40":
         return False
     if pc_launch_prefix is not None and field(row, "pc_launch_prefix") != pc_launch_prefix:
+        return False
+    if (
+        pc_executor_threads is not None
+        and field(row, "pc_executor_threads") != str(pc_executor_threads)
+    ):
         return False
     return True
 
@@ -92,6 +98,7 @@ def main() -> int:
     parser.add_argument("--loops", type=parse_int_list, default=parse_int_list("1000 2000 5000 10000"))
     parser.add_argument("--bauds", type=parse_int_list, default=parse_int_list("921600 2000000"))
     parser.add_argument("--pc-launch-prefix")
+    parser.add_argument("--pc-executor-threads", type=int)
     args = parser.parse_args()
 
     csv_path = args.csv or latest_csv()
@@ -110,11 +117,19 @@ def main() -> int:
         for baud in args.bauds:
             matches = [
                 row for row in rows
-                if row_matches(row, loop_hz, baud, args.pc_launch_prefix)
+                if row_matches(
+                    row,
+                    loop_hz,
+                    baud,
+                    args.pc_launch_prefix,
+                    args.pc_executor_threads,
+                )
             ]
             label = f"loop_hz={loop_hz},baud={baud}"
             if args.pc_launch_prefix is not None:
                 label += f",pc_launch_prefix={args.pc_launch_prefix}"
+            if args.pc_executor_threads is not None:
+                label += f",pc_executor_threads={args.pc_executor_threads}"
             if not matches:
                 failures.append(f"missing_required_stage({label})")
                 continue

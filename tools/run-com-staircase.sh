@@ -134,6 +134,7 @@ record_stage_metrics() {
   local pc_target_rate_hz pc_target_window_hz last_summary
   local pc_wire_gap_p95_ms pc_wire_gap_p99_ms pc_wire_gap_max_ms
   local pc_cmd_catchup_events pc_cmd_catchup_extra
+  local pc_config pc_executor_threads
   local wire_metrics wire_kbit_s wire_baud_util_pct tx_kbit_s rx_kbit_s
   local lost duplicate inflight qos_incompatibility
 
@@ -172,6 +173,9 @@ record_stage_metrics() {
     extract_com_perf_metric "$stage_log" pc_cmd_catchup_events)"
   pc_cmd_catchup_extra="$(
     extract_com_perf_metric "$stage_log" pc_cmd_catchup_extra)"
+  pc_config="$(grep -F '[com-perf] pc:' "$stage_log" 2>/dev/null |
+    tail -1 || true)"
+  pc_executor_threads="$(extract_key_value "$pc_config" executor_threads)"
   wire_metrics="$(extract_com_perf_metric "$stage_log" wire_metrics)"
   wire_kbit_s="$(extract_key_value "$wire_metrics" total_serial_kbit_s)"
   wire_baud_util_pct="$(extract_key_value "$wire_metrics" baud_util_pct)"
@@ -188,7 +192,7 @@ record_stage_metrics() {
     )"
   )"
 
-  record "METRICS $tag status_hz=$(value_or_na "$status_hz") sampler_hz=$(value_or_na "$sampler_hz") sampler_target_rx_hz=$(value_or_na "$sampler_target_rx_hz") sampler_p95_gap_s=$(value_or_na "$sampler_p95_gap_s") sampler_p99_gap_s=$(value_or_na "$sampler_p99_gap_s") sampler_max_gap_s=$(value_or_na "$sampler_max_gap_s") sampler_zero_gap_count=$(value_or_na "$sampler_zero_gap_count") sampler_seq_rate_hz=$(value_or_na "$sampler_seq_rate_hz") seq_delta_avg=$(value_or_na "$sampler_seq_delta_avg") seq_delta_min=$(value_or_na "$sampler_seq_delta_min") seq_delta_max=$(value_or_na "$sampler_seq_delta_max") pc_target_rate_hz=$(value_or_na "$pc_target_rate_hz") pc_target_window_hz=$(value_or_na "$pc_target_window_hz") pc_wire_gap_p95_ms=$(value_or_na "$pc_wire_gap_p95_ms") pc_wire_gap_p99_ms=$(value_or_na "$pc_wire_gap_p99_ms") pc_wire_gap_max_ms=$(value_or_na "$pc_wire_gap_max_ms") pc_cmd_catchup_events=$(value_or_na "$pc_cmd_catchup_events") pc_cmd_catchup_extra=$(value_or_na "$pc_cmd_catchup_extra") wire_kbit_s=$(value_or_na "$wire_kbit_s") wire_baud_util_pct=$(value_or_na "$wire_baud_util_pct") tx_kbit_s=$(value_or_na "$tx_kbit_s") rx_kbit_s=$(value_or_na "$rx_kbit_s") lost=$(value_or_na "$lost") duplicate=$(value_or_na "$duplicate") inflight=$(value_or_na "$inflight") qos_incompatibility=$(value_or_na "$qos_incompatibility")"
+  record "METRICS $tag status_hz=$(value_or_na "$status_hz") sampler_hz=$(value_or_na "$sampler_hz") sampler_target_rx_hz=$(value_or_na "$sampler_target_rx_hz") sampler_p95_gap_s=$(value_or_na "$sampler_p95_gap_s") sampler_p99_gap_s=$(value_or_na "$sampler_p99_gap_s") sampler_max_gap_s=$(value_or_na "$sampler_max_gap_s") sampler_zero_gap_count=$(value_or_na "$sampler_zero_gap_count") sampler_seq_rate_hz=$(value_or_na "$sampler_seq_rate_hz") seq_delta_avg=$(value_or_na "$sampler_seq_delta_avg") seq_delta_min=$(value_or_na "$sampler_seq_delta_min") seq_delta_max=$(value_or_na "$sampler_seq_delta_max") pc_target_rate_hz=$(value_or_na "$pc_target_rate_hz") pc_target_window_hz=$(value_or_na "$pc_target_window_hz") pc_wire_gap_p95_ms=$(value_or_na "$pc_wire_gap_p95_ms") pc_wire_gap_p99_ms=$(value_or_na "$pc_wire_gap_p99_ms") pc_wire_gap_max_ms=$(value_or_na "$pc_wire_gap_max_ms") pc_cmd_catchup_events=$(value_or_na "$pc_cmd_catchup_events") pc_cmd_catchup_extra=$(value_or_na "$pc_cmd_catchup_extra") pc_executor_threads=$(value_or_na "$pc_executor_threads") wire_kbit_s=$(value_or_na "$wire_kbit_s") wire_baud_util_pct=$(value_or_na "$wire_baud_util_pct") tx_kbit_s=$(value_or_na "$tx_kbit_s") rx_kbit_s=$(value_or_na "$rx_kbit_s") lost=$(value_or_na "$lost") duplicate=$(value_or_na "$duplicate") inflight=$(value_or_na "$inflight") qos_incompatibility=$(value_or_na "$qos_incompatibility")"
 }
 
 check_stlink_ready() {

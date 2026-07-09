@@ -509,8 +509,8 @@ tools/check-com-staircase-contract.py log/com-staircase/<tag>.metrics.csv
 
 表格会从 stage 名拆出 `loop_hz`、`baud`、`timer_irq_priority`、
 `uart_read_poll_yields`、`executor_spin_timeout_us`、`pc_cmd_hz`、`qos`、
-`status_every_n`，并从 summary 里带出 `pc_launch_prefix`，方便横向比较
-1/2/5/10kHz、921600/2Mbps、TIM2 IRQ
+`status_every_n`，并从 summary 里带出 `pc_launch_prefix` 和
+`pc_executor_threads`，方便横向比较 1/2/5/10kHz、921600/2Mbps、TIM2 IRQ
 优先级、UART polling 和 executor spin timeout 候选。
 表格也会带 `pc_cmd_catchup_events` / `pc_cmd_catchup_extra`，方便比较不同
 PC 调度策略是否减少靠 burst 追平 200Hz 的情况。
