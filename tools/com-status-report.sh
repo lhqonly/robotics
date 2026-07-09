@@ -19,6 +19,7 @@ MICROROS_META="$ROOT/firmware/f103-microros/colcon.meta"
 MICROROS_UXR_CONFIG="$ROOT/firmware/f103-microros/ThirdParty/microros/include/uxr/client/config.h"
 MICROROS_RMW_CONFIG="$ROOT/firmware/f103-microros/ThirdParty/microros/include/rmw_microxrcedds_c/config.h"
 COM_STATUS_PROBE_STLINK="${COM_STATUS_PROBE_STLINK:-1}"
+COM_STATUS_LONG_WATCH_MIN_SAMPLES="${COM_STATUS_LONG_WATCH_MIN_SAMPLES:-6}"
 
 mkdir -p "$OUTDIR"
 
@@ -28,6 +29,29 @@ latest_file() {
   find "$dir" -maxdepth 1 -type f -name "$pattern" -printf '%T@ %p\n' 2>/dev/null |
     sort -nr |
     awk 'NR == 1 {sub(/^[^ ]+ /, ""); print; exit}' || true
+}
+
+watch_sample_count() {
+  local summary="$1"
+  if [ ! -f "$summary" ]; then
+    printf '0'
+    return 0
+  fi
+  awk '/^- smoke samples:/ {print $4; found = 1; exit} END {if (!found) print 0}' "$summary"
+}
+
+latest_watch_summary_min_samples() {
+  local min_samples="${1:-1}"
+  local sample_count
+  find "$WATCH_LOGDIR" -maxdepth 1 -type f -name '*.summary.md' -printf '%T@ %p\n' 2>/dev/null |
+    sort -nr |
+    while read -r _ path; do
+      sample_count="$(watch_sample_count "$path")"
+      if [ "$sample_count" -ge "$min_samples" ] 2>/dev/null; then
+        printf '%s\n' "$path"
+        break
+      fi
+    done
 }
 
 relpath() {
@@ -285,21 +309,49 @@ latest_watch_log=""
 if [ -n "$latest_watch_summary" ]; then
   latest_watch_log="${latest_watch_summary%.summary.md}.log"
 fi
+long_watch_summary="$(latest_watch_summary_min_samples "$COM_STATUS_LONG_WATCH_MIN_SAMPLES")"
+long_watch_log=""
+if [ -n "$long_watch_summary" ]; then
+  long_watch_log="${long_watch_summary%.summary.md}.log"
+fi
+baseline_watch_summary="${long_watch_summary:-$latest_watch_summary}"
+baseline_watch_log="${long_watch_log:-$latest_watch_log}"
 latest_scheduler_metrics="$(latest_file "$SCHED_LOGDIR" '*.metrics.md')"
 latest_staircase_metrics="$(latest_file "$STAIRCASE_LOGDIR" '*.metrics.md')"
 latest_staircase_summary="$(latest_file "$STAIRCASE_LOGDIR" '*.summary.log')"
 ram_categories="$(firmware_ram_categories)"
 ram_category_symbols="$(firmware_ram_category_symbols)"
 microros_config="$(microros_config_summary)"
-overnight_live_summary=""
+latest_watch_live_summary=""
 if [ -n "$latest_watch_log" ] && [ -f "$latest_watch_log" ] &&
     [ -x "$ROOT/tools/summarize-overnight-com-watch.sh" ]; then
-  overnight_live_summary="$(cd "$ROOT" && tools/summarize-overnight-com-watch.sh "$latest_watch_log" 2>/dev/null || true)"
+  latest_watch_live_summary="$(cd "$ROOT" && tools/summarize-overnight-com-watch.sh "$latest_watch_log" 2>/dev/null || true)"
+fi
+latest_watch_summary_source="$latest_watch_live_summary"
+if [ -z "$latest_watch_summary_source" ] && [ -n "$latest_watch_summary" ] &&
+    [ -f "$latest_watch_summary" ]; then
+  latest_watch_summary_source="$(cat "$latest_watch_summary")"
+fi
+latest_watch_counts=""
+latest_watch_fail_count=""
+latest_watch_reasons=""
+if [ -n "$latest_watch_summary_source" ]; then
+  latest_watch_counts="$(printf '%s\n' "$latest_watch_summary_source" |
+    awk -F': ' '/PASS\/WARN\/FAIL\/INFO/ {print $2; exit}')"
+  latest_watch_fail_count="$(printf '%s\n' "$latest_watch_counts" |
+    awk -F/ 'NF >= 3 {print $3}')"
+  latest_watch_reasons="$(printf '%s\n' "$latest_watch_summary_source" |
+    awk -F': ' '/^- reasons:/ {print $2; exit}')"
+fi
+overnight_live_summary=""
+if [ -n "$baseline_watch_log" ] && [ -f "$baseline_watch_log" ] &&
+    [ -x "$ROOT/tools/summarize-overnight-com-watch.sh" ]; then
+  overnight_live_summary="$(cd "$ROOT" && tools/summarize-overnight-com-watch.sh "$baseline_watch_log" 2>/dev/null || true)"
 fi
 overnight_summary_source="$overnight_live_summary"
-if [ -z "$overnight_summary_source" ] && [ -n "$latest_watch_summary" ] &&
-    [ -f "$latest_watch_summary" ]; then
-  overnight_summary_source="$(cat "$latest_watch_summary")"
+if [ -z "$overnight_summary_source" ] && [ -n "$baseline_watch_summary" ] &&
+    [ -f "$baseline_watch_summary" ]; then
+  overnight_summary_source="$(cat "$baseline_watch_summary")"
 fi
 overnight_counts=""
 overnight_fail_count=""
@@ -474,7 +526,8 @@ serial_users="$(serial_lsof)"
   echo "- stack sweep：$(relpath "$latest_stack_md")"
   echo "- spin timeout sweep：$(relpath "$latest_spin_timeout_md")"
   echo "- linker reserve sweep：$(relpath "$latest_linker_reserve_md")"
-  echo "- overnight summary：$(relpath "$latest_watch_summary")"
+  echo "- latest watch summary：$(relpath "$latest_watch_summary")"
+  echo "- long overnight summary：$(relpath "$baseline_watch_summary")"
   echo "- PC scheduler sweep：$(relpath "$latest_scheduler_metrics")"
   echo "- staircase metrics：$(relpath "$latest_staircase_metrics")"
   echo "- staircase summary：$(relpath "$latest_staircase_summary")"
@@ -503,9 +556,34 @@ serial_users="$(serial_lsof)"
     echo "- missing wire budget: no usable .wire.log"
     echo
   fi
+  if [ -n "$latest_watch_summary" ] && [ "$latest_watch_summary" != "$baseline_watch_summary" ]; then
+    echo "## 最近 watch/no-flash 趋势"
+    echo
+    echo "来源：$(relpath "$latest_watch_log")"
+    echo
+    if [ -n "$latest_watch_live_summary" ]; then
+      echo "### Verdict Summary"
+      echo
+      printf '%s\n' "$latest_watch_live_summary" |
+        markdown_section_body_from_text "## Verdict Summary"
+      echo
+      echo "### Failure Events"
+      echo
+      printf '%s\n' "$latest_watch_live_summary" |
+        markdown_section_body_from_text "## Failure Events"
+      echo
+      printf '%s\n' "$latest_watch_live_summary" |
+        markdown_table_from_text '| Tag |'
+    else
+      markdown_table_from_prefix "$latest_watch_summary" '| Tag |'
+    fi
+    echo
+    echo "说明：这个 section 只代表最近一次 watch，可能是 mini-watch；长时间 baseline 见下一节。"
+    echo
+  fi
   echo "## overnight no-flash 趋势"
   echo
-  echo "来源：$(relpath "$latest_watch_log")"
+  echo "来源：$(relpath "$baseline_watch_log")"
   echo
   if [ -n "$overnight_live_summary" ]; then
     echo "### Verdict Summary"
@@ -521,7 +599,7 @@ serial_users="$(serial_lsof)"
     printf '%s\n' "$overnight_live_summary" |
       markdown_table_from_text '| Tag |'
   else
-    markdown_table_from_prefix "$latest_watch_summary" '| Tag |'
+    markdown_table_from_prefix "$baseline_watch_summary" '| Tag |'
   fi
   echo
   echo "## PC 主机调度 sweep"
@@ -635,6 +713,10 @@ serial_users="$(serial_lsof)"
   echo "- 当前 ELF 中 \`rosidl_type_metadata\` 约 2.8KB RAM，是新的内存优化重点；但 \`ROSIDL_TYPESUPPORT_SINGLE_TYPESUPPORT\` 曾是 T5 HardFault/agent 兼容修复的一部分，需用独立 libmicroros rebuild 矩阵验证后再改默认。"
   echo "- DWT snapshot 算法已有 host-side 模型测试 \`tools/test-dwt-snapshot-model.sh\`，但真实 stamp 单调性仍需 SWD 恢复后做 >60s 静默恢复对抗。"
   echo "- idle stack 96 words、micro-ROS stack 704/640 words 目前是静态候选，必须上板用 \`tools/measure-stack-hwm.sh\` 复测后再设为默认。"
+  if [ -n "$latest_watch_fail_count" ] && [ "$latest_watch_fail_count" -gt 0 ] 2>/dev/null &&
+      [ -n "$latest_watch_summary" ] && [ "$latest_watch_summary" != "$baseline_watch_summary" ]; then
+    echo "- 最近 watch/no-flash 短测也有失败样本：PASS/WARN/FAIL/INFO=${latest_watch_counts:-unknown}，reasons=${latest_watch_reasons:-unknown}。短测不能替代 overnight baseline，但可作为调度/链路候选的快速筛查。"
+  fi
   if [ -n "$overnight_fail_count" ] && [ "$overnight_fail_count" -gt 0 ] 2>/dev/null; then
     echo "- overnight reliable/full-echo no-flash 仍有失败样本：PASS/WARN/FAIL/INFO=${overnight_counts:-unknown}，reasons=${overnight_reasons:-unknown}。这类长尾需继续用 sampler + PC publish gap + LinkHealth 交叉判断，并优先做 \`taskset\` 整夜对比。"
   fi

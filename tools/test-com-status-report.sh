@@ -42,6 +42,10 @@ assert_contains "$report" "generated_stream_history=in:2/out:2" \
   "generated stream history"
 assert_contains "$report" "## overnight no-flash 趋势" \
   "overnight section"
+assert_contains "$report" "latest watch summary" \
+  "latest watch summary source"
+assert_contains "$report" "long overnight summary" \
+  "long overnight summary source"
 assert_contains "$report" "## staircase 阶梯汇总" \
   "staircase section"
 if find "$ROOT/log/com-perf" -maxdepth 1 -type f -name '*.wire.log' | grep -q .; then
