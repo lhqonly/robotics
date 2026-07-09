@@ -396,7 +396,9 @@ tools/recommend-staircase-command.sh
 
 它会读取最新 `log/pc-scheduler-sweep/*.metrics.csv`，选出 `pc_wire_gap_p99_ms`
 最小、且 catch-up 最少的 case，例如 `threads4||4`，并输出带
-`STAIRCASE_PC_LAUNCH_PREFIX_CASES=...` 的 `tools/run-com-staircase.sh` 命令。
+`STAIRCASE_PC_LAUNCH_PREFIX_CASES=...` 的 `tools/run-com-staircase.sh` 命令。推荐命令
+还会附带 `STAIRCASE_EXECUTOR_SPIN_TIMEOUT_US='1000 100'`，用于上板比较默认
+executor 等待粒度和低延迟候选。
 这条命令仍必须等 `tools/diagnose-swd.sh` 显示 `SWD_STATUS=ok` 后再执行。
 
 `tools/diagnose-swd.sh` 只读检查 ST-LINK/SWD，不会 reset 或 flash。输出里

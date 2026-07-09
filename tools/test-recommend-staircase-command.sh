@@ -44,6 +44,8 @@ assert_contains "$out" "selected case: label=threads2 prefix=none executor_threa
   "selected case fields"
 assert_contains "$out" "STAIRCASE_BAUDS='921600 2000000'" \
   "default baud matrix"
+assert_contains "$out" "STAIRCASE_EXECUTOR_SPIN_TIMEOUT_US='1000 100'" \
+  "default spin timeout comparison"
 assert_contains "$out" "'default|'" \
   "default PC case included"
 assert_contains "$out" "'threads2||2'" \

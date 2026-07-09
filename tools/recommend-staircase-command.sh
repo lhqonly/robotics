@@ -7,6 +7,7 @@ SCHED_LOGDIR="$ROOT/log/pc-scheduler-sweep"
 SCHEDULER_CSV="${SCHEDULER_CSV:-}"
 SUMMARY="${SUMMARY:-}"
 STAIRCASE_BAUDS="${STAIRCASE_BAUDS:-921600 2000000}"
+STAIRCASE_EXECUTOR_SPIN_TIMEOUT_US="${STAIRCASE_EXECUTOR_SPIN_TIMEOUT_US:-1000 100}"
 TAG_PREFIX="${TAG_PREFIX:-staircase_$(date +%Y%m%d_%H%M)}"
 FORMAT="${FORMAT:-markdown}"
 
@@ -151,6 +152,8 @@ printf -- '- selected gaps: p99_ms=%s max_ms=%s catchup=%s/%s\n\n' \
 printf 'Gate: run `tools/diagnose-swd.sh` first; only run this staircase when `SWD_STATUS=ok`.\n\n'
 printf '```bash\n'
 printf 'STAIRCASE_BAUDS=%s \\\n' "$(shell_quote "$STAIRCASE_BAUDS")"
+printf 'STAIRCASE_EXECUTOR_SPIN_TIMEOUT_US=%s \\\n' \
+  "$(shell_quote "$STAIRCASE_EXECUTOR_SPIN_TIMEOUT_US")"
 printf 'STAIRCASE_PC_LAUNCH_PREFIX_CASES="$(printf '\''%%s\\n'\'' '
 for staircase_case in "${staircase_cases[@]}"; do
   printf '%s ' "$(shell_quote "$staircase_case")"
