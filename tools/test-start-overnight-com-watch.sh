@@ -19,6 +19,14 @@ assert_contains() {
 }
 
 bash -n "$ROOT/tools/start-overnight-com-watch.sh"
+bash -n "$ROOT/tools/overnight-com-watch.sh"
+
+assert_contains "$ROOT/tools/overnight-com-watch.sh" \
+  'SERIAL_LOCK_WAIT_SECONDS="${SERIAL_LOCK_WAIT_SECONDS:-120}"' \
+  "overnight watcher waits for serial lock by default"
+assert_contains "$ROOT/tools/overnight-com-watch.sh" \
+  'SERIAL_LOCK_WAIT_SECONDS="$SERIAL_LOCK_WAIT_SECONDS"' \
+  "overnight watcher passes serial lock wait to run-com-perf"
 
 dry_out="$TMPDIR/dry.txt"
 DRY_RUN=1 LOGDIR="$TMPDIR/logs" \
