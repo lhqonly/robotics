@@ -61,6 +61,14 @@ def numeric_between(row: dict[str, str], name: str,
     return minimum <= value <= maximum
 
 
+def optional_numeric_lte(row: dict[str, str],
+                         name: str,
+                         maximum: float | None) -> bool:
+    if maximum is None:
+        return True
+    return numeric_lte(row, name, maximum)
+
+
 def row_matches(row: dict[str, str], loop_hz: int, baud: int,
                 pc_launch_prefix: str | None,
                 pc_executor_threads: int | None,
@@ -98,7 +106,8 @@ def row_passes(row: dict[str, str],
                min_pc_target_window_hz: float,
                max_pc_target_window_hz: float,
                max_pc_wire_gap_p99_ms: float,
-               max_pc_wire_gap_max_ms: float) -> bool:
+               max_pc_wire_gap_max_ms: float,
+               max_wire_baud_util_pct: float | None) -> bool:
     return (
         field(row, "verdict") == "PASS"
         and numeric_between(
@@ -111,6 +120,9 @@ def row_passes(row: dict[str, str],
         )
         and numeric_lte(row, "pc_wire_gap_p99_ms", max_pc_wire_gap_p99_ms)
         and numeric_lte(row, "pc_wire_gap_max_ms", max_pc_wire_gap_max_ms)
+        and optional_numeric_lte(
+            row, "wire_baud_util_pct", max_wire_baud_util_pct
+        )
         and is_zero(row, "lost")
         and is_zero(row, "duplicate")
         and is_zero(row, "qos_incompatibility")
@@ -129,6 +141,7 @@ def describe_row(row: dict[str, str]) -> str:
         "pc_wire_gap_max_ms",
         "pc_cmd_catchup_events",
         "pc_cmd_catchup_extra",
+        "wire_baud_util_pct",
         "lost",
         "duplicate",
         "qos_incompatibility",
@@ -151,6 +164,7 @@ def main() -> int:
     parser.add_argument("--max-rate-ratio", type=float, default=1.10)
     parser.add_argument("--max-pc-p99-gap-ratio", type=float, default=4.0)
     parser.add_argument("--max-pc-max-gap-ratio", type=float, default=10.0)
+    parser.add_argument("--max-wire-baud-util-pct", type=float)
     args = parser.parse_args()
 
     if args.expected_pc_cmd_hz <= 0:
@@ -161,6 +175,12 @@ def main() -> int:
         return 1
     if args.max_pc_p99_gap_ratio <= 0 or args.max_pc_max_gap_ratio <= 0:
         print("FAIL com_staircase_contract reason=invalid_gap_ratio")
+        return 1
+    if (
+        args.max_wire_baud_util_pct is not None
+        and args.max_wire_baud_util_pct <= 0
+    ):
+        print("FAIL com_staircase_contract reason=invalid_wire_baud_util_pct")
         return 1
 
     csv_path = args.csv or latest_csv()
@@ -217,6 +237,7 @@ def main() -> int:
                     max_pc_target_window_hz,
                     max_pc_wire_gap_p99_ms,
                     max_pc_wire_gap_max_ms,
+                    args.max_wire_baud_util_pct,
                 )
             ]
             if not passing:
@@ -244,6 +265,7 @@ def main() -> int:
         f"pc_target_window_hz_range={min_pc_target_window_hz:g}..{max_pc_target_window_hz:g} "
         f"pc_wire_gap_p99_ms_max={max_pc_wire_gap_p99_ms:g} "
         f"pc_wire_gap_max_ms_max={max_pc_wire_gap_max_ms:g} "
+        f"max_wire_baud_util_pct={args.max_wire_baud_util_pct if args.max_wire_baud_util_pct is not None else 'NA'} "
         f"max_pc_catchup_events={args.max_pc_catchup_events:g} "
         f"max_pc_catchup_extra={args.max_pc_catchup_extra:g}"
     )

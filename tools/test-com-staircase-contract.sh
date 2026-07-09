@@ -24,10 +24,11 @@ write_row() {
   local pc_target_window_hz="${10:-200.0}"
   local pc_gap_p99_ms="${11:-6.0}"
   local pc_gap_max_ms="${12:-8.0}"
-  printf 'latest_%shz_%sbaud_irqp4_poll0_spin1000us_200hz_be_n40%s,%s,%s,%s,%s,4,0,1000,200,best_effort,40,taskset -c 2,2,5,5,%s,0.050,0.060,0.080,0,5,40,40,40,200.0,%s,5.0,%s,%s,%s,%s,94.0,10.2,48,46,0,0,0,%s\n' \
+  local wire_baud_util_pct="${13:-10.2}"
+  printf 'latest_%shz_%sbaud_irqp4_poll0_spin1000us_200hz_be_n40%s,%s,%s,%s,%s,4,0,1000,200,best_effort,40,taskset -c 2,2,5,5,%s,0.050,0.060,0.080,0,5,40,40,40,200.0,%s,5.0,%s,%s,%s,%s,94.0,%s,48,46,0,0,0,%s\n' \
     "$loop_hz" "$baud" "$suffix" "$verdict" "$reason" "$loop_hz" "$baud" \
     "$target_rx_hz" "$pc_target_window_hz" "$pc_gap_p99_ms" "$pc_gap_max_ms" \
-    "$catchup_events" "$catchup_extra" "$qos_bad"
+    "$catchup_events" "$catchup_extra" "$wire_baud_util_pct" "$qos_bad"
 }
 
 assert_contains() {
@@ -57,6 +58,8 @@ assert_contains "$out" "target_rx_hz_range=180..220" \
   "default target receive rate range"
 assert_contains "$out" "pc_wire_gap_p99_ms_max=20" \
   "default PC p99 gap gate"
+assert_contains "$out" "max_wire_baud_util_pct=NA" \
+  "default wire baud utilization gate is optional"
 assert_contains "$out" "max_pc_catchup_events=0" "default catch-up event gate"
 assert_contains "$out" "max_pc_catchup_extra=0" "default catch-up extra gate"
 
@@ -234,5 +237,41 @@ if [ "$rc" -eq 0 ]; then
 fi
 assert_contains "$out" "invalid_expected_pc_cmd_hz" \
   "invalid expected PC rate reason"
+
+wire_util_csv="$TMPDIR/wire_util.csv"
+write_header >"$wire_util_csv"
+for loop_hz in 1000 2000 5000 10000; do
+  for baud in 921600 2000000; do
+    if [ "$loop_hz" = "10000" ] && [ "$baud" = "921600" ]; then
+      write_row "$loop_hz" "$baud" "" "PASS" "-" "0" "0" "0" "200.0" "200.0" \
+        "6.0" "8.0" "52.0" >>"$wire_util_csv"
+    else
+      write_row "$loop_hz" "$baud" >>"$wire_util_csv"
+    fi
+  done
+done
+
+out="$("$ROOT/tools/check-com-staircase-contract.py" "$wire_util_csv")"
+assert_contains "$out" "PASS com_staircase_contract" \
+  "wire baud utilization is optional by default"
+
+set +e
+out="$("$ROOT/tools/check-com-staircase-contract.py" "$wire_util_csv" \
+  --max-wire-baud-util-pct 30 2>&1)"
+rc=$?
+set -e
+if [ "$rc" -eq 0 ]; then
+  echo "FAIL: high wire utilization should fail when gate is set" >&2
+  exit 1
+fi
+assert_contains "$out" "wire_baud_util_pct=52.0" \
+  "wire baud utilization detail"
+
+out="$("$ROOT/tools/check-com-staircase-contract.py" "$wire_util_csv" \
+  --max-wire-baud-util-pct 60)"
+assert_contains "$out" "PASS com_staircase_contract" \
+  "wire baud utilization gate can be relaxed"
+assert_contains "$out" "max_wire_baud_util_pct=60.0" \
+  "wire baud utilization gate is reported"
 
 echo "PASS: communication staircase contract tests"

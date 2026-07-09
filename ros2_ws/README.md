@@ -520,7 +520,9 @@ tools/check-com-staircase-contract.py log/com-staircase/<tag>.metrics.csv \
 靠 burst 补发追平 200Hz 的样本，也会拒绝假 `PASS` 但实际接收率或 PC gap
 不达标的行；如果只是做探索对比，可以显式加 `--max-pc-catchup-events` /
 `--max-pc-catchup-extra`、`--max-pc-p99-gap-ratio` /
-`--max-pc-max-gap-ratio` 等参数放宽。
+`--max-pc-max-gap-ratio` 等参数放宽。若阶段采集了 wire metrics，还可以加
+`--max-wire-baud-util-pct 30` 一类门槛，把 921600/2Mbps 的串口占用收益纳入
+同一个验收合同。
 如果当前 SWD 不可用、只有 no-flash fallback 表，这个 contract 会明确
 `FAIL missing_required_stage(...)`，不能当作上板矩阵完成。
 
