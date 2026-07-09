@@ -43,6 +43,8 @@ fi
 
 cmd_line="$(grep 'link-health summary' "$cmd_log" | tail -1 || true)"
 sampler_line="$(grep 'status_sampler:' "$sampler_log" | tail -1 || true)"
+qos_incompatibility="$(grep -E 'incompatible QoS|requesting incompatible QoS|Last incompatible policy' "$cmd_log" |
+  tail -1 || true)"
 if [ -z "$cmd_line" ] || [ -z "$sampler_line" ]; then
   echo "FAIL tag=$TAG reason=missing_summary_line" >&2
   exit 1
@@ -79,6 +81,10 @@ add_reason() {
     reasons="$reasons;$1"
   fi
 }
+
+if [ -n "$qos_incompatibility" ]; then
+  add_reason "qos_incompatible"
+fi
 
 require_number() {
   local value="$1"
@@ -136,8 +142,8 @@ if [ "$STATUS_EVERY_N" -eq 1 ] 2>/dev/null &&
 fi
 
 if [ -n "$reasons" ]; then
-  echo "FAIL tag=$TAG reason=$reasons expected_cmd_hz=$expected_cmd_hz expected_status_hz=$expected_status_hz pc_p99_limit_ms=$pc_p99_limit_ms pc_max_limit_ms=$pc_max_limit_ms pc_target_window_hz=${pc_target_window_hz:-NA} sampler_hz=${sampler_hz:-NA} pc_wire_gap_p99_ms=${pc_wire_gap_p99_ms:-NA} pc_wire_gap_max_ms=${pc_wire_gap_max_ms:-NA} lost=${lost:-NA} duplicate=${duplicate:-NA}"
+  echo "FAIL tag=$TAG reason=$reasons expected_cmd_hz=$expected_cmd_hz expected_status_hz=$expected_status_hz pc_p99_limit_ms=$pc_p99_limit_ms pc_max_limit_ms=$pc_max_limit_ms pc_target_window_hz=${pc_target_window_hz:-NA} sampler_hz=${sampler_hz:-NA} pc_wire_gap_p99_ms=${pc_wire_gap_p99_ms:-NA} pc_wire_gap_max_ms=${pc_wire_gap_max_ms:-NA} lost=${lost:-NA} duplicate=${duplicate:-NA} qos_incompatibility=${qos_incompatibility:-none}"
   exit 1
 fi
 
-echo "PASS tag=$TAG expected_cmd_hz=$expected_cmd_hz expected_status_hz=$expected_status_hz pc_p99_limit_ms=$pc_p99_limit_ms pc_max_limit_ms=$pc_max_limit_ms pc_target_window_hz=$pc_target_window_hz sampler_hz=$sampler_hz pc_wire_gap_p99_ms=$pc_wire_gap_p99_ms pc_wire_gap_max_ms=$pc_wire_gap_max_ms lost=$lost duplicate=$duplicate"
+echo "PASS tag=$TAG expected_cmd_hz=$expected_cmd_hz expected_status_hz=$expected_status_hz pc_p99_limit_ms=$pc_p99_limit_ms pc_max_limit_ms=$pc_max_limit_ms pc_target_window_hz=$pc_target_window_hz sampler_hz=$sampler_hz pc_wire_gap_p99_ms=$pc_wire_gap_p99_ms pc_wire_gap_max_ms=$pc_wire_gap_max_ms lost=$lost duplicate=$duplicate qos_incompatibility=none"

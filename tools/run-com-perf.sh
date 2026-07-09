@@ -105,6 +105,15 @@ extract_metric() {
   printf '%s\n' "$line" | tr ' ' '\n' | awk -F= -v k="$key" '$1 == k {print $2}' | tail -1
 }
 
+qos_incompatibility_from_log() {
+  local file="$1"
+  if [ ! -f "$file" ]; then
+    return 0
+  fi
+  grep -E 'incompatible QoS|requesting incompatible QoS|Last incompatible policy' "$file" |
+    tail -1 || true
+}
+
 graph_snapshot() {
   {
     echo "--- $1 ---"
@@ -357,6 +366,7 @@ wire_gap_max_ms="$(extract_metric "$summary" wire_gap_max_ms)"
 lost="$(extract_metric "$summary" lost)"
 duplicate="$(extract_metric "$summary" duplicate)"
 inflight="$(extract_metric "$summary" inflight)"
+qos_incompatibility="$(qos_incompatibility_from_log "$CMD_LOG")"
 
 wire_metrics=""
 case "$WIRE_STATS" in
@@ -413,6 +423,7 @@ echo "[com-perf] pc_wire_gap_max_ms=${wire_gap_max_ms:-NA}"
 echo "[com-perf] lost=${lost:-NA}"
 echo "[com-perf] duplicate=${duplicate:-NA}"
 echo "[com-perf] inflight=${inflight:-NA}"
+echo "[com-perf] qos_incompatibility=${qos_incompatibility:-none}"
 echo "[com-perf] wire_metrics=${wire_metrics:-NA}"
 echo "[com-perf] last_summary=${summary:-NA}"
 echo "[com-perf] sampler_summary=${sampler_summary:-NA}"
@@ -447,6 +458,10 @@ if [ "$REQUIRE_CORE_METRICS" = "1" ]; then
   fi
 fi
 if [ "$REQUIRE_HEALTH_PASS" = "1" ]; then
+  if [ -n "$qos_incompatibility" ]; then
+    echo "[com-perf] ERROR: QoS incompatibility detected: $qos_incompatibility" >&2
+    validation_failed=1
+  fi
   health_rate="$sampler_hz"
   health_rate_label="sampler_hz"
   if [ "$TRACKING_MODE" = "sampled" ] ||

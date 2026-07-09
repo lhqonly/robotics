@@ -29,6 +29,10 @@ write_tag pass200 200.000 12.0 30.0 0 0 200.000
 write_tag slow_gap 200.000 21.0 30.0 0 0 200.000
 write_tag lost_one 200.000 12.0 30.0 1 0 200.000
 write_tag status40 200.000 12.0 30.0 0 0 5.000
+write_tag qos_bad 200.000 12.0 30.0 0 0 200.000
+printf '%s\n' \
+  "[node_com_cmd] [WARN] [1.0] [node_com_cmd]: New subscription discovered on topic '/com/tp_cmd_heartbeat', requesting incompatible QoS. No messages will be sent to it. Last incompatible policy: RELIABILITY" \
+  >>"$TMPDIR/com-perf/qos_bad.cmd.log"
 
 pass_out="$(LOGDIR="$TMPDIR/com-perf" EXPECTED_CMD_RATE_HZ=200 \
   "$ROOT/tools/check-com-perf-contract.sh" pass200)"
@@ -53,6 +57,15 @@ if LOGDIR="$TMPDIR/com-perf" EXPECTED_CMD_RATE_HZ=200 \
   exit 1
 fi
 grep -Fq 'lost_high' "$TMPDIR/contract.out"
+
+if LOGDIR="$TMPDIR/com-perf" EXPECTED_CMD_RATE_HZ=200 \
+    "$ROOT/tools/check-com-perf-contract.sh" qos_bad >"$TMPDIR/contract.out" 2>&1; then
+  echo "ERROR: expected qos_bad to fail" >&2
+  cat "$TMPDIR/contract.out" >&2
+  exit 1
+fi
+grep -Fq 'qos_incompatible' "$TMPDIR/contract.out"
+grep -Fq 'Last incompatible policy: RELIABILITY' "$TMPDIR/contract.out"
 
 status40_out="$(LOGDIR="$TMPDIR/com-perf" EXPECTED_CMD_RATE_HZ=200 STATUS_EVERY_N=40 \
   "$ROOT/tools/check-com-perf-contract.sh" status40)"

@@ -31,6 +31,8 @@ assert_contains "$SCRIPT" 'SUMMARY_PERIOD_S=5.0' \
   "latest-target summary period auto-default"
 assert_contains "$SCRIPT" 'LINK_HEALTH_PERIOD_S=5.0' \
   "latest-target link health period auto-default"
+assert_contains "$SCRIPT" 'qos_incompatibility=' \
+  "QoS incompatibility metric output"
 
 latest_config="$(
   PRINT_CONFIG_ONLY=1 \
