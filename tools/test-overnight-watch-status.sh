@@ -41,6 +41,10 @@ WATCH_LOGDIR="$logdir" PS_SNAPSHOT="$TMPDIR/ps.txt" NOW_EPOCH=1783574000 \
   "$ROOT/tools/overnight-watch-status.sh" >"$out"
 assert_contains "$out" "pid=123 elapsed_s=456 tag=night_a samples=1" \
   "active watcher identity"
+assert_contains "$out" "freshness=fresh" \
+  "fresh watcher is marked fresh"
+assert_contains "$out" "sleep_s=1800" \
+  "sleep interval is parsed"
 assert_contains "$out" "next_wake_at=\"2026-07-09 13:32:20 +08\"" \
   "next wake is parsed"
 assert_contains "$out" "last_event=\"[2026-07-09 13:02:20 +08] sleep_s=1800 wake_at=2026-07-09 13:32:20 +08\"" \
@@ -54,5 +58,12 @@ WATCH_LOGDIR="$logdir" PS_SNAPSHOT="$TMPDIR/empty-ps.txt" \
   "$ROOT/tools/overnight-watch-status.sh" >"$empty"
 assert_contains "$empty" "none" \
   "no active watcher fallback"
+
+stale="$TMPDIR/stale.txt"
+WATCH_LOGDIR="$logdir" PS_SNAPSHOT="$TMPDIR/ps.txt" NOW_EPOCH=1783577000 \
+  WATCH_STALE_GRACE_SECONDS=60 \
+  "$ROOT/tools/overnight-watch-status.sh" >"$stale"
+assert_contains "$stale" "freshness=stale" \
+  "stale watcher is marked stale"
 
 echo "PASS: overnight watcher status tests"

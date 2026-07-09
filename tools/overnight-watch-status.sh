@@ -6,6 +6,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WATCH_LOGDIR="${WATCH_LOGDIR:-$ROOT/log/overnight-com-watch}"
 NOW_EPOCH="${NOW_EPOCH:-$(date +%s)}"
 PS_SNAPSHOT="${PS_SNAPSHOT:-}"
+WATCH_STALE_GRACE_SECONDS="${WATCH_STALE_GRACE_SECONDS:-300}"
 
 relpath() {
   local path="${1:-}"
@@ -36,6 +37,47 @@ file_age_s() {
     printf 'unknown'
   else
     printf '%s' "$((NOW_EPOCH - mtime))"
+  fi
+}
+
+sleep_interval_s() {
+  local log="$1"
+  if [ ! -f "$log" ]; then
+    printf 'unknown'
+    return 0
+  fi
+  awk '
+    /sleep_s=/ {
+      for (i = 1; i <= NF; i++) {
+        if ($i ~ /^sleep_s=/) {
+          split($i, a, "=")
+          sleep_s = a[2]
+        }
+      }
+    }
+    END {print sleep_s ? sleep_s : "unknown"}
+  ' "$log"
+}
+
+freshness_status() {
+  local age_s="$1"
+  local interval_s="$2"
+  if [ "$age_s" = "unknown" ]; then
+    printf 'unknown'
+    return 0
+  fi
+  if [ "$interval_s" = "unknown" ]; then
+    if [ "$age_s" -le "$WATCH_STALE_GRACE_SECONDS" ] 2>/dev/null; then
+      printf 'fresh'
+    else
+      printf 'unknown'
+    fi
+    return 0
+  fi
+  if [ "$age_s" -le "$((interval_s + WATCH_STALE_GRACE_SECONDS))" ] 2>/dev/null; then
+    printf 'fresh'
+  else
+    printf 'stale'
   fi
 }
 
@@ -80,13 +122,18 @@ while IFS= read -r line; do
   fi
   log="$WATCH_LOGDIR/$tag.log"
   summary="$WATCH_LOGDIR/$tag.summary.md"
-  printf 'pid=%s elapsed_s=%s tag=%s samples=%s log=%s log_age_s=%s next_wake_at="%s" last_event="%s" cmd=%s\n' \
+  log_age_s="$(file_age_s "$log")"
+  sleep_s="$(sleep_interval_s "$log")"
+  freshness="$(freshness_status "$log_age_s" "$sleep_s")"
+  printf 'pid=%s elapsed_s=%s tag=%s samples=%s freshness=%s log=%s log_age_s=%s sleep_s=%s next_wake_at="%s" last_event="%s" cmd=%s\n' \
     "$pid" \
     "$elapsed_s" \
     "$tag" \
     "$(sample_count "$summary")" \
+    "$freshness" \
     "$(relpath "$log")" \
-    "$(file_age_s "$log")" \
+    "$log_age_s" \
+    "$sleep_s" \
     "$(next_wake_at "$log")" \
     "$(last_log_event "$log")" \
     "$cmd"
@@ -94,5 +141,5 @@ while IFS= read -r line; do
 done < <(ps_input)
 
 if [ "$found" -eq 0 ]; then
-  echo 'none samples=0 log=- log_age_s=unknown next_wake_at="-" last_event="-"'
+  echo 'none samples=0 freshness=unknown log=- log_age_s=unknown sleep_s=unknown next_wake_at="-" last_event="-"'
 fi
