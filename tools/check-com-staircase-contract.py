@@ -47,7 +47,8 @@ def is_zero(row: dict[str, str], name: str) -> bool:
 
 def row_matches(row: dict[str, str], loop_hz: int, baud: int,
                 pc_launch_prefix: str | None,
-                pc_executor_threads: int | None) -> bool:
+                pc_executor_threads: int | None,
+                executor_spin_timeout_us: int | None) -> bool:
     if field(row, "loop_hz") != str(loop_hz):
         return False
     if field(row, "baud") != str(baud):
@@ -63,6 +64,11 @@ def row_matches(row: dict[str, str], loop_hz: int, baud: int,
     if (
         pc_executor_threads is not None
         and field(row, "pc_executor_threads") != str(pc_executor_threads)
+    ):
+        return False
+    if (
+        executor_spin_timeout_us is not None
+        and field(row, "executor_spin_timeout_us") != str(executor_spin_timeout_us)
     ):
         return False
     return True
@@ -99,6 +105,7 @@ def main() -> int:
     parser.add_argument("--bauds", type=parse_int_list, default=parse_int_list("921600 2000000"))
     parser.add_argument("--pc-launch-prefix")
     parser.add_argument("--pc-executor-threads", type=int)
+    parser.add_argument("--executor-spin-timeout-us", type=int)
     args = parser.parse_args()
 
     csv_path = args.csv or latest_csv()
@@ -123,6 +130,7 @@ def main() -> int:
                     baud,
                     args.pc_launch_prefix,
                     args.pc_executor_threads,
+                    args.executor_spin_timeout_us,
                 )
             ]
             label = f"loop_hz={loop_hz},baud={baud}"
@@ -130,6 +138,8 @@ def main() -> int:
                 label += f",pc_launch_prefix={args.pc_launch_prefix}"
             if args.pc_executor_threads is not None:
                 label += f",pc_executor_threads={args.pc_executor_threads}"
+            if args.executor_spin_timeout_us is not None:
+                label += f",executor_spin_timeout_us={args.executor_spin_timeout_us}"
             if not matches:
                 failures.append(f"missing_required_stage({label})")
                 continue

@@ -50,6 +50,10 @@ out="$("$ROOT/tools/check-com-staircase-contract.py" "$pass_csv" --pc-executor-t
 assert_contains "$out" "PASS com_staircase_contract" \
   "passing contract with executor thread filter"
 
+out="$("$ROOT/tools/check-com-staircase-contract.py" "$pass_csv" --executor-spin-timeout-us 1000)"
+assert_contains "$out" "PASS com_staircase_contract" \
+  "passing contract with executor spin timeout filter"
+
 set +e
 out="$("$ROOT/tools/check-com-staircase-contract.py" "$pass_csv" --pc-executor-threads 0 2>&1)"
 rc=$?
@@ -60,6 +64,17 @@ if [ "$rc" -eq 0 ]; then
 fi
 assert_contains "$out" "pc_executor_threads=0" \
   "executor thread filter labels missing stages"
+
+set +e
+out="$("$ROOT/tools/check-com-staircase-contract.py" "$pass_csv" --executor-spin-timeout-us 100 2>&1)"
+rc=$?
+set -e
+if [ "$rc" -eq 0 ]; then
+  echo "FAIL: wrong executor spin timeout filter should fail" >&2
+  exit 1
+fi
+assert_contains "$out" "executor_spin_timeout_us=100" \
+  "executor spin timeout filter labels missing stages"
 
 missing_csv="$TMPDIR/missing.csv"
 write_header >"$missing_csv"

@@ -496,6 +496,8 @@ FORMAT=csv tools/summarize-com-staircase.sh log/com-staircase/<tag>.summary.log
 
 ```bash
 tools/check-com-staircase-contract.py log/com-staircase/<tag>.metrics.csv
+tools/check-com-staircase-contract.py log/com-staircase/<tag>.metrics.csv \
+  --pc-executor-threads 4 --executor-spin-timeout-us 100
 ```
 
 默认要求 `1/2/5/10kHz × 921600/2000000` 的 8 个 latest-target 阶段都存在，
