@@ -13,6 +13,10 @@ Interface contract: `docs/01-ros2-microros-serial/01-接口契约.md` (v1.16).
 - **com_bringup** (ament_python) — communication launch files.
   - `loopback_test.launch.py`: exo_cmd + loopback (hardware-free self-test).
   - `pc_cmd.launch.py`: exo_cmd only (for the real MCU / agent).
+- **motor_tools** (ament_python) — M0 CyberGear/mock bring-up helpers.
+  - `motor_cybergear_probe`: hardware-free mock state stream or guarded motor probe.
+  - `motor_cybergear_benchtop`: mock target/state check; real motion is guarded until
+    hardware validation is explicitly implemented.
 
 QoS for all `/com/*` topics (contract): RELIABLE / KEEP_LAST. Historical
 self-tests use depth 10; high-rate real-hardware runs use depth 1 to avoid stale
@@ -39,6 +43,27 @@ source /opt/ros/jazzy/setup.bash
 colcon build --packages-select exo_msgs exo_cmd com_bringup
 source install/setup.bash
 ```
+
+M0 motor_tools self-test:
+
+```bash
+cd ~/robotics/ros2_ws
+source /opt/ros/jazzy/setup.bash
+colcon build --packages-select motor_tools
+source install/setup.bash
+ros2 run motor_tools motor_cybergear_probe --mode mock --samples 3 --period-s 0
+pytest src/motor_tools/test -q
+```
+
+M0 CyberGear hardware probe needs `python-can` and a PCAN or SocketCAN adapter:
+
+```bash
+sudo apt install python3-can
+```
+
+Hardware motion commands are guarded. They require explicit limits and
+`--confirm-motion`; without confirmation no enable frame is sent. Position mode sends
+a small `+position -> -position -> 0` round-trip before stop/disable.
 
 ## Common Self-Tests
 

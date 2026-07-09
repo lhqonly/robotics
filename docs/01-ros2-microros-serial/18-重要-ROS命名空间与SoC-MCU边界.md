@@ -230,3 +230,45 @@ MCU 直接执行；
 com 只负责链路健康；
 micro_ros_bridge 只负责把 SoC 和 MCU 的 ROS2/micro-ROS 世界接起来。
 ```
+
+## 9. 对任务拆分的直接影响
+
+这个边界会直接影响 Tom 和 Gill 的任务拆分。
+
+不要把任务拆成：
+
+```text
+做一个 com node，里面解析 ctrl 和 motor，再分发给 MCU
+```
+
+这会让 `com` 变成业务路由器，后续会把通信诊断、控制语义、电机厂商协议搅在一起。
+
+应该拆成：
+
+```text
+M1: 定义 /motor/ 统一 ROS 接口
+M2: MCU /node_mcu 订阅 /motor/tp_joint_target 并本地执行
+M3: 在 MCU 或 PC adapter 内实现 CyberGear backend
+M4: 用 /com/ 和 /motor/ 的观测数据做安全与压测验收
+```
+
+对应关系：
+
+```text
+/ctrl/node_assist_ctrl
+  负责算目标，不负责电机协议
+
+/motor/tp_joint_target
+  负责承载 SoC -> MCU 的关节执行目标
+
+/node_mcu
+  负责订阅目标、执行本地控制、发布状态
+
+micro_ros_bridge
+  只负责桥接 ROS2 和 micro-ROS，不理解业务
+
+/com/tp_mcu_status、/com/tp_link_health
+  只负责通信健康观测，不承载关节目标
+```
+
+因此任务卡中如果出现 `bridge 解析并分发 com/ctrl/motor`，应视为设计错误。正确做法是让 ROS2/micro-ROS 的 topic 系统自然完成发布订阅，`micro_ros_bridge` 只是传输桥。
