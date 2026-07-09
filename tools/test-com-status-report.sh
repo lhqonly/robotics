@@ -96,8 +96,24 @@ assert_contains "$report" "## 通信优化推荐" \
   "communication optimization recommendation section"
 assert_contains "$report" "CANDIDATE wire_budget_200hz_status40_921600" \
   "communication wire budget recommendation row"
+assert_contains "$report" "CANDIDATE motor_m2_wire_budget_200hz_state50_health5_921600" \
+  "M2 motor communication recommendation row"
 assert_contains "$report" "CANDIDATE staircase_acceptance_contract" \
   "communication staircase acceptance recommendation row"
+assert_contains "$report" "## M2 micro-ROS motor 状态" \
+  "M2 motor status section"
+assert_contains "$report" "generated exo_motor_msgs headers" \
+  "M2 generated headers status"
+assert_contains "$report" "firmware/f103-microros/colcon.motor.notypedesc.meta" \
+  "M2 motor meta path"
+assert_contains "$report" "### M2 motor build size" \
+  "M2 motor build size section"
+assert_contains "$report" "### M2 motor memory optimization candidate" \
+  "M2 motor optimized build size section"
+assert_contains "$report" "# M2 Motor Wire Budget Estimate" \
+  "M2 motor wire budget output"
+assert_contains "$report" "200Hz target + 50Hz state + 5Hz health" \
+  "M2 motor unresolved communication budget"
 assert_contains "$report" "graph/QoS" \
   "graph QoS source"
 assert_contains "$report" "## 最近 PASS 通信基线" \
@@ -134,6 +150,10 @@ assert_contains "$report" "staircase preflight 未 ready" \
   "unresolved preflight blocker"
 assert_contains "$report" "1000Hz PC-only scheduler probe" \
   "1000Hz exploratory scheduler unresolved note"
+assert_contains "$report" "M2 motor 真机首轮" \
+  "M2 motor runtime next step"
+assert_contains "$report" "/motor/tp_joint_target" \
+  "M2 motor target topic in report"
 assert_contains "$report" "tools/diagnose-swd.sh" \
   "SWD diagnostic command in next steps"
 assert_contains "$report" "tools/recommend-staircase-command.sh" \

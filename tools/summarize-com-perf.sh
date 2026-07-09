@@ -14,6 +14,7 @@ PERF_MAX_P99_GAP_S="${PERF_MAX_P99_GAP_S:-0.10}"
 PERF_MAX_MAX_GAP_S="${PERF_MAX_MAX_GAP_S:-0.25}"
 PERF_MAX_CATCHUP_EVENTS="${PERF_MAX_CATCHUP_EVENTS:-}"
 PERF_MAX_CATCHUP_EXTRA="${PERF_MAX_CATCHUP_EXTRA:-}"
+PERF_STATUS_EVERY_N="${PERF_STATUS_EVERY_N:-}"
 
 case "$FORMAT" in
   markdown|md|csv) ;;
@@ -38,6 +39,24 @@ metric_from_line() {
     awk -F= -v key="$key" '$1 == key {print $2}' |
     tail -1)"
   printf '%s' "${value:-NA}"
+}
+
+status_every_from_cmd_log() {
+  local file="$1"
+  if [ ! -f "$file" ]; then
+    return 0
+  fi
+  (grep 'status_every_n=' "$file" || true) |
+    head -1 |
+    awk '{
+      for (idx = 1; idx <= NF; idx++) {
+        if ($idx ~ /^status_every_n=/) {
+          split($idx, parts, "=")
+          print parts[2]
+          exit
+        }
+      }
+    }'
 }
 
 tag_from_arg() {
@@ -84,9 +103,12 @@ smoke_verdict() {
   local pc_wire_gap_max_ms="${10}"
   local pc_cmd_catchup_events="${11}"
   local pc_cmd_catchup_extra="${12}"
+  local expected_rate_hz="${13}"
+  local status_every_n="${14}"
 
   awk \
-    -v expected="$PERF_EXPECTED_RATE_HZ" \
+    -v expected="$expected_rate_hz" \
+    -v status_every_n="$status_every_n" \
     -v min_ratio="$PERF_MIN_RATE_RATIO" \
     -v max_ratio="$PERF_MAX_RATE_RATIO" \
     -v max_lost="$PERF_MAX_LOST" \
@@ -114,27 +136,39 @@ smoke_verdict() {
       }
       BEGIN {
         verdict = "PASS"
+        if (status_every_n + 0 < 1) status_every_n = 1
+        expected_status = expected / status_every_n
+        expected_status_period = (expected_status > 0) ? 1.0 / expected_status : 0
+        p99_gap_limit = max_p99_gap
+        max_gap_limit = max_max_gap
+        if (expected_status_period * 1.5 > p99_gap_limit) {
+          p99_gap_limit = expected_status_period * 1.5
+        }
+        if (expected_status_period * 2.5 > max_gap_limit) {
+          max_gap_limit = expected_status_period * 2.5
+        }
         if (missing(sampler_hz) || missing(seq_delta_min) ||
             missing(seq_delta_max) || missing(lost) || missing(duplicate)) {
           verdict = "WARN"
           add_reason("missing_metrics")
         }
         if (!missing(sampler_hz) &&
-            (sampler_hz + 0 < expected * min_ratio ||
-             sampler_hz + 0 > expected * max_ratio)) {
+            (sampler_hz + 0 < expected_status * min_ratio ||
+             sampler_hz + 0 > expected_status * max_ratio)) {
           verdict = "WARN"
           add_reason("rate_out_of_band")
         }
-        if (!missing(seq_delta_min) && !missing(seq_delta_max) &&
+        if (status_every_n + 0 == 1 &&
+            !missing(seq_delta_min) && !missing(seq_delta_max) &&
             (seq_delta_min + 0 != 1 || seq_delta_max + 0 != 1)) {
           verdict = "WARN"
           add_reason("seq_delta_not_1")
         }
-        if (!missing(p99_gap_s) && p99_gap_s + 0 > max_p99_gap) {
+        if (!missing(p99_gap_s) && p99_gap_s + 0 > p99_gap_limit) {
           verdict = "WARN"
           add_reason("p99_gap_high")
         }
-        if (!missing(max_gap_s) && max_gap_s + 0 > max_max_gap) {
+        if (!missing(max_gap_s) && max_gap_s + 0 > max_gap_limit) {
           verdict = "WARN"
           add_reason("max_gap_high")
         }
@@ -195,7 +229,7 @@ summarize_tag() {
   local pc_wire_gap_p95_ms pc_wire_gap_p99_ms pc_wire_gap_max_ms
   local pc_cmd_catchup_events pc_cmd_catchup_extra
   local wire_kbit_s baud_util_pct lost duplicate inflight
-  local verdict reason verdict_csv
+  local status_every_n expected_rate_hz verdict reason verdict_csv
 
   status_hz="NA"
   if [ -f "$hz_log" ]; then
@@ -232,6 +266,15 @@ summarize_tag() {
   lost="$(metric_from_line "$cmd_line" lost)"
   duplicate="$(metric_from_line "$cmd_line" duplicate)"
   inflight="$(metric_from_line "$cmd_line" inflight)"
+  status_every_n="$(status_every_from_cmd_log "$cmd_log")"
+  status_every_n="${status_every_n:-${PERF_STATUS_EVERY_N:-1}}"
+  expected_rate_hz="$PERF_EXPECTED_RATE_HZ"
+  if [ "$expected_rate_hz" = "auto" ]; then
+    expected_rate_hz="$pc_target_rate_hz"
+    if [ -z "$expected_rate_hz" ] || [ "$expected_rate_hz" = "NA" ]; then
+      expected_rate_hz="$pc_wire_rate_hz"
+    fi
+  fi
 
   wire_line=""
   if [ -f "$wire_log" ]; then
@@ -246,7 +289,8 @@ summarize_tag() {
     verdict_csv="$(smoke_verdict "$sampler_hz" "$seq_delta_min" \
       "$seq_delta_max" "$p99_gap_s" "$max_gap_s" "$lost" "$duplicate" \
       "$pc_target_window_hz" "$pc_wire_gap_p99_ms" "$pc_wire_gap_max_ms" \
-      "$pc_cmd_catchup_events" "$pc_cmd_catchup_extra")"
+      "$pc_cmd_catchup_events" "$pc_cmd_catchup_extra" \
+      "$expected_rate_hz" "$status_every_n")"
     verdict="${verdict_csv%%,*}"
     reason="${verdict_csv#*,}"
   fi

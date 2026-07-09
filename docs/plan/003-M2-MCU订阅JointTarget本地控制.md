@@ -15,20 +15,30 @@
 - 已接入现有 `com_control_tick_isr()`：每个 MCU 本地控制 tick 都会推进 motor 控制核心；没有真实 `/motor` target 时默认保持 safe disabled。
 - 已保留 `/com` 心跳链路，不把 `/com/tp_cmd_heartbeat` 误当作 motor 指令。
 - 已通过 host C 测试和 STM32 固件构建验证。
+- 已重建/提交 M2 专用 micro-ROS 资源：`colcon.motor.notypedesc.meta`、`exo_motor_msgs` 生成头、`libmicroros.a`、3 publisher / 2 subscription 静态池配置。
+- 已在 `EXO_MOTOR_ROS_ENTITIES=ON` profile 下接入 `/motor/tp_joint_target` subscription、`/motor/tp_joint_state` publisher、`/motor/tp_motor_health` publisher，并保留 `/com/tp_cmd_heartbeat` / `/com/tp_mcu_status`。
+- 已修复离线审查发现的两个 M2 安全边界：非空 `header.frame_id` 的反序列化前缓冲风险，以及高优先级 TIM2 下 telemetry snapshot 可能被打断的问题。
+- 已新增 M2 motor 通信预算工具：`tools/com-wire-budget.py --profile motor-m2`，并把 M2 预算纳入 `tools/recommend-communication-optimizations.py` 和 `tools/com-status-report.sh`。
 
 当前尚未完成：
 
-- `ThirdParty/microros/include` 里还没有 `exo_motor_msgs` 生成头，因此本阶段没有直接新增 `/motor/tp_joint_target` micro-ROS subscription。
-- `colcon.meta` 仍是 1 publisher + 1 subscription 的 `/com` 最小池；真正接入 `/motor` topic 前需要重生成 libmicroros，并扩大 publisher/subscription/executor 资源。
-- `/motor/tp_joint_state` 和 `/motor/tp_motor_health` 的 micro-ROS 发布尚未接入；当前只有 MCU 内部 state/health，可用 GDB 或后续 ROS publisher 桥接读取。
+- 尚未在真机上烧录 `EXO_MOTOR_ROS_ENTITIES=ON` 固件并连接 micro-ROS Agent 验证 ROS graph 能看到 `/motor` 三个 topic。
+- 尚未发布真实 `/motor/tp_joint_target` 验证 `JointState.last_target_seq`、TTL stale、clamp/fault 和 `/com/tp_mcu_status` 并存稳定性。
+- 尚未做 200Hz target + motor state/health 并发下的 921600/2000000 baud runtime 对比；静态预算显示默认 200Hz target + 50Hz state + 5Hz health 在 921600 baud 超过 30% 预算，2Mbps 通过。
+- 尚未在 motor-enabled 固件上读取栈水位、MSP/heap 余量和 reconnect/soak 结果；`build-motor-opt` 只是候选，不能在无真机证据时改默认。
+- 非空 `header.frame_id` 已做静态防护，但仍需运行期注入验证它会被干净拒绝，且不会破坏 executor/reconnect。
 
 ## 接口契约
 
-MCU 端最小 ROS 节点仍然可以只有：
+当前 F103 固件沿用通信域节点名：
 
 ```text
-/node_mcu
+/node_com_mcu
 ```
+
+早期文档中的 `/node_mcu` 是 M2 领域化命名目标；在 `MAX_NODES=1` 的 F103 profile 下，
+M2 不单独新增第二个节点，先把 `/com` 与 `/motor` 实体挂在现有 MCU 节点上。若后续要把
+节点名改为 `/node_mcu`，需要同步更新 `/com` 验收脚本和 ROS graph 判据。
 
 订阅：
 

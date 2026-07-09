@@ -6,7 +6,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WATCH_LOGDIR="${WATCH_LOGDIR:-$ROOT/log/overnight-com-watch}"
 PERF_LOGDIR="${LOGDIR:-$ROOT/log/com-perf}"
 FORMAT="${FORMAT:-markdown}"
-PERF_EXPECTED_RATE_HZ="${PERF_EXPECTED_RATE_HZ:-20}"
+PERF_EXPECTED_RATE_HZ="${PERF_EXPECTED_RATE_HZ:-auto}"
 INPUT="${1:-}"
 
 case "$FORMAT" in

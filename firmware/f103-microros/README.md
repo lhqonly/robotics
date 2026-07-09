@@ -32,8 +32,7 @@ micro-ROS 官方推荐最低 32KB RAM,F103RB 只有 20KB,**低于官方下限**(
 
 ## M2 motor core 自测
 
-`motor_control` 目前是 MCU 内部控制核心，尚未接入 `exo_motor_msgs` micro-ROS 实体。它可以先在 PC
-上用 gcc 做无硬件自测：
+`motor_control` 是 MCU 内部控制核心，可在 PC 上用 gcc 做无硬件自测：
 
 ```bash
 cd ~/robotics
@@ -55,10 +54,29 @@ cmake -S firmware/f103-microros -B firmware/f103-microros/build \
 cmake --build firmware/f103-microros/build
 ```
 
-`/motor` micro-ROS topic 真正接入前，需要用 `colcon.motor.meta` 重建 libmicroros，并把
-`ros2_ws/src/exo_motor_msgs` 和现有 `exo_msgs` 一起喂进 micro_ros_setup 的 firmware
-workspace。不要直接手工提交 `ThirdParty/microros/include/exo_motor_msgs` 这类生成产物；
-应先用候选 meta 完成实体创建、RAM/Flash size 和真机建链验证。
+M2 `/motor` micro-ROS 实体当前已作为实验 profile 接入，默认构建仍保持
+`EXO_MOTOR_ROS_ENTITIES=OFF`，用于保护 `/com` 稳定基线。要构建 motor profile：
+
+```bash
+cd ~/robotics
+cmake -S firmware/f103-microros -B firmware/f103-microros/build-motor \
+  -DCMAKE_TOOLCHAIN_FILE=$(pwd)/firmware/f103-microros/toolchain-arm-m3.cmake \
+  -DCMAKE_BUILD_TYPE=MinSizeRel \
+  -DEXO_MOTOR_ROS_ENTITIES=ON
+cmake --build firmware/f103-microros/build-motor
+tools/firmware-size-report.sh firmware/f103-microros/build-motor/f103-microros.elf
+```
+
+当前 M2 motor 生成物来自 `colcon.motor.notypedesc.meta`，而不是默认 `/com`
+`colcon.meta`。它包含 `exo_motor_msgs` 生成头和 motor 版 `libmicroros.a`，资源池为
+3 publisher + 2 subscription，`STREAM_HISTORY=4`，并关闭 C type-description raw
+source 以压 SRAM。这里提交生成产物是 F103 20KB SRAM 下可复现实验 profile 的阶段性例外；
+后续若重建 `ThirdParty/microros`，必须同步记录所用 meta、size report 和真机建链结果。
+
+M2 运行期仍未完成真机验收：需要烧录 `EXO_MOTOR_ROS_ENTITIES=ON` 固件，启动
+micro-ROS Agent，确认 `/motor/tp_joint_target`、`/motor/tp_joint_state`、
+`/motor/tp_motor_health` 与 `/com/tp_mcu_status` 同时可见，并完成 target seq、TTL、
+clamp/fault、非空 `header.frame_id` 拒绝和 `/com` 并存稳定性验证。
 
 ## 内存模型(static memory pool / 关动态分配)
 

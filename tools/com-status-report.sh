@@ -16,7 +16,10 @@ WATCH_LOGDIR="$ROOT/log/overnight-com-watch"
 SCHED_LOGDIR="$ROOT/log/pc-scheduler-sweep"
 STAIRCASE_LOGDIR="$ROOT/log/com-staircase"
 FIRMWARE_ELF="$ROOT/firmware/f103-microros/build/f103-microros.elf"
+FIRMWARE_MOTOR_ELF="$ROOT/firmware/f103-microros/build-motor/f103-microros.elf"
+FIRMWARE_MOTOR_OPT_ELF="$ROOT/firmware/f103-microros/build-motor-opt/f103-microros.elf"
 MICROROS_META="$ROOT/firmware/f103-microros/colcon.meta"
+MICROROS_MOTOR_META="$ROOT/firmware/f103-microros/colcon.motor.notypedesc.meta"
 MICROROS_UXR_CONFIG="$ROOT/firmware/f103-microros/ThirdParty/microros/include/uxr/client/config.h"
 MICROROS_RMW_CONFIG="$ROOT/firmware/f103-microros/ThirdParty/microros/include/rmw_microxrcedds_c/config.h"
 COM_STATUS_PROBE_STLINK="${COM_STATUS_PROBE_STLINK:-1}"
@@ -282,6 +285,20 @@ firmware_rosidl_metadata_breakdown() {
       in_section && NF == 0 {exit}
       in_section {print}
     '
+}
+
+firmware_size_brief() {
+  local elf="$1"
+  if [ ! -f "$elf" ]; then
+    echo "- missing ELF: $(relpath "$elf")"
+    return 0
+  fi
+  if [ ! -x "$ROOT/tools/firmware-size-report.sh" ]; then
+    echo "-"
+    return 0
+  fi
+  "$ROOT/tools/firmware-size-report.sh" "$elf" 2>/dev/null |
+    awk 'NR == 1 || /^flash_bytes=/ || /^linker_user_heap_stack_bytes=/ {print}'
 }
 
 firmware_optimization_recommendations() {
@@ -665,6 +682,25 @@ if [ -n "$wire_budget_source" ] && [ -f "$wire_budget_source" ] &&
     --show-wire-time 2>/dev/null || true)"
 fi
 
+motor_wire_budget_matrix=""
+if [ -x "$ROOT/tools/com-wire-budget.py" ]; then
+  motor_wire_budget_matrix="$(cd "$ROOT" && tools/com-wire-budget.py \
+    --profile motor-m2 \
+    --cmd-hz 200 \
+    --motor-state-hz 5,20,50 \
+    --motor-health-hz 1,5 \
+    --baud 921600,2000000 \
+    --max-baud-util-pct 30 \
+    --show-wire-time 2>/dev/null || true)"
+fi
+
+motor_generated_headers="missing"
+if [ -d "$ROOT/firmware/f103-microros/ThirdParty/microros/include/exo_motor_msgs" ]; then
+  motor_generated_headers="present"
+fi
+motor_default_size="$(firmware_size_brief "$FIRMWARE_MOTOR_ELF")"
+motor_opt_size="$(firmware_size_brief "$FIRMWARE_MOTOR_OPT_ELF")"
+
 recovery_sampler="$COM_LOGDIR/noflash_recovery_20hz_after_200hz.sampler.log"
 recovery_hz="$COM_LOGDIR/noflash_recovery_20hz_after_200hz.hz.log"
 recovery_cmd="$COM_LOGDIR/noflash_recovery_20hz_after_200hz.cmd.log"
@@ -758,6 +794,9 @@ preflight_commands="$(printf '%s\n' "$staircase_preflight" |
   echo "- same-tag wire stats：$(relpath "$latest_wire")"
   echo "- latest standalone wire stats：$(relpath "$latest_any_wire")"
   echo "- latest PASS baseline tag：${latest_pass_tag:-unknown}"
+  echo "- M2 motor meta：$(relpath "$MICROROS_MOTOR_META")"
+  echo "- M2 motor build ELF：$(relpath "$FIRMWARE_MOTOR_ELF")"
+  echo "- M2 motor optimized ELF：$(relpath "$FIRMWARE_MOTOR_OPT_ELF")"
   echo "- size matrix：$(relpath "$latest_size_md")"
   echo "- stack sweep：$(relpath "$latest_stack_md")"
   echo "- spin timeout sweep：$(relpath "$latest_spin_timeout_md")"
@@ -826,6 +865,35 @@ preflight_commands="$(printf '%s\n' "$staircase_preflight" |
   echo '```text'
   printf '%s\n' "$communication_optimization_recs"
   echo '```'
+  echo
+  echo "## M2 micro-ROS motor 状态"
+  echo
+  echo "- generated exo_motor_msgs headers：$motor_generated_headers"
+  echo "- motor lib meta：$(relpath "$MICROROS_MOTOR_META")"
+  echo "- public ROS contract：保持 \`exo_motor_msgs/{JointTarget,JointState,MotorHealth}\`，M2 不切 compact wire message。"
+  echo "- MCU topic profile：sub \`/motor/tp_joint_target\`，pub \`/motor/tp_joint_state\`、\`/motor/tp_motor_health\`，并保留 \`/com/tp_mcu_status\`。"
+  echo "- target frame_id 策略：MCU 只接受空 \`header.frame_id\`；订阅侧 RX buffer 按 XRCE input stream 容量绑定，非空值应被 callback 拒绝。"
+  echo "- snapshot 策略：state/health telemetry 用 PRIMASK 短临界区，避免高优先级 TIM2 在结构体拷贝中间打断。"
+  echo
+  echo "### M2 motor build size"
+  echo
+  echo '```text'
+  printf '%s\n' "$motor_default_size"
+  echo '```'
+  echo
+  echo "### M2 motor memory optimization candidate"
+  echo
+  echo '```text'
+  printf '%s\n' "$motor_opt_size"
+  echo '```'
+  echo
+  echo "### M2 motor wire budget"
+  echo
+  if [ -n "$motor_wire_budget_matrix" ]; then
+    printf '%s\n' "$motor_wire_budget_matrix"
+  else
+    echo "- missing motor wire budget: tools/com-wire-budget.py unavailable"
+  fi
   echo
   echo "## 线速预算外推"
   echo
@@ -1019,6 +1087,10 @@ preflight_commands="$(printf '%s\n' "$staircase_preflight" |
   fi
   echo "- SWD 仍需恢复：当前无法 flash 新 profile，也无法读取高频运行期栈水位。"
   echo "- 10kHz/200Hz/best_effort/status_every_40 和 2Mbps profile 已能编译，但运行收益待 SWD 恢复后实测。"
+  echo "- M2 motor micro-ROS 实体已完成离线接入和构建验证，但尚未完成真机 micro-ROS Agent 联通、ROS graph topic 可见性、\`/motor/tp_joint_target\` 发布到 \`/motor/tp_joint_state\` 的闭环验证。"
+  echo "- M2 ON 默认静态 RAM 约 18KB，余量偏紧；\`build-motor-opt\` 的 stack/linker reserve 候选能降到约 16.6KB，但必须等 motor-enabled 栈水位、MSP/heap、reconnect soak 证据后再改默认。"
+  echo "- M2 motor 静态通信预算显示 200Hz target + 50Hz state + 5Hz health 在 921600 baud 超过 30% 预算，2Mbps 通过；需要真机同时测 921600/2000000，并确认 \`/com/tp_mcu_status\` 不被 motor reliable traffic 挤压。"
+  echo "- M2 非空 \`header.frame_id\` 已做静态防护，但还需要运行期注入非空 frame_id，确认它被干净拒绝且不会影响 executor/reconnect。"
   echo "- 1000Hz PC-only scheduler probe 当前只证明 PC 侧发包节拍候选（threads4 p99≈1.17ms/max≈5.02ms）；它尚未经过 matching best-effort firmware、2Mbps/921600 线速、MCU 接收率和 1/2/5/10kHz 本地闭环联合验证，不能替代 200Hz 上板验收默认。"
   echo "- UART read polling 候选 \`EXO_UART_READ_POLL_YIELDS=4\` 仅完成编译/size 验证，是否改善 RTT/gap 长尾待上板实测。"
   echo "- executor spin timeout 候选 \`EXO_EXECUTOR_SPIN_TIMEOUT_US=500/200/100\` 仅完成编译/size 验证，是否改善 RTT/gap 长尾待上板实测。"
@@ -1048,8 +1120,10 @@ preflight_commands="$(printf '%s\n' "$staircase_preflight" |
   echo "2. 若 \`SWD_STATUS\` 不是 \`ok\`，按诊断输出检查线缆、供电、BOOT/RESET、SWDIO/SWCLK/NRST、usbip 独占和 ST-LINK 连接状态。"
   echo "3. SWD 恢复后先生成推荐阶梯命令：\`tools/recommend-staircase-command.sh\`，再执行其中的 \`tools/run-com-staircase.sh ...\` 和匹配的 \`tools/check-com-staircase-contract.py ...\`。"
   echo "   若要把 921600/2Mbps 串口占用收益也纳入验收，生成推荐命令时用：\`STAIRCASE_CONTRACT_ARGS=\"--max-pc-catchup-events 0 --max-pc-catchup-extra 0 --max-wire-baud-util-pct 30\" tools/recommend-staircase-command.sh\`。"
-  echo "4. 高频 profile 跑通后读栈水位：\`tools/measure-stack-hwm.sh firmware/f103-microros/build/f103-microros.elf\`。"
-  echo "5. 若 SWD 仍未恢复，继续 no-flash：\`BUILD_FIRMWARE=0 FLASH_FIRMWARE=0 tools/run-com-perf.sh noflash_\$(date +%H%M)\`。"
+  echo "4. M2 motor 真机首轮：烧 \`EXO_MOTOR_ROS_ENTITIES=ON\` 固件，启动 micro-ROS Agent，确认 \`/motor/tp_joint_target\`、\`/motor/tp_joint_state\`、\`/motor/tp_motor_health\` 和 \`/com/tp_mcu_status\` 同时可见。"
+  echo "5. M2 motor topic 闭环：发空 \`frame_id\` 的 \`/motor/tp_joint_target\`，检查 \`JointState.last_target_seq\`；停止发布后检查 TTL stale；再注入非空 \`frame_id\` 确认被拒绝。"
+  echo "6. 高频 profile 跑通后读栈水位：\`tools/measure-stack-hwm.sh firmware/f103-microros/build/f103-microros.elf\`，motor-enabled 构建需额外记录 \`firmware/f103-microros/build-motor/f103-microros.elf\` 的 size report。"
+  echo "7. 若 SWD 仍未恢复，继续 no-flash：\`BUILD_FIRMWARE=0 FLASH_FIRMWARE=0 tools/run-com-perf.sh noflash_\$(date +%H%M)\`。"
 } >"$REPORT"
 
 echo "[com-status-report] report=$REPORT"

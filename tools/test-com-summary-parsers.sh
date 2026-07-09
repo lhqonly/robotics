@@ -58,6 +58,15 @@ write_perf_logs() {
     '[node_com_cmd] [ERROR] [123.456] [node_com_cmd]: LOST seq=42: deadline 120.0 ms exceeded (waited_ms=123.456, deadline_ms=120.0, lost_count=1)' \
     '[node_com_cmd] link-health summary: wire_rate_hz=20.000 target_rate_hz=20.000 target_window_hz=20.000 wire_gap_p95_ms=50.0 wire_gap_p99_ms=60.0 wire_gap_max_ms=80.0 lost=1 duplicate=0 inflight=1' \
     >"$TMPDIR/com-perf/lostcase.cmd.log"
+
+  printf '%s\n' 'average rate: 5.000' >"$TMPDIR/com-perf/status40.hz.log"
+  printf '%s\n' \
+    'status_sampler: rate_hz=5.000 seq_rate_hz=200.000 seq_delta_avg=40 seq_delta_min=40 seq_delta_max=40 p95_gap_s=0.210 p99_gap_s=0.221 max_gap_s=0.222 zero_gap_count=0' \
+    >"$TMPDIR/com-perf/status40.sampler.log"
+  printf '%s\n' \
+    '[com-perf] pc: cmd_rate_hz=200 status_every_n=40' \
+    '[node_com_cmd] link-health summary: wire_rate_hz=200.000 target_rate_hz=200.000 target_window_hz=200.000 wire_gap_p95_ms=5.1 wire_gap_p99_ms=6.2 wire_gap_max_ms=9.9 cmd_catchup_events=0 cmd_catchup_extra=0 lost=0 duplicate=0 inflight=0' \
+    >"$TMPDIR/com-perf/status40.cmd.log"
 }
 
 test_com_perf_summary() {
@@ -92,6 +101,12 @@ test_com_perf_summary() {
   assert_contains "$csv" \
     'sample,WARN,pc_catchup_events_high;pc_catchup_extra_high,19.997,20.001,20.001,1,1,1,0.051,0.056,0.061,0,20.001,20.000,20.000,5.1,6.2,9.9,2,3,90.77,9.85,0,0,1' \
     'com-perf verdict can flag catch-up burst usage'
+
+  csv="$(LOGDIR="$TMPDIR/com-perf" FORMAT=csv PERF_EXPECTED_RATE_HZ=auto \
+    "$ROOT/tools/summarize-com-perf.sh" status40)"
+  assert_contains "$csv" \
+    'status40,PASS,-,5.000,5.000,200.000,40,40,40,0.210,0.221,0.222,0,200.000,200.000,200.000,5.1,6.2,9.9,0,0,NA,NA,0,0,0' \
+    'com-perf verdict treats status_every_40 seq delta as expected'
 }
 
 test_staircase_summary() {
