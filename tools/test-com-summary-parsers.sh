@@ -85,6 +85,13 @@ test_com_perf_summary() {
   assert_contains "$csv" \
     'badpc,WARN,pc_wire_gap_p99_high;pc_wire_gap_max_high,20.000,20.000,20.000,1,1,1,0.050,0.055,0.060,0,20.000,20.000,20.000,50.0,250.0,600.0,4,5,NA,NA,0,0,1' \
     'com-perf verdict flags PC publish gap contract'
+
+  csv="$(LOGDIR="$TMPDIR/com-perf" FORMAT=csv PERF_EXPECTED_RATE_HZ=20 \
+    PERF_MAX_CATCHUP_EVENTS=0 PERF_MAX_CATCHUP_EXTRA=0 \
+    "$ROOT/tools/summarize-com-perf.sh" sample)"
+  assert_contains "$csv" \
+    'sample,WARN,pc_catchup_events_high;pc_catchup_extra_high,19.997,20.001,20.001,1,1,1,0.051,0.056,0.061,0,20.001,20.000,20.000,5.1,6.2,9.9,2,3,90.77,9.85,0,0,1' \
+    'com-perf verdict can flag catch-up burst usage'
 }
 
 test_staircase_summary() {

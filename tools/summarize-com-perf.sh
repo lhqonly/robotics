@@ -12,6 +12,8 @@ PERF_MAX_LOST="${PERF_MAX_LOST:-0}"
 PERF_MAX_DUPLICATE="${PERF_MAX_DUPLICATE:-0}"
 PERF_MAX_P99_GAP_S="${PERF_MAX_P99_GAP_S:-0.10}"
 PERF_MAX_MAX_GAP_S="${PERF_MAX_MAX_GAP_S:-0.25}"
+PERF_MAX_CATCHUP_EVENTS="${PERF_MAX_CATCHUP_EVENTS:-}"
+PERF_MAX_CATCHUP_EXTRA="${PERF_MAX_CATCHUP_EXTRA:-}"
 
 case "$FORMAT" in
   markdown|md|csv) ;;
@@ -80,6 +82,8 @@ smoke_verdict() {
   local pc_target_window_hz="$8"
   local pc_wire_gap_p99_ms="$9"
   local pc_wire_gap_max_ms="${10}"
+  local pc_cmd_catchup_events="${11}"
+  local pc_cmd_catchup_extra="${12}"
 
   awk \
     -v expected="$PERF_EXPECTED_RATE_HZ" \
@@ -89,6 +93,8 @@ smoke_verdict() {
     -v max_duplicate="$PERF_MAX_DUPLICATE" \
     -v max_p99_gap="$PERF_MAX_P99_GAP_S" \
     -v max_max_gap="$PERF_MAX_MAX_GAP_S" \
+    -v max_catchup_events="$PERF_MAX_CATCHUP_EVENTS" \
+    -v max_catchup_extra="$PERF_MAX_CATCHUP_EXTRA" \
     -v sampler_hz="$sampler_hz" \
     -v seq_delta_min="$seq_delta_min" \
     -v seq_delta_max="$seq_delta_max" \
@@ -98,7 +104,9 @@ smoke_verdict() {
     -v duplicate="$duplicate" \
     -v pc_target_window_hz="$pc_target_window_hz" \
     -v pc_wire_gap_p99_ms="$pc_wire_gap_p99_ms" \
-    -v pc_wire_gap_max_ms="$pc_wire_gap_max_ms" '
+    -v pc_wire_gap_max_ms="$pc_wire_gap_max_ms" \
+    -v pc_cmd_catchup_events="$pc_cmd_catchup_events" \
+    -v pc_cmd_catchup_extra="$pc_cmd_catchup_extra" '
       function missing(v) { return v == "" || v == "NA" }
       function add_reason(reason) {
         if (reasons == "") reasons = reason
@@ -147,6 +155,18 @@ smoke_verdict() {
             pc_wire_gap_max_ms + 0 > pc_max_limit_ms) {
           verdict = "WARN"
           add_reason("pc_wire_gap_max_high")
+        }
+        if (!missing(max_catchup_events) &&
+            !missing(pc_cmd_catchup_events) &&
+            pc_cmd_catchup_events + 0 > max_catchup_events + 0) {
+          verdict = "WARN"
+          add_reason("pc_catchup_events_high")
+        }
+        if (!missing(max_catchup_extra) &&
+            !missing(pc_cmd_catchup_extra) &&
+            pc_cmd_catchup_extra + 0 > max_catchup_extra + 0) {
+          verdict = "WARN"
+          add_reason("pc_catchup_extra_high")
         }
         if (!missing(duplicate) && duplicate + 0 > max_duplicate) {
           verdict = "WARN"
@@ -225,7 +245,8 @@ summarize_tag() {
   if [ -n "$PERF_EXPECTED_RATE_HZ" ]; then
     verdict_csv="$(smoke_verdict "$sampler_hz" "$seq_delta_min" \
       "$seq_delta_max" "$p99_gap_s" "$max_gap_s" "$lost" "$duplicate" \
-      "$pc_target_window_hz" "$pc_wire_gap_p99_ms" "$pc_wire_gap_max_ms")"
+      "$pc_target_window_hz" "$pc_wire_gap_p99_ms" "$pc_wire_gap_max_ms" \
+      "$pc_cmd_catchup_events" "$pc_cmd_catchup_extra")"
     verdict="${verdict_csv%%,*}"
     reason="${verdict_csv#*,}"
   fi

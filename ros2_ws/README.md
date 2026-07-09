@@ -324,7 +324,9 @@ tools/run-pc-scheduler-sweep.sh pc_sched_$(date +%Y%m%d_%H%M)
 ```
 
 结果会写到 `log/pc-scheduler-sweep/<tag>.metrics.md/.csv`，原始通信日志仍在
-`log/com-perf/`。
+`log/com-perf/`。sweep 默认给每个 case 分配独立 `ROS_DOMAIN_ID`，避免连续 case
+之间 DDS graph 残留导致重复节点或串台；需要复用当前 domain 时设置
+`PC_SCHEDULER_ISOLATE_ROS_DOMAIN_PER_CASE=0`。
 
 对 200Hz latest-target 方向做 PC 调度对比时，把 high-rate 参数也一起显式传入；
 脚本会把这些参数写进 summary，并原样传给 `run-com-perf.sh`：
@@ -335,6 +337,7 @@ QOS_RELIABILITY=best_effort QOS_DEPTH=1 \
 TRACKING_MODE=sampled STATUS_EVERY_N=40 \
 SUMMARY_PERIOD_S=5.0 LINK_HEALTH_PERIOD_S=5.0 \
 REQUIRE_CORE_METRICS=0 REQUIRE_HEALTH_PASS=0 \
+MAX_CATCHUP_EVENTS=0 MAX_CATCHUP_EXTRA=0 \
 EXECUTOR_THREADS=0 TASKSET_CPUS="2 3" RUNS=2 \
 tools/run-pc-scheduler-sweep.sh pc_sched_200hz_$(date +%Y%m%d_%H%M)
 ```
@@ -343,7 +346,9 @@ tools/run-pc-scheduler-sweep.sh pc_sched_200hz_$(date +%Y%m%d_%H%M)
 场景：即使 MCU 固件 QoS 还没刷成 best-effort、没有真实 match，也能继续比较 PC
 发包间隔。等 MCU/PC QoS 已匹配后，把这两个开关恢复为 `1` 做严格验收。
 `EXECUTOR_THREADS=0` 表示让 rclpy 自动选择线程数；可以改成 `2` 单独复跑一次，
-用 metrics 表里的 `pc_wire_gap_p95/p99/max_ms`、`lost`、`duplicate` 对比。
+用 metrics 表里的 `pc_wire_gap_p95/p99/max_ms`、`pc_cmd_catchup_events/extra`、
+`lost`、`duplicate` 对比。`MAX_CATCHUP_EVENTS=0 MAX_CATCHUP_EXTRA=0` 会把任何
+PC timer 补发标成 WARN；不设置这两个变量时只展示补发计数，不参与 verdict。
 
 如果要比较更具体的调度策略，可以用多行 `PC_SCHEDULER_CASES`。每行格式为
 `label|launch_prefix`，空 prefix 用 `label|`：

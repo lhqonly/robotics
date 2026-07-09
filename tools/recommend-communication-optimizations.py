@@ -240,7 +240,7 @@ def main() -> int:
     print("1. `tools/diagnose-swd.sh` must report `SWD_STATUS=ok`.")
     print("2. Flash the matching best-effort/status40 firmware before judging 200Hz latest-target.")
     print("3. Run staircase with `STAIRCASE_BAUDS=\"921600 2000000\"` and include the best PC scheduler case.")
-    print("4. Accept only stages with `qos_incompatibility=0`, `lost=0`, `duplicate=0`, and PC p99/max gap inside contract.")
+    print("4. Accept only stages with `qos_incompatibility=0`, `lost=0`, `duplicate=0`, PC p99/max gap inside contract, and low/zero catch-up bursts.")
     return 0
 
 

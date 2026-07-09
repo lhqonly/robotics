@@ -33,6 +33,10 @@ STARTUP_GRACE_S="${STARTUP_GRACE_S:-3.0}"
 EXECUTOR_THREADS="${EXECUTOR_THREADS:-0}"
 REQUIRE_CORE_METRICS="${REQUIRE_CORE_METRICS:-1}"
 REQUIRE_HEALTH_PASS="${REQUIRE_HEALTH_PASS:-1}"
+MAX_CATCHUP_EVENTS="${MAX_CATCHUP_EVENTS:-}"
+MAX_CATCHUP_EXTRA="${MAX_CATCHUP_EXTRA:-}"
+PC_SCHEDULER_ISOLATE_ROS_DOMAIN_PER_CASE="${PC_SCHEDULER_ISOLATE_ROS_DOMAIN_PER_CASE:-1}"
+PC_SCHEDULER_ROS_DOMAIN_BASE="${PC_SCHEDULER_ROS_DOMAIN_BASE:-${ROS_DOMAIN_ID:-0}}"
 
 mkdir -p "$LOGDIR" "$COM_PERF_LOGDIR"
 : >"$SUMMARY"
@@ -71,15 +75,20 @@ run_case() {
   local label="$1"
   local prefix="$2"
   local run_index="$3"
-  local safe_label tag console_log status
+  local safe_label tag console_log status stage_ros_domain_id
 
   safe_label="$(sanitize_label "$label")"
   tag="${TAG_PREFIX}_${safe_label}_r${run_index}"
   console_log="$LOGDIR/$tag.console.log"
-  record "START label=$label run=$run_index tag=$tag prefix=${prefix:-none}"
+  stage_ros_domain_id="$PC_SCHEDULER_ROS_DOMAIN_BASE"
+  if [ "$PC_SCHEDULER_ISOLATE_ROS_DOMAIN_PER_CASE" = "1" ]; then
+    stage_ros_domain_id=$((PC_SCHEDULER_ROS_DOMAIN_BASE + case_index))
+  fi
+  case_index=$((case_index + 1))
+  record "START label=$label run=$run_index tag=$tag prefix=${prefix:-none} stage_ros_domain_id=$stage_ros_domain_id"
 
   if [ "$DRY_RUN" = "1" ]; then
-    record "DRY_RUN tag=$tag PC_LAUNCH_PREFIX=${prefix:-} EXECUTOR_THREADS=$EXECUTOR_THREADS"
+    record "DRY_RUN tag=$tag PC_LAUNCH_PREFIX=${prefix:-} EXECUTOR_THREADS=$EXECUTOR_THREADS ROS_DOMAIN_ID=$stage_ros_domain_id"
     return 0
   fi
 
@@ -106,6 +115,7 @@ run_case() {
     REQUIRE_CORE_METRICS="$REQUIRE_CORE_METRICS" \
     REQUIRE_HEALTH_PASS="$REQUIRE_HEALTH_PASS" \
     PC_LAUNCH_PREFIX="$prefix" \
+    ROS_DOMAIN_ID="$stage_ros_domain_id" \
     "$ROOT/tools/run-com-perf.sh" "$tag" 2>&1 | tee "$console_log"
   status=${PIPESTATUS[0]}
   set -e
@@ -120,11 +130,12 @@ run_case() {
 }
 
 record "pc_scheduler_sweep tag_prefix=$TAG_PREFIX runs=$RUNS dry_run=$DRY_RUN fail_on_case_error=$FAIL_ON_CASE_ERROR"
-record "profile cmd_rate_hz=$CMD_RATE_HZ cmd_catchup_max=$CMD_CATCHUP_MAX qos=$QOS_RELIABILITY depth=$QOS_DEPTH tracking=$TRACKING_MODE status_every_n=$STATUS_EVERY_N sample_window=$SAMPLE_WINDOW summary_period_s=$SUMMARY_PERIOD_S link_health_period_s=$LINK_HEALTH_PERIOD_S startup_grace_s=$STARTUP_GRACE_S executor_threads=$EXECUTOR_THREADS require_core_metrics=$REQUIRE_CORE_METRICS require_health_pass=$REQUIRE_HEALTH_PASS run_seconds=$RUN_SECONDS warmup_seconds=$WARMUP_SECONDS hz_seconds=$HZ_SECONDS"
+record "profile cmd_rate_hz=$CMD_RATE_HZ cmd_catchup_max=$CMD_CATCHUP_MAX qos=$QOS_RELIABILITY depth=$QOS_DEPTH tracking=$TRACKING_MODE status_every_n=$STATUS_EVERY_N sample_window=$SAMPLE_WINDOW summary_period_s=$SUMMARY_PERIOD_S link_health_period_s=$LINK_HEALTH_PERIOD_S startup_grace_s=$STARTUP_GRACE_S executor_threads=$EXECUTOR_THREADS require_core_metrics=$REQUIRE_CORE_METRICS require_health_pass=$REQUIRE_HEALTH_PASS max_catchup_events=${MAX_CATCHUP_EVENTS:-NA} max_catchup_extra=${MAX_CATCHUP_EXTRA:-NA} isolate_ros_domain_per_case=$PC_SCHEDULER_ISOLATE_ROS_DOMAIN_PER_CASE ros_domain_base=$PC_SCHEDULER_ROS_DOMAIN_BASE run_seconds=$RUN_SECONDS warmup_seconds=$WARMUP_SECONDS hz_seconds=$HZ_SECONDS"
 record "logdir=$LOGDIR com_perf_logdir=$COM_PERF_LOGDIR"
 : >"$LOGDIR/$TAG_PREFIX.tags"
 
 failures=0
+case_index=0
 while IFS= read -r case_line; do
   [ -n "$case_line" ] || continue
   case "$case_line" in
@@ -152,9 +163,13 @@ if [ -s "$LOGDIR/$TAG_PREFIX.tags" ]; then
   mapfile -t tags <"$LOGDIR/$TAG_PREFIX.tags"
   LOGDIR="$COM_PERF_LOGDIR" \
     PERF_EXPECTED_RATE_HZ="$CMD_RATE_HZ" \
+    PERF_MAX_CATCHUP_EVENTS="$MAX_CATCHUP_EVENTS" \
+    PERF_MAX_CATCHUP_EXTRA="$MAX_CATCHUP_EXTRA" \
     "$ROOT/tools/summarize-com-perf.sh" "${tags[@]}" >"$METRICS_MD"
   LOGDIR="$COM_PERF_LOGDIR" \
     PERF_EXPECTED_RATE_HZ="$CMD_RATE_HZ" \
+    PERF_MAX_CATCHUP_EVENTS="$MAX_CATCHUP_EVENTS" \
+    PERF_MAX_CATCHUP_EXTRA="$MAX_CATCHUP_EXTRA" \
     FORMAT=csv "$ROOT/tools/summarize-com-perf.sh" \
     "${tags[@]}" >"$METRICS_CSV"
   record "METRICS_TABLE markdown=$METRICS_MD csv=$METRICS_CSV"
