@@ -42,9 +42,11 @@
 #include "exo_crc.h"    /* M-B 任务 4:应用级 CRC-32(§7.9),与 WSL zlib.crc32 逐字节对齐 */
 #include "motor_control.h"  /* M2:latest target / safety core, vendor independent */
 
+#include "stm32f1xx.h"
 #include "FreeRTOS.h"
 #include "task.h"
 
+#include <stddef.h>
 #include <stdint.h>
 
 /* ===== CRC 自检开关(契约 §7.9,默认关,不阻断主链路) =====
@@ -190,6 +192,7 @@ uint32_t com_control_latest_seq(void)
 #include <exo_msgs/msg/exo_cmd.h>
 #include <exo_msgs/msg/exo_status.h>
 #if EXO_MOTOR_ROS_ENTITIES
+#include <rmw_microxrcedds_c/config.h>
 #include <exo_motor_msgs/msg/joint_target.h>
 #include <exo_motor_msgs/msg/joint_state.h>
 #include <exo_motor_msgs/msg/motor_health.h>
@@ -226,7 +229,13 @@ static exo_motor_msgs__msg__MotorHealth g_msg_motor_health;
 static uint32_t g_cmd_rx_count = 0u;                /* 收到的 PC 命令计数,用于状态降频 */
 
 #if EXO_MOTOR_ROS_ENTITIES
-static char g_joint_target_frame_id[1] = "";
+#  ifndef EXO_MOTOR_FRAME_ID_RX_CAPACITY
+#    define EXO_MOTOR_FRAME_ID_RX_CAPACITY RMW_UXRCE_MAX_INPUT_BUFFER_SIZE
+#  endif
+#  if EXO_MOTOR_FRAME_ID_RX_CAPACITY < 1u
+#    error "EXO_MOTOR_FRAME_ID_RX_CAPACITY must be >= 1"
+#  endif
+static char g_joint_target_frame_id[EXO_MOTOR_FRAME_ID_RX_CAPACITY] = "";
 static char g_joint_state_frame_id[1] = "";
 static char g_motor_health_frame_id[1] = "";
 #endif
@@ -267,12 +276,14 @@ static void fail_stop(void)
 }
 
 #if EXO_MOTOR_ROS_ENTITIES
-static void bind_empty_frame_id(rosidl_runtime_c__String *frame_id, char *storage)
+static void bind_frame_id_storage(rosidl_runtime_c__String *frame_id,
+                                  char *storage,
+                                  size_t capacity)
 {
     storage[0] = '\0';
     frame_id->data = storage;
     frame_id->size = 0u;
-    frame_id->capacity = 1u;
+    frame_id->capacity = capacity;
 }
 
 static bool double_to_milli(double value, int32_t *out)
@@ -305,14 +316,31 @@ static void set_header_stamp_from_ns(std_msgs__msg__Header *header, uint64_t sta
     header->stamp.nanosec = (uint32_t)(stamp_ns % 1000000000ull);
 }
 
+static void snapshot_motor_state(motor_control_state_t *state)
+{
+    uint32_t primask = __get_PRIMASK();
+    __disable_irq();
+    motor_control_get_state(state);
+    __set_PRIMASK(primask);
+}
+
+static void snapshot_motor_health(motor_control_health_t *health)
+{
+    uint32_t primask = __get_PRIMASK();
+    __disable_irq();
+    motor_control_get_health(health);
+    __set_PRIMASK(primask);
+}
+
 static void motor_joint_target_callback(const void *msgin)
 {
     const exo_motor_msgs__msg__JointTarget *m =
         (const exo_motor_msgs__msg__JointTarget *)msgin;
 
     /* M2 keeps std_msgs/Header only as host-side metadata. On F103 we only
-     * support empty frame_id so XRCE deserialization never needs heap-backed
-     * strings in the hot path. */
+     * support empty frame_id. The receive buffer is sized to the XRCE input
+     * stream so non-empty frame_id values that fit on the wire are visible
+     * here and rejected instead of being silently skipped by generated code. */
     if (m->header.frame_id.size != 0u) {
         return;
     }
@@ -362,13 +390,13 @@ static void publish_motor_state(void)
 {
     motor_control_state_t state;
 
-    taskDISABLE_INTERRUPTS();
-    motor_control_get_state(&state);
-    taskENABLE_INTERRUPTS();
+    snapshot_motor_state(&state);
 
     uint64_t stamp_ns = dwt_now_ns();
     set_header_stamp_from_ns(&g_msg_joint_state.header, stamp_ns);
-    bind_empty_frame_id(&g_msg_joint_state.header.frame_id, g_joint_state_frame_id);
+    bind_frame_id_storage(&g_msg_joint_state.header.frame_id,
+                          g_joint_state_frame_id,
+                          sizeof(g_joint_state_frame_id));
     g_msg_joint_state.seq = state.seq;
     g_msg_joint_state.joint_id = state.joint_id;
     g_msg_joint_state.control_mode = state.control_mode;
@@ -392,13 +420,13 @@ static void publish_motor_health(void)
 {
     motor_control_health_t health;
 
-    taskDISABLE_INTERRUPTS();
-    motor_control_get_health(&health);
-    taskENABLE_INTERRUPTS();
+    snapshot_motor_health(&health);
 
     uint64_t stamp_ns = dwt_now_ns();
     set_header_stamp_from_ns(&g_msg_motor_health.header, stamp_ns);
-    bind_empty_frame_id(&g_msg_motor_health.header.frame_id, g_motor_health_frame_id);
+    bind_frame_id_storage(&g_msg_motor_health.header.frame_id,
+                          g_motor_health_frame_id,
+                          sizeof(g_motor_health_frame_id));
     g_msg_motor_health.bus_id = 0u;
     g_msg_motor_health.joint_count = 1u;
     g_msg_motor_health.targets_received = health.targets_received;
@@ -618,9 +646,15 @@ void microros_app_task(void *arg)
     g_msg_cmd.header.crc              = 0u;
     g_msg_cmd.payload                 = 0;
 #if EXO_MOTOR_ROS_ENTITIES
-    bind_empty_frame_id(&g_msg_joint_target.header.frame_id, g_joint_target_frame_id);
-    bind_empty_frame_id(&g_msg_joint_state.header.frame_id, g_joint_state_frame_id);
-    bind_empty_frame_id(&g_msg_motor_health.header.frame_id, g_motor_health_frame_id);
+    bind_frame_id_storage(&g_msg_joint_target.header.frame_id,
+                          g_joint_target_frame_id,
+                          sizeof(g_joint_target_frame_id));
+    bind_frame_id_storage(&g_msg_joint_state.header.frame_id,
+                          g_joint_state_frame_id,
+                          sizeof(g_joint_state_frame_id));
+    bind_frame_id_storage(&g_msg_motor_health.header.frame_id,
+                          g_motor_health_frame_id,
+                          sizeof(g_motor_health_frame_id));
 #endif
     motor_control_init();
 
