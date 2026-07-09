@@ -46,6 +46,46 @@ test_summary_counter_parser() {
 
 test_summary_counter_parser
 
+test_record_stage_metrics_includes_catchup() {
+  local source_dir="$TMPDIR/record-source"
+  local fake_log="$TMPDIR/fake-stage.log"
+  local summary="$source_dir/__source_only.summary.log"
+  mkdir -p "$source_dir"
+  printf '%s\n' \
+    '[com-perf] status_hz=5' \
+    '[com-perf] sampler_hz=5' \
+    '[com-perf] sampler_target_rx_hz=200.00' \
+    '[com-perf] sampler_max_gap_s=0.061' \
+    '[com-perf] sampler_p95_gap_s=0.051' \
+    '[com-perf] sampler_p99_gap_s=0.056' \
+    '[com-perf] sampler_zero_gap_count=0' \
+    '[com-perf] sampler_seq_rate_hz=5' \
+    '[com-perf] sampler_seq_delta_avg=40' \
+    '[com-perf] sampler_seq_delta_min=40' \
+    '[com-perf] sampler_seq_delta_max=40' \
+    '[com-perf] pc_target_rate_hz=200.0' \
+    '[com-perf] pc_target_window_hz=200.1' \
+    '[com-perf] pc_wire_gap_p95_ms=5.1' \
+    '[com-perf] pc_wire_gap_p99_ms=6.2' \
+    '[com-perf] pc_wire_gap_max_ms=9.9' \
+    '[com-perf] pc_cmd_catchup_events=7' \
+    '[com-perf] pc_cmd_catchup_extra=8' \
+    '[com-perf] wire_metrics=METRICS total_serial_kbit_s=90.77 baud_util_pct=9.85 tx_serial_kbit_s=48 rx_serial_kbit_s=42' \
+    '[com-perf] last_summary=[node_com_cmd] link-health summary: sent=10 matched=10 lost=0 duplicate=0 inflight=0' \
+    '[com-perf] qos_incompatibility=none' \
+    >"$fake_log"
+  RUN_COM_STAIRCASE_SOURCE_ONLY=1 bash -c '
+    LOGDIR="$2" source "$1" __source_only
+    record_stage_metrics latest_1000hz_921600baud_irqp4_poll0_spin1000us_200hz_be_n40 "$3"
+  ' _ "$ROOT/tools/run-com-staircase.sh" "$source_dir" "$fake_log" >/dev/null
+  assert_contains "$summary" "pc_cmd_catchup_events=7" \
+    "staircase metrics include PC catch-up event count"
+  assert_contains "$summary" "pc_cmd_catchup_extra=8" \
+    "staircase metrics include PC catch-up extra command count"
+}
+
+test_record_stage_metrics_includes_catchup
+
 LOGDIR="$TMPDIR/default" DRY_RUN=1 \
   "$ROOT/tools/run-com-staircase.sh" dry_default >/dev/null
 default_summary="$TMPDIR/default/dry_default.summary.log"

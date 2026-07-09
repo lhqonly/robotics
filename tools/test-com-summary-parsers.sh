@@ -28,7 +28,7 @@ write_perf_logs() {
     'status_sampler: rate_hz=20.001 seq_rate_hz=20.001 seq_delta_avg=1 seq_delta_min=1 seq_delta_max=1 p95_gap_s=0.051 p99_gap_s=0.056 max_gap_s=0.061 zero_gap_count=0' \
     >"$TMPDIR/com-perf/sample.sampler.log"
   printf '%s\n' \
-    '[node_com_cmd] link-health summary: wire_rate_hz=20.001 target_rate_hz=20.000 target_window_hz=20.000 wire_gap_p95_ms=5.1 wire_gap_p99_ms=6.2 wire_gap_max_ms=9.9 lost=0 duplicate=0 inflight=1' \
+    '[node_com_cmd] link-health summary: wire_rate_hz=20.001 target_rate_hz=20.000 target_window_hz=20.000 wire_gap_p95_ms=5.1 wire_gap_p99_ms=6.2 wire_gap_max_ms=9.9 cmd_catchup_events=2 cmd_catchup_extra=3 lost=0 duplicate=0 inflight=1' \
     >"$TMPDIR/com-perf/sample.cmd.log"
   printf '%s\n' \
     'METRICS total_serial_kbit_s=90.77 baud_util_pct=9.85' \
@@ -47,7 +47,7 @@ write_perf_logs() {
     'status_sampler: rate_hz=20.000 seq_rate_hz=20.000 seq_delta_avg=1 seq_delta_min=1 seq_delta_max=1 p95_gap_s=0.050 p99_gap_s=0.055 max_gap_s=0.060 zero_gap_count=0' \
     >"$TMPDIR/com-perf/badpc.sampler.log"
   printf '%s\n' \
-    '[node_com_cmd] link-health summary: wire_rate_hz=20.000 target_rate_hz=20.000 target_window_hz=20.000 wire_gap_p95_ms=50.0 wire_gap_p99_ms=250.0 wire_gap_max_ms=600.0 lost=0 duplicate=0 inflight=1' \
+    '[node_com_cmd] link-health summary: wire_rate_hz=20.000 target_rate_hz=20.000 target_window_hz=20.000 wire_gap_p95_ms=50.0 wire_gap_p99_ms=250.0 wire_gap_max_ms=600.0 cmd_catchup_events=4 cmd_catchup_extra=5 lost=0 duplicate=0 inflight=1' \
     >"$TMPDIR/com-perf/badpc.cmd.log"
 
   printf '%s\n' 'average rate: 20.000' >"$TMPDIR/com-perf/lostcase.hz.log"
@@ -68,22 +68,22 @@ test_com_perf_summary() {
     'pc_wire_gap_p95_ms,pc_wire_gap_p99_ms,pc_wire_gap_max_ms' \
     'com-perf csv header includes PC publish gap fields'
   assert_contains "$csv" \
-    'sample,19.997,20.001,20.001,1,1,1,0.051,0.056,0.061,0,20.001,20.000,20.000,5.1,6.2,9.9,90.77,9.85,0,0,1' \
+    'sample,19.997,20.001,20.001,1,1,1,0.051,0.056,0.061,0,20.001,20.000,20.000,5.1,6.2,9.9,2,3,90.77,9.85,0,0,1' \
     'com-perf csv parses sample metrics'
   assert_contains "$csv" \
-    'legacy,20.000,20.000,20.000,1,1,1,0.050,0.055,0.060,0,20.000,20.000,20.000,NA,NA,NA,NA,NA,0,0,1' \
+    'legacy,20.000,20.000,20.000,1,1,1,0.050,0.055,0.060,0,20.000,20.000,20.000,NA,NA,NA,NA,NA,NA,NA,0,0,1' \
     'com-perf csv keeps missing new fields as NA'
 
   md="$(LOGDIR="$TMPDIR/com-perf" "$ROOT/tools/summarize-com-perf.sh" sample)"
   assert_contains "$md" 'PC gap p95/p99/max ms' \
     'com-perf markdown header includes PC publish gap fields'
-  assert_contains "$md" '| sample | 19.997 | 20.001 | 20.001 | 1/1/1 | 0.051 | 0.056 | 0.061 | 0 | 20.001 | 20.000 / 20.000 | 5.1/6.2/9.9 | 90.77 | 9.85 | 0 | 0 | 1 |' \
+  assert_contains "$md" '| sample | 19.997 | 20.001 | 20.001 | 1/1/1 | 0.051 | 0.056 | 0.061 | 0 | 20.001 | 20.000 / 20.000 | 5.1/6.2/9.9 | 2/3 | 90.77 | 9.85 | 0 | 0 | 1 |' \
     'com-perf markdown parses sample metrics'
 
   csv="$(LOGDIR="$TMPDIR/com-perf" FORMAT=csv PERF_EXPECTED_RATE_HZ=20 \
     "$ROOT/tools/summarize-com-perf.sh" badpc)"
   assert_contains "$csv" \
-    'badpc,WARN,pc_wire_gap_p99_high;pc_wire_gap_max_high,20.000,20.000,20.000,1,1,1,0.050,0.055,0.060,0,20.000,20.000,20.000,50.0,250.0,600.0,NA,NA,0,0,1' \
+    'badpc,WARN,pc_wire_gap_p99_high;pc_wire_gap_max_high,20.000,20.000,20.000,1,1,1,0.050,0.055,0.060,0,20.000,20.000,20.000,50.0,250.0,600.0,4,5,NA,NA,0,0,1' \
     'com-perf verdict flags PC publish gap contract'
 }
 
@@ -93,8 +93,8 @@ test_staircase_summary() {
   summary="$TMPDIR/staircase.summary.log"
   printf '%s\n' \
     'mode build_firmware=1 flash_firmware=1 dry_run=0 staircase_bauds=921600 staircase_control_timer_irq_priorities=4 staircase_uart_read_poll_yields=0 staircase_executor_spin_timeout_us=100 pc_launch_prefix=taskset -c 2 staircase_pc_launch_case_count=2' \
-    'METRICS latest_10khz_921600baud_irqp4_poll0_spin100_200hz_be_n40 status_hz=5 sampler_hz=5 sampler_target_rx_hz=200.0 sampler_p95_gap_s=0.051 sampler_p99_gap_s=0.056 sampler_max_gap_s=0.061 sampler_zero_gap_count=0 sampler_seq_rate_hz=5 seq_delta_avg=40 seq_delta_min=40 seq_delta_max=40 pc_target_rate_hz=199.9 pc_target_window_hz=200.1 pc_wire_gap_p95_ms=5.0 pc_wire_gap_p99_ms=6.0 pc_wire_gap_max_ms=8.0 wire_kbit_s=90.77 wire_baud_util_pct=9.85 tx_kbit_s=48 rx_kbit_s=42 lost=0 duplicate=0 inflight=0 qos_incompatibility=0' \
-    'METRICS latest_10khz_921600baud_irqp4_poll0_spin100_200hz_be_n40_badpc status_hz=5 sampler_hz=5 sampler_target_rx_hz=200.0 sampler_p95_gap_s=0.051 sampler_p99_gap_s=0.056 sampler_max_gap_s=0.061 sampler_zero_gap_count=0 sampler_seq_rate_hz=5 seq_delta_avg=40 seq_delta_min=40 seq_delta_max=40 pc_target_rate_hz=199.9 pc_target_window_hz=200.1 pc_wire_gap_p95_ms=5.0 pc_wire_gap_p99_ms=25.0 pc_wire_gap_max_ms=60.0 wire_kbit_s=90.77 wire_baud_util_pct=9.85 tx_kbit_s=48 rx_kbit_s=42 lost=0 duplicate=0 inflight=0 qos_incompatibility=0' \
+    'METRICS latest_10khz_921600baud_irqp4_poll0_spin100_200hz_be_n40 status_hz=5 sampler_hz=5 sampler_target_rx_hz=200.0 sampler_p95_gap_s=0.051 sampler_p99_gap_s=0.056 sampler_max_gap_s=0.061 sampler_zero_gap_count=0 sampler_seq_rate_hz=5 seq_delta_avg=40 seq_delta_min=40 seq_delta_max=40 pc_target_rate_hz=199.9 pc_target_window_hz=200.1 pc_wire_gap_p95_ms=5.0 pc_wire_gap_p99_ms=6.0 pc_wire_gap_max_ms=8.0 pc_cmd_catchup_events=0 pc_cmd_catchup_extra=0 wire_kbit_s=90.77 wire_baud_util_pct=9.85 tx_kbit_s=48 rx_kbit_s=42 lost=0 duplicate=0 inflight=0 qos_incompatibility=0' \
+    'METRICS latest_10khz_921600baud_irqp4_poll0_spin100_200hz_be_n40_badpc status_hz=5 sampler_hz=5 sampler_target_rx_hz=200.0 sampler_p95_gap_s=0.051 sampler_p99_gap_s=0.056 sampler_max_gap_s=0.061 sampler_zero_gap_count=0 sampler_seq_rate_hz=5 seq_delta_avg=40 seq_delta_min=40 seq_delta_max=40 pc_target_rate_hz=199.9 pc_target_window_hz=200.1 pc_wire_gap_p95_ms=5.0 pc_wire_gap_p99_ms=25.0 pc_wire_gap_max_ms=60.0 pc_cmd_catchup_events=12 pc_cmd_catchup_extra=15 wire_kbit_s=90.77 wire_baud_util_pct=9.85 tx_kbit_s=48 rx_kbit_s=42 lost=0 duplicate=0 inflight=0 qos_incompatibility=0' \
     'METRICS latest_10khz_921600baud_irqp4_poll0_spin100_200hz_be_n40_badqos status_hz=NA sampler_hz=0 sampler_target_rx_hz=0 pc_target_rate_hz=0 pc_target_window_hz=0 pc_wire_gap_p95_ms=5.0 pc_wire_gap_p99_ms=8.0 pc_wire_gap_max_ms=12.0 lost=0 duplicate=0 inflight=0 qos_incompatibility=1' \
     >"$summary"
 
@@ -106,13 +106,13 @@ test_staircase_summary() {
     'qos_incompatibility' \
     'staircase csv header includes QoS incompatibility field'
   assert_contains "$csv" \
-    'latest_10khz_921600baud_irqp4_poll0_spin100_200hz_be_n40,PASS,-,10000,921600,4,0,100,200,best_effort,40,taskset -c 2,5,5,200.0,0.051,0.056,0.061,0,5,40,40,40,199.9,200.1,5.0,6.0,8.0,90.77,9.85,48,42,0,0,0,0' \
+    'latest_10khz_921600baud_irqp4_poll0_spin100_200hz_be_n40,PASS,-,10000,921600,4,0,100,200,best_effort,40,taskset -c 2,5,5,200.0,0.051,0.056,0.061,0,5,40,40,40,199.9,200.1,5.0,6.0,8.0,0,0,90.77,9.85,48,42,0,0,0,0' \
     'staircase csv parses metadata and metrics'
   assert_contains "$csv" \
-    'latest_10khz_921600baud_irqp4_poll0_spin100_200hz_be_n40_badpc,WARN,pc_wire_gap_p99_high;pc_wire_gap_max_high,10000,921600,4,0,100,200,best_effort,40,taskset -c 2,5,5,200.0,0.051,0.056,0.061,0,5,40,40,40,199.9,200.1,5.0,25.0,60.0,90.77,9.85,48,42,0,0,0,0' \
+    'latest_10khz_921600baud_irqp4_poll0_spin100_200hz_be_n40_badpc,WARN,pc_wire_gap_p99_high;pc_wire_gap_max_high,10000,921600,4,0,100,200,best_effort,40,taskset -c 2,5,5,200.0,0.051,0.056,0.061,0,5,40,40,40,199.9,200.1,5.0,25.0,60.0,12,15,90.77,9.85,48,42,0,0,0,0' \
     'staircase csv flags PC publish gap contract'
   assert_contains "$csv" \
-    'latest_10khz_921600baud_irqp4_poll0_spin100_200hz_be_n40_badqos,FAIL,target_rate_out_of_band;pc_target_rate_out_of_band;qos_incompatible,10000,921600,4,0,100,200,best_effort,40,taskset -c 2,NA,0,0,NA,NA,NA,NA,NA,NA,NA,NA,0,0,5.0,8.0,12.0,NA,NA,NA,NA,0,0,0,1' \
+    'latest_10khz_921600baud_irqp4_poll0_spin100_200hz_be_n40_badqos,FAIL,target_rate_out_of_band;pc_target_rate_out_of_band;qos_incompatible,10000,921600,4,0,100,200,best_effort,40,taskset -c 2,NA,0,0,NA,NA,NA,NA,NA,NA,NA,NA,0,0,5.0,8.0,12.0,NA,NA,NA,NA,NA,NA,0,0,0,1' \
     'staircase csv flags QoS incompatibility'
 
   md="$("$ROOT/tools/summarize-com-staircase.sh" "$summary")"
@@ -122,7 +122,7 @@ test_staircase_summary() {
     'staircase markdown header includes PC launch prefix field'
   assert_contains "$md" 'QoS incompatible' \
     'staircase markdown header includes QoS incompatibility field'
-  assert_contains "$md" '| latest_10khz_921600baud_irqp4_poll0_spin100_200hz_be_n40 | PASS | - | 10000 | 921600 | 4 | 0 | 100 | 200 | best_effort | 40 | taskset -c 2 | 5 | 5 | 200.0 | 0.051 | 0.056 | 0.061 | 0 | 5 | 40/40/40 | 199.9 / 200.1 | 5.0/6.0/8.0 | 90.77 | 9.85 | 0 | 0 | 0 | 0 |' \
+  assert_contains "$md" '| latest_10khz_921600baud_irqp4_poll0_spin100_200hz_be_n40 | PASS | - | 10000 | 921600 | 4 | 0 | 100 | 200 | best_effort | 40 | taskset -c 2 | 5 | 5 | 200.0 | 0.051 | 0.056 | 0.061 | 0 | 5 | 40/40/40 | 199.9 / 200.1 | 5.0/6.0/8.0 | 0/0 | 90.77 | 9.85 | 0 | 0 | 0 | 0 |' \
     'staircase markdown parses metadata and metrics'
 }
 

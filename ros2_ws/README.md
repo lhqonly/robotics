@@ -489,6 +489,8 @@ tools/check-com-staircase-contract.py log/com-staircase/<tag>.metrics.csv
 `status_every_n`，并从 summary 里带出 `pc_launch_prefix`，方便横向比较
 1/2/5/10kHz、921600/2Mbps、TIM2 IRQ
 优先级、UART polling 和 executor spin timeout 候选。
+表格也会带 `pc_cmd_catchup_events` / `pc_cmd_catchup_extra`，方便比较不同
+PC 调度策略是否减少靠 burst 追平 200Hz 的情况。
 表格还会给每个已知 profile 标出 `verdict/reason`：baseline 按 20Hz reliable
 smoke 判断，latest-target 阶段按 200Hz 目标接收率、gap 和 lost/duplicate 判断；
 未知 fallback 阶段标 `INFO`。
