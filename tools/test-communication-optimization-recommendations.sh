@@ -37,7 +37,7 @@ METRICS duration_s=10 total_serial_kbit_s=17.53 baud_util_pct=1.90 tx_serial_kbi
 EOF
 cat >"$TMPDIR/scheduler.csv" <<'EOF'
 tag,pc_wire_gap_p99_ms,pc_wire_gap_max_ms,pc_cmd_catchup_events,pc_cmd_catchup_extra
-default,11.0,22.0,3,5
+default,9.0,10.0,0,0
 taskset_cpu2,8.0,12.0,0,0
 EOF
 cat >"$TMPDIR/staircase.csv" <<'EOF'
@@ -63,6 +63,9 @@ assert_contains "$synthetic" \
 assert_contains "$synthetic" \
   "CANDIDATE pc_scheduler_best_observed tag=taskset_cpu2 p99_ms=8.000 max_ms=12.000 catchup_events=0 catchup_extra=0" \
   "synthetic scheduler best candidate"
+assert_contains "$synthetic" \
+  "CANDIDATE pc_scheduler_lowest_max_observed tag=default p99_ms=9.000 max_ms=10.000 catchup_events=0 catchup_extra=0" \
+  "synthetic scheduler lowest max candidate"
 assert_contains "$synthetic" \
   "CANDIDATE qos_matching_required qos_incompatibility=0" \
   "synthetic QoS gate clear"

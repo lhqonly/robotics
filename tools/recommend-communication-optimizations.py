@@ -123,6 +123,23 @@ def best_scheduler(rows: list[dict[str, str]]) -> dict[str, str] | None:
     )
 
 
+def lowest_max_scheduler(rows: list[dict[str, str]]) -> dict[str, str] | None:
+    candidates = [
+        row for row in rows if fnum(row, "pc_wire_gap_max_ms") is not None
+    ]
+    if not candidates:
+        return None
+    return min(
+        candidates,
+        key=lambda row: (
+            fnum_or_inf(row, "pc_wire_gap_max_ms"),
+            fnum_or_inf(row, "pc_wire_gap_p99_ms"),
+            fnum_or_inf(row, "pc_cmd_catchup_extra"),
+            fnum_or_inf(row, "pc_cmd_catchup_events"),
+        ),
+    )
+
+
 def qos_incompatibility(rows: list[dict[str, str]]) -> bool:
     return any((fnum(row, "qos_incompatibility") or 0.0) > 0.0 for row in rows)
 
@@ -162,6 +179,7 @@ def main() -> int:
     latest_200_40_2m = project_wire(wire_metrics, 200.0, 40, 2_000_000)
     full_echo_200_921600 = project_wire(wire_metrics, 200.0, 1, 921600)
     best_sched = best_scheduler(scheduler_rows)
+    low_max_sched = lowest_max_scheduler(scheduler_rows)
     qos_bad = qos_incompatibility(staircase_rows)
 
     print("# Communication Optimization Recommendations")
@@ -226,6 +244,18 @@ def main() -> int:
             catchup_extra=fmt(fnum(best_sched, "pc_cmd_catchup_extra"), 0),
             adoption="prefer_for_staircase_case",
         ))
+        if low_max_sched and low_max_sched != best_sched:
+            print(candidate_line(
+                "pc_scheduler_lowest_max_observed",
+                tag=low_max_sched.get("tag", "unknown"),
+                p99_ms=fmt(fnum(low_max_sched, "pc_wire_gap_p99_ms")),
+                max_ms=fmt(fnum(low_max_sched, "pc_wire_gap_max_ms")),
+                catchup_events=fmt(
+                    fnum(low_max_sched, "pc_cmd_catchup_events"), 0),
+                catchup_extra=fmt(
+                    fnum(low_max_sched, "pc_cmd_catchup_extra"), 0),
+                adoption="compare_when_tail_max_matters",
+            ))
     else:
         print("CANDIDATE pc_scheduler_best_observed unavailable=missing_scheduler_csv")
 
