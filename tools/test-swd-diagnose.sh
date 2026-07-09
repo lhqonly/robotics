@@ -96,8 +96,10 @@ assert_contains "$out" "SWD_STATUS=ok" "ok probe status"
 assert_contains "$out" "SWD_REASON=probe-ok" "ok probe reason"
 assert_contains "$out" "USB_STLINK=present" "ST-LINK USB present"
 assert_contains "$out" "TTY_USB=present" "USB-TTL tty present"
-assert_contains "$out" "STAIRCASE_BAUDS=\"921600 2000000\"" \
-  "next staircase command"
+assert_contains "$out" "tools/recommend-staircase-command.sh" \
+  "next recommended staircase command"
+assert_contains "$out" "Then run the recommended tools/run-com-staircase.sh command." \
+  "next staircase command guidance"
 
 write_fake_stinfo "$TMPDIR/st-info-unknown" unknown
 out="$(run_diag "$TMPDIR/st-info-unknown" "$TMPDIR/lsusb")"

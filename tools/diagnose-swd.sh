@@ -171,7 +171,8 @@ $dmesg_out
 When SWD_STATUS=ok:
 
 \`\`\`bash
-STAIRCASE_BAUDS="921600 2000000" tools/run-com-staircase.sh staircase_\$(date +%Y%m%d_%H%M)
+tools/recommend-staircase-command.sh
+# Then run the recommended tools/run-com-staircase.sh command.
 tools/measure-stack-hwm.sh firmware/f103-microros/build/f103-microros.elf
 \`\`\`
 
