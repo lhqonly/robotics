@@ -106,7 +106,7 @@ def generate_launch_description():
             prefix=launch_prefix,
             parameters=[{
                 'cmd_rate_hz': ParameterValue(cmd_rate_hz, value_type=float),
-                'cmd_catchup_max': 1,
+                'cmd_catchup_max': 0,
                 'qos_depth': 1,
                 'qos_reliability': 'best_effort',
                 'tracking_mode': 'sampled',

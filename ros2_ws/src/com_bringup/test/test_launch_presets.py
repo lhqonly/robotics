@@ -19,7 +19,7 @@ def assert_contains(text, needle):
 def test_latest_target_preset_uses_low_overhead_diagnostics():
     text = read_launch('pc_latest_target.launch.py')
 
-    assert_contains(text, "'cmd_catchup_max': 1")
+    assert_contains(text, "'cmd_catchup_max': 0")
     assert_contains(text, "'qos_depth': 1")
     assert_contains(text, "'qos_reliability': 'best_effort'")
     assert_contains(text, "'tracking_mode': 'sampled'")

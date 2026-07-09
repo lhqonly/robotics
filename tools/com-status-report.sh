@@ -936,7 +936,7 @@ serial_users="$(serial_lsof)"
   if [ -n "$overnight_fail_count" ] && [ "$overnight_fail_count" -gt 0 ] 2>/dev/null; then
     echo "- overnight reliable/full-echo no-flash 仍有失败样本：PASS/WARN/FAIL/INFO=${overnight_counts:-unknown}，reasons=${overnight_reasons:-unknown}。这类长尾需继续用 sampler + PC publish gap + LinkHealth 交叉判断，并优先做 \`taskset\` 整夜对比。"
   fi
-  echo "- \`cmd_catchup_max=1\` 只应用于 best-effort/status decimation/sampled 的 latest-target profile；不要用于 reliable/status_every_1/full-echo 默认诊断。"
+  echo "- latest-target 默认 \`cmd_catchup_max=0\`，优先避免补发 burst；\`cmd_catchup_max=1\` 只作为 best-effort/status decimation/sampled 的吞吐对比实验，不用于 reliable/status_every_1/full-echo 默认诊断。"
   echo "- 200Hz reliable/status_every_1/full-echo 不适合作为控制链路目标；后续验收重点应转向 latest-target 接收率、状态采样频率、长尾 gap、lost/duplicate/inflight。"
   echo
   echo "## 下一步建议"

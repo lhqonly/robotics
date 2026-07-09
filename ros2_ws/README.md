@@ -119,7 +119,7 @@ ros2 launch com_bringup pc_cmd.launch.py cmd_rate_hz:=200 qos_depth:=1
 ```bash
 # PC 侧
 ros2 launch com_bringup pc_cmd.launch.py \
-  cmd_rate_hz:=200 cmd_catchup_max:=1 qos_depth:=1 qos_reliability:=best_effort
+  cmd_rate_hz:=200 cmd_catchup_max:=0 qos_depth:=1 qos_reliability:=best_effort
 
 # 固件侧重新 configure/build 时使用
 cmake -S firmware/f103-microros -B firmware/f103-microros/build \
@@ -192,7 +192,7 @@ cmake -S firmware/f103-microros -B firmware/f103-microros/build \
 
 ros2 run exo_cmd exo_cmd_node --ros-args \
   -p cmd_rate_hz:=200.0 \
-  -p cmd_catchup_max:=1 \
+  -p cmd_catchup_max:=0 \
   -p qos_depth:=1 \
   -p qos_reliability:=best_effort \
   -p tracking_mode:=sampled \
@@ -205,7 +205,7 @@ ros2 run exo_cmd exo_cmd_node --ros-args \
 ```bash
 ros2 launch com_bringup pc_cmd.launch.py \
   cmd_rate_hz:=200 \
-  cmd_catchup_max:=1 \
+  cmd_catchup_max:=0 \
   qos_depth:=1 \
   qos_reliability:=best_effort \
   tracking_mode:=sampled \
@@ -218,7 +218,7 @@ ros2 launch com_bringup pc_cmd.launch.py \
 ros2 launch com_bringup pc_latest_target.launch.py
 ```
 
-它默认等价于 `cmd_rate_hz=200`、`cmd_catchup_max=1`、`qos_depth=1`、
+它默认等价于 `cmd_rate_hz=200`、`cmd_catchup_max=0`、`qos_depth=1`、
 `qos_reliability=best_effort`、`tracking_mode=sampled`、`status_every_n=40`、
 `sample_window=1024`、`summary_period_s=5.0`、`link_health_period_s=5.0`。
 这组参数的含义是：
@@ -226,7 +226,7 @@ ros2 launch com_bringup pc_latest_target.launch.py
 | 参数 | 默认值 | 用途 |
 |---|---:|---|
 | `cmd_rate_hz` | `200` | PC/ROS 下发 latest target 的目标频率 |
-| `cmd_catchup_max` | `1` | ROS timer 偶发慢一拍时允许补发 1 条，贴近长期 200Hz |
+| `cmd_catchup_max` | `0` | ROS timer 偶发慢一拍时不补发，避免 latest-target 控制出现 burst |
 | `qos_reliability` | `best_effort` | 控制目标采用“最新值优先”，避免 reliable 重传拖慢实时链路 |
 | `status_every_n` | `40` | MCU 每 40 条命令回一次状态，200Hz 下约 5Hz 状态 topic |
 | `sample_window` | `1024` | PC 侧 sampled 匹配窗口，200Hz 下覆盖约 5.1s |
@@ -247,7 +247,7 @@ LinkHealth summary：
 
 ```bash
 CMD_RATE_HZ=200 \
-CMD_CATCHUP_MAX=1 \
+CMD_CATCHUP_MAX=0 \
 QOS_RELIABILITY=best_effort \
 QOS_DEPTH=1 \
 TRACKING_MODE=sampled \
@@ -333,7 +333,7 @@ case 自动分配独立 `ROS_DOMAIN_ID`，避免连续 case 之间 DDS graph 残
 脚本会把这些参数写进 summary，并原样传给 `run-com-perf.sh`：
 
 ```bash
-CMD_RATE_HZ=200 CMD_CATCHUP_MAX=1 \
+CMD_RATE_HZ=200 CMD_CATCHUP_MAX=0 \
 QOS_RELIABILITY=best_effort QOS_DEPTH=1 \
 TRACKING_MODE=sampled STATUS_EVERY_N=40 \
 SUMMARY_PERIOD_S=5.0 LINK_HEALTH_PERIOD_S=5.0 \
@@ -350,6 +350,8 @@ tools/run-pc-scheduler-sweep.sh pc_sched_200hz_$(date +%Y%m%d_%H%M)
 用 metrics 表里的 `pc_wire_gap_p95/p99/max_ms`、`pc_cmd_catchup_events/extra`、
 `lost`、`duplicate` 对比。`MAX_CATCHUP_EVENTS=0 MAX_CATCHUP_EXTRA=0` 会把任何
 PC timer 补发标成 WARN；不设置这两个变量时只展示补发计数，不参与 verdict。
+如果要专门比较“靠补发追平均频率”的吞吐策略，可以临时设
+`CMD_CATCHUP_MAX=1` 单独跑一轮；latest-target 控制默认优先压低 burst 长尾。
 
 如果要比较更具体的调度策略，可以用多行 `PC_SCHEDULER_CASES`。每行格式为
 `label|launch_prefix`，空 prefix 用 `label|`：

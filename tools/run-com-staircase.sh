@@ -302,7 +302,7 @@ run_latest_flash_stage() {
     UART_READ_POLL_YIELDS="$poll_yields" \
     EXECUTOR_SPIN_TIMEOUT_US="$spin_timeout_us" \
     CMD_RATE_HZ=200 \
-    CMD_CATCHUP_MAX=1 \
+    CMD_CATCHUP_MAX=0 \
     QOS_RELIABILITY=best_effort \
     QOS_DEPTH=1 \
     TRACKING_MODE=sampled \
@@ -337,7 +337,7 @@ run_no_flash_latest_qos_probe() {
     REQUIRE_CORE_METRICS=0 \
     REQUIRE_HEALTH_PASS=0 \
     CMD_RATE_HZ=200 \
-    CMD_CATCHUP_MAX=1 \
+    CMD_CATCHUP_MAX=0 \
     QOS_RELIABILITY=best_effort \
     QOS_DEPTH=1 \
     TRACKING_MODE=sampled \
