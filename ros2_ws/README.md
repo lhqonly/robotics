@@ -334,10 +334,14 @@ CMD_RATE_HZ=200 CMD_CATCHUP_MAX=1 \
 QOS_RELIABILITY=best_effort QOS_DEPTH=1 \
 TRACKING_MODE=sampled STATUS_EVERY_N=40 \
 SUMMARY_PERIOD_S=5.0 LINK_HEALTH_PERIOD_S=5.0 \
+REQUIRE_CORE_METRICS=0 REQUIRE_HEALTH_PASS=0 \
 EXECUTOR_THREADS=0 TASKSET_CPUS="2 3" RUNS=2 \
 tools/run-pc-scheduler-sweep.sh pc_sched_200hz_$(date +%Y%m%d_%H%M)
 ```
 
+`REQUIRE_CORE_METRICS=0 REQUIRE_HEALTH_PASS=0` 用于当前“PC 侧 200Hz 发包证据”
+场景：即使 MCU 固件 QoS 还没刷成 best-effort、没有真实 match，也能继续比较 PC
+发包间隔。等 MCU/PC QoS 已匹配后，把这两个开关恢复为 `1` 做严格验收。
 `EXECUTOR_THREADS=0` 表示让 rclpy 自动选择线程数；可以改成 `2` 单独复跑一次，
 用 metrics 表里的 `pc_wire_gap_p95/p99/max_ms`、`lost`、`duplicate` 对比。
 

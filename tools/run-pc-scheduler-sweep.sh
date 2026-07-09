@@ -31,6 +31,8 @@ SUMMARY_PERIOD_S="${SUMMARY_PERIOD_S:-1.0}"
 LINK_HEALTH_PERIOD_S="${LINK_HEALTH_PERIOD_S:-1.0}"
 STARTUP_GRACE_S="${STARTUP_GRACE_S:-3.0}"
 EXECUTOR_THREADS="${EXECUTOR_THREADS:-0}"
+REQUIRE_CORE_METRICS="${REQUIRE_CORE_METRICS:-1}"
+REQUIRE_HEALTH_PASS="${REQUIRE_HEALTH_PASS:-1}"
 
 mkdir -p "$LOGDIR" "$COM_PERF_LOGDIR"
 : >"$SUMMARY"
@@ -101,6 +103,8 @@ run_case() {
     LINK_HEALTH_PERIOD_S="$LINK_HEALTH_PERIOD_S" \
     STARTUP_GRACE_S="$STARTUP_GRACE_S" \
     EXECUTOR_THREADS="$EXECUTOR_THREADS" \
+    REQUIRE_CORE_METRICS="$REQUIRE_CORE_METRICS" \
+    REQUIRE_HEALTH_PASS="$REQUIRE_HEALTH_PASS" \
     PC_LAUNCH_PREFIX="$prefix" \
     "$ROOT/tools/run-com-perf.sh" "$tag" 2>&1 | tee "$console_log"
   status=${PIPESTATUS[0]}
@@ -116,7 +120,7 @@ run_case() {
 }
 
 record "pc_scheduler_sweep tag_prefix=$TAG_PREFIX runs=$RUNS dry_run=$DRY_RUN fail_on_case_error=$FAIL_ON_CASE_ERROR"
-record "profile cmd_rate_hz=$CMD_RATE_HZ cmd_catchup_max=$CMD_CATCHUP_MAX qos=$QOS_RELIABILITY depth=$QOS_DEPTH tracking=$TRACKING_MODE status_every_n=$STATUS_EVERY_N sample_window=$SAMPLE_WINDOW summary_period_s=$SUMMARY_PERIOD_S link_health_period_s=$LINK_HEALTH_PERIOD_S startup_grace_s=$STARTUP_GRACE_S executor_threads=$EXECUTOR_THREADS run_seconds=$RUN_SECONDS warmup_seconds=$WARMUP_SECONDS hz_seconds=$HZ_SECONDS"
+record "profile cmd_rate_hz=$CMD_RATE_HZ cmd_catchup_max=$CMD_CATCHUP_MAX qos=$QOS_RELIABILITY depth=$QOS_DEPTH tracking=$TRACKING_MODE status_every_n=$STATUS_EVERY_N sample_window=$SAMPLE_WINDOW summary_period_s=$SUMMARY_PERIOD_S link_health_period_s=$LINK_HEALTH_PERIOD_S startup_grace_s=$STARTUP_GRACE_S executor_threads=$EXECUTOR_THREADS require_core_metrics=$REQUIRE_CORE_METRICS require_health_pass=$REQUIRE_HEALTH_PASS run_seconds=$RUN_SECONDS warmup_seconds=$WARMUP_SECONDS hz_seconds=$HZ_SECONDS"
 record "logdir=$LOGDIR com_perf_logdir=$COM_PERF_LOGDIR"
 : >"$LOGDIR/$TAG_PREFIX.tags"
 
