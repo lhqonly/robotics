@@ -194,7 +194,9 @@ if [ -z "$rosidl_raw_source_bytes" ]; then
 fi
 microros_pools_bytes="$(csv_value "$SIZE_MATRIX_CSV" profile default_reliable_1khz ram_microros_custom_pools_bytes)"
 default_stack_ram="$(csv_value "$STACK_CSV" microros_stack_words 768 ram_static_bytes)"
+intermediate_stack_ram="$(csv_value "$STACK_CSV" microros_stack_words 704 ram_static_bytes)"
 stack_motor_entities="$(csv_unique_values "$STACK_CSV" motor_ros_entities)"
+intermediate_stack_motor_entities="$(csv_value "$STACK_CSV" microros_stack_words 704 motor_ros_entities)"
 best_stack_row="$(csv_min_row "$STACK_CSV" ram_static_bytes verdict PASS_STATIC)"
 best_stack_words="$(row_field "$best_stack_row" microros_stack_words)"
 best_stack_ram="$(row_field "$best_stack_row" ram_static_bytes)"
@@ -207,6 +209,8 @@ best_linker_ram="$(row_field "$best_linker_row" ram_static_bytes)"
 best_linker_motor_entities="$(row_field "$best_linker_row" motor_ros_entities)"
 baseline_combined_ram="$(csv_value "$COMBINED_CSV" case baseline ram_static_bytes)"
 combined_motor_entities="$(csv_unique_values "$COMBINED_CSV" motor_ros_entities)"
+intermediate_combined_ram="$(csv_value "$COMBINED_CSV" case stack704_heap0_stack512 ram_static_bytes)"
+intermediate_combined_motor_entities="$(csv_value "$COMBINED_CSV" case stack704_heap0_stack512 motor_ros_entities)"
 best_combined_row="$(csv_min_row "$COMBINED_CSV" ram_static_bytes verdict PASS_STATIC)"
 best_combined_case="$(row_field "$best_combined_row" case)"
 best_combined_ram="$(row_field "$best_combined_row" ram_static_bytes)"
@@ -216,15 +220,25 @@ spin_values="$(csv_unique_values "$SPIN_CSV" executor_spin_timeout_us)"
 default_ram_n="$(num_or_zero "$default_ram")"
 best_10k_ram_n="$(num_or_zero "$best_10k_ram")"
 default_stack_ram_n="$(num_or_zero "$default_stack_ram")"
+intermediate_stack_ram_n="$(num_or_zero "$intermediate_stack_ram")"
 best_stack_ram_n="$(num_or_zero "$best_stack_ram")"
 default_linker_ram_n="$(num_or_zero "$default_linker_ram")"
 best_linker_ram_n="$(num_or_zero "$best_linker_ram")"
 baseline_combined_ram_n="$(num_or_zero "$baseline_combined_ram")"
+intermediate_combined_ram_n="$(num_or_zero "$intermediate_combined_ram")"
 best_combined_ram_n="$(num_or_zero "$best_combined_ram")"
 tim2_static_saving=$((default_ram_n - best_10k_ram_n))
 stack_static_saving=$((default_stack_ram_n - best_stack_ram_n))
 linker_static_saving=$((default_linker_ram_n - best_linker_ram_n))
 combined_static_saving=$((baseline_combined_ram_n - best_combined_ram_n))
+stack_intermediate_saving="NA"
+if [ -n "$default_stack_ram" ] && [ -n "$intermediate_stack_ram" ]; then
+  stack_intermediate_saving=$((default_stack_ram_n - intermediate_stack_ram_n))
+fi
+combined_intermediate_saving="NA"
+if [ -n "$baseline_combined_ram" ] && [ -n "$intermediate_combined_ram" ]; then
+  combined_intermediate_saving=$((baseline_combined_ram_n - intermediate_combined_ram_n))
+fi
 
 cat <<EOF
 # Firmware Optimization Recommendations
@@ -255,9 +269,13 @@ CANDIDATE tim2_high_loop_static_saving saved_bytes=$tim2_static_saving default_p
 
 CANDIDATE control_loop_staircase_order loops=1000,2000,5000,10000 pc_cmd_hz=200 status_every_n=40 bauds=921600,2000000 profile_scope=runtime_sequence adoption=runtime_sequence gate=advance_next_loop_only_after_contract_pass
 
+CANDIDATE microros_stack_intermediate words=704 saved_bytes=$stack_intermediate_saving ram_static_bytes=${intermediate_stack_ram:-NA} motor_ros_entities=${intermediate_stack_motor_entities:-NA} profile_scope=motor_enabled_candidate source_csv=$(relpath "$STACK_CSV") adoption=hold_preferred_first_cut gate=measure_stack_hwm_after_high_rate margin_rule="min_free_words>=128"
+
 CANDIDATE microros_stack_min_static words=${best_stack_words:-NA} saved_bytes=$stack_static_saving ram_static_bytes=${best_stack_ram:-NA} motor_ros_entities=${best_stack_motor_entities:-NA} profile_scope=motor_enabled_candidate source_csv=$(relpath "$STACK_CSV") adoption=hold gate=measure_stack_hwm_after_high_rate margin_rule="min_free_words>=128"
 
 CANDIDATE linker_reserve_min_static case=${best_linker_case:-NA} saved_bytes=$linker_static_saving ram_static_bytes=${best_linker_ram:-NA} motor_ros_entities=${best_linker_motor_entities:-NA} profile_scope=motor_enabled_candidate source_csv=$(relpath "$LINKER_CSV") adoption=hold gate=verify_msp_heap_malloc_hardfault
+
+CANDIDATE combined_stack_linker_intermediate case=stack704_heap0_stack512 saved_bytes=$combined_intermediate_saving baseline_ram=${baseline_combined_ram:-NA} ram_static_bytes=${intermediate_combined_ram:-NA} motor_ros_entities=${intermediate_combined_motor_entities:-NA} profile_scope=motor_enabled_candidate source_csv=$(relpath "$COMBINED_CSV") adoption=hold_preferred_first_cut gate=verify_stack_hwm_msp_heap_together
 
 CANDIDATE combined_stack_linker_min_static case=${best_combined_case:-NA} saved_bytes=$combined_static_saving baseline_ram=${baseline_combined_ram:-NA} ram_static_bytes=${best_combined_ram:-NA} motor_ros_entities=${best_combined_motor_entities:-NA} profile_scope=motor_enabled_candidate source_csv=$(relpath "$COMBINED_CSV") adoption=hold gate=verify_stack_hwm_msp_heap_together
 

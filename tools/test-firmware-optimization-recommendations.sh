@@ -78,6 +78,7 @@ EOF
 cat >"$TMPDIR/combined.csv" <<'EOF'
 case,verdict,ram_static_bytes,motor_ros_entities
 baseline,PASS_STATIC,14000,ON
+stack704_heap0_stack512,PASS_STATIC,12744,ON
 stack640_heap0_stack512,PASS_STATIC,12488,ON
 EOF
 cat >"$TMPDIR/size-report.txt" <<'EOF'
@@ -105,6 +106,12 @@ assert_contains "$synthetic_out" \
   "CANDIDATE tim2_high_loop_static_saving saved_bytes=1000 default_profile_ram=15000 best_effort_10khz_ram=14000 profile_scope=default_non_motor" \
   "synthetic TIM2 default/non-motor scope"
 assert_contains "$synthetic_out" \
+  "CANDIDATE microros_stack_intermediate words=704 saved_bytes=256" \
+  "synthetic intermediate stack saving"
+assert_contains "$synthetic_out" \
+  "CANDIDATE microros_stack_intermediate words=704 saved_bytes=256 ram_static_bytes=13744 motor_ros_entities=ON profile_scope=motor_enabled_candidate" \
+  "synthetic intermediate stack motor scope"
+assert_contains "$synthetic_out" \
   "CANDIDATE microros_stack_min_static words=640 saved_bytes=512" \
   "synthetic stack saving"
 assert_contains "$synthetic_out" \
@@ -122,6 +129,12 @@ assert_contains "$synthetic_out" \
 assert_contains "$synthetic_out" \
   "CANDIDATE linker_reserve_min_static case=heap0_stack512 saved_bytes=1000 ram_static_bytes=13000 motor_ros_entities=ON profile_scope=motor_enabled_candidate" \
   "synthetic linker motor scope"
+assert_contains "$synthetic_out" \
+  "CANDIDATE combined_stack_linker_intermediate case=stack704_heap0_stack512 saved_bytes=1256" \
+  "synthetic intermediate combined stack/linker saving"
+assert_contains "$synthetic_out" \
+  "CANDIDATE combined_stack_linker_intermediate case=stack704_heap0_stack512 saved_bytes=1256 baseline_ram=14000 ram_static_bytes=12744 motor_ros_entities=ON profile_scope=motor_enabled_candidate" \
+  "synthetic intermediate combined motor scope"
 assert_contains "$synthetic_out" \
   "CANDIDATE combined_stack_linker_min_static case=stack640_heap0_stack512 saved_bytes=1512" \
   "synthetic combined stack/linker saving"

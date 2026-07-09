@@ -67,6 +67,10 @@ assert_contains "SCOPE_NOTE default_non_motor_candidates_are_not_motor_memory_co
   "recommendation scope note"
 assert_contains "CANDIDATE linker_reserve_min_static" \
   "linker reserve recommendation"
+assert_contains "CANDIDATE microros_stack_intermediate" \
+  "intermediate stack recommendation"
+assert_contains "CANDIDATE combined_stack_linker_intermediate" \
+  "intermediate combined stack/linker recommendation"
 assert_contains "CANDIDATE combined_stack_linker_min_static" \
   "combined stack/linker recommendation"
 assert_contains "Do not change default micro-ROS task stack" \

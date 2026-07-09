@@ -19,6 +19,10 @@ assert_contains "COMBINED_MEMORY_CASES" \
   "combined case configuration"
 assert_contains "baseline:768:512:1024" \
   "baseline case"
+assert_contains "stack704:704:512:1024" \
+  "intermediate stack-only candidate"
+assert_contains "stack704_heap0_stack512:704:0:512" \
+  "intermediate combined stack/linker candidate"
 assert_contains "stack640_heap0_stack512:640:0:512" \
   "combined minimum static RAM case"
 assert_contains "-DEXO_MICROROS_TASK_STACK_WORDS" \
