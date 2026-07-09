@@ -285,6 +285,28 @@ def main() -> int:
             wire_time_reduction_pct=fmt(improvement, 1),
             adoption="test_after_swd",
         ))
+        cmd_saved_ms = (
+            latest_200_40_921600.cmd_wire_ms -
+            latest_200_40_2m.cmd_wire_ms
+        )
+        full_echo_921600_ms = (
+            latest_200_40_921600.cmd_wire_ms +
+            latest_200_40_921600.status_wire_ms
+        )
+        full_echo_2m_ms = (
+            latest_200_40_2m.cmd_wire_ms +
+            latest_200_40_2m.status_wire_ms
+        )
+        print(candidate_line(
+            "baud_latency_bound_200hz_status40",
+            cmd_wire_ms_921600=fmt(latest_200_40_921600.cmd_wire_ms, 3),
+            cmd_wire_ms_2000000=fmt(latest_200_40_2m.cmd_wire_ms, 3),
+            cmd_saved_ms=fmt(cmd_saved_ms, 3),
+            full_echo_wire_ms_921600=fmt(full_echo_921600_ms, 3),
+            full_echo_wire_ms_2000000=fmt(full_echo_2m_ms, 3),
+            cannot_explain_20ms=1,
+            adoption="optimize_qos_scheduler_spin_before_baud_only",
+        ))
     else:
         print("CANDIDATE wire_budget unavailable=missing_wire_metrics")
 

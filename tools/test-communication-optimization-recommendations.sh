@@ -60,6 +60,9 @@ assert_contains "$synthetic" \
   "CANDIDATE baud_2000000_for_200hz_status40 util_pct=4.54 cmd_wire_ms=0.222 wire_time_reduction_pct=53.9" \
   "synthetic 2Mbps benefit"
 assert_contains "$synthetic" \
+  "CANDIDATE baud_latency_bound_200hz_status40 cmd_wire_ms_921600=0.481 cmd_wire_ms_2000000=0.222 cmd_saved_ms=0.259 full_echo_wire_ms_921600=0.951 full_echo_wire_ms_2000000=0.438 cannot_explain_20ms=1 adoption=optimize_qos_scheduler_spin_before_baud_only" \
+  "synthetic baud latency bound"
+assert_contains "$synthetic" \
   "CANDIDATE avoid_reliable_full_echo_200hz projected_util_pct=19.02" \
   "synthetic full-echo warning"
 assert_contains "$synthetic" \
