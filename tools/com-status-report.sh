@@ -686,6 +686,14 @@ serial_status="$(serial_presence)"
 usb_status="$(usb_snapshot)"
 serial_users="$(serial_lsof)"
 staircase_preflight="$(staircase_preflight_status)"
+preflight_ready="$(printf '%s\n' "$staircase_preflight" |
+  awk -F= '$1 == "PREFLIGHT_READY" {print $2; exit}')"
+preflight_blocker="$(printf '%s\n' "$staircase_preflight" |
+  awk -F= '$1 == "PREFLIGHT_BLOCKER" {print $2; exit}')"
+preflight_next_action="$(printf '%s\n' "$staircase_preflight" |
+  awk -F= '$1 == "PREFLIGHT_NEXT_ACTION" {print $2; exit}')"
+preflight_commands="$(printf '%s\n' "$staircase_preflight" |
+  awk -F= '$1 == "PREFLIGHT_COMMAND" {print $2}')"
 
 {
   echo "# 通信验证交接报告"
@@ -985,6 +993,9 @@ staircase_preflight="$(staircase_preflight_status)"
   echo
   echo "## 未解决项"
   echo
+  if [ "${preflight_ready:-unknown}" != "yes" ]; then
+    echo "- staircase preflight 未 ready：blocker=${preflight_blocker:-unknown}，next_action=${preflight_next_action:-unknown}。"
+  fi
   echo "- SWD 仍需恢复：当前无法 flash 新 profile，也无法读取高频运行期栈水位。"
   echo "- 10kHz/200Hz/best_effort/status_every_40 和 2Mbps profile 已能编译，但运行收益待 SWD 恢复后实测。"
   echo "- 1000Hz PC-only scheduler probe 当前只证明 PC 侧发包节拍候选（threads4 p99≈1.17ms/max≈5.02ms）；它尚未经过 matching best-effort firmware、2Mbps/921600 线速、MCU 接收率和 1/2/5/10kHz 本地闭环联合验证，不能替代 200Hz 上板验收默认。"
@@ -1007,6 +1018,11 @@ staircase_preflight="$(staircase_preflight_status)"
   echo
   echo "## 下一步建议"
   echo
+  if [ -n "$preflight_commands" ]; then
+    echo "当前 preflight 推荐命令："
+    printf '%s\n' "$preflight_commands" | sed 's/^/- `/' | sed 's/$/`/'
+    echo
+  fi
   echo "1. 先跑只读 SWD 诊断：\`tools/diagnose-swd.sh\`；若要自动化 gate，用 \`STRICT=1 tools/diagnose-swd.sh\`。"
   echo "2. 若 \`SWD_STATUS\` 不是 \`ok\`，按诊断输出检查线缆、供电、BOOT/RESET、SWDIO/SWCLK/NRST、usbip 独占和 ST-LINK 连接状态。"
   echo "3. SWD 恢复后先生成推荐阶梯命令：\`tools/recommend-staircase-command.sh\`，再执行其中的 \`tools/run-com-staircase.sh ...\` 和匹配的 \`tools/check-com-staircase-contract.py ...\`。"

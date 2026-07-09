@@ -60,7 +60,7 @@ assert_contains "$empty" "none" \
   "no active watcher fallback"
 
 stale="$TMPDIR/stale.txt"
-WATCH_LOGDIR="$logdir" PS_SNAPSHOT="$TMPDIR/ps.txt" NOW_EPOCH=1783577000 \
+WATCH_LOGDIR="$logdir" PS_SNAPSHOT="$TMPDIR/ps.txt" NOW_EPOCH=9999999999 \
   WATCH_STALE_GRACE_SECONDS=60 \
   "$ROOT/tools/overnight-watch-status.sh" >"$stale"
 assert_contains "$stale" "freshness=stale" \

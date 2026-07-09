@@ -123,6 +123,8 @@ if find "$ROOT/log/com-perf" -maxdepth 1 -type f -name '*.wire.log' | grep -q .;
 fi
 assert_contains "$report" "## 未解决项" \
   "unresolved section"
+assert_contains "$report" "staircase preflight 未 ready" \
+  "unresolved preflight blocker"
 assert_contains "$report" "1000Hz PC-only scheduler probe" \
   "1000Hz exploratory scheduler unresolved note"
 assert_contains "$report" "tools/diagnose-swd.sh" \
@@ -146,6 +148,10 @@ printf '%s\n' "$unresolved" | grep -Fq -- "## 未解决项" || {
 }
 printf '%s\n' "$unresolved" | grep -Fq -- "SWD 仍需恢复" || {
   echo "FAIL: unresolved summary missing SWD blocker" >&2
+  exit 1
+}
+printf '%s\n' "$unresolved" | grep -Fq -- "staircase preflight 未 ready" || {
+  echo "FAIL: unresolved summary missing preflight blocker" >&2
   exit 1
 }
 printf '%s\n' "$unresolved" | grep -Fq -- "1000Hz PC-only scheduler probe" || {
