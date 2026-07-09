@@ -34,5 +34,9 @@ assert_contains "$README" "tools/recommend-firmware-optimizations.sh" \
   "firmware optimization recommendations command is documented"
 assert_contains "$README" "default_policy=keep_defaults_until_runtime_evidence" \
   "firmware optimization default policy is documented"
+assert_contains "$README" "tools/recommend-communication-optimizations.py" \
+  "communication optimization recommendations command is documented"
+assert_contains "$README" "control_link=pc_200hz_latest_target_mcu_status_decimated" \
+  "communication optimization default policy is documented"
 
 echo "PASS: communication docs checks"

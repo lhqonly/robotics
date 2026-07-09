@@ -272,6 +272,15 @@ firmware_optimization_recommendations() {
     awk '/^RECOMMENDATION / || /^CANDIDATE / {print}'
 }
 
+communication_optimization_recommendations() {
+  if [ ! -x "$ROOT/tools/recommend-communication-optimizations.py" ]; then
+    echo "-"
+    return 0
+  fi
+  "$ROOT/tools/recommend-communication-optimizations.py" 2>/dev/null |
+    awk '/^RECOMMENDATION / || /^CANDIDATE / {print}'
+}
+
 cmake_arg_value() {
   local file="$1"
   local key="$2"
@@ -428,6 +437,7 @@ latest_staircase_summary="$(latest_file "$STAIRCASE_LOGDIR" '*.summary.log')"
 ram_categories="$(firmware_ram_categories)"
 ram_category_symbols="$(firmware_ram_category_symbols)"
 firmware_optimization_recs="$(firmware_optimization_recommendations)"
+communication_optimization_recs="$(communication_optimization_recommendations)"
 microros_config="$(microros_config_summary)"
 topic_qos_snapshot="$(graph_qos_snapshot "$latest_graph")"
 duplicate_node_warning="$(graph_duplicate_node_warning "$latest_graph")"
@@ -704,6 +714,12 @@ serial_users="$(serial_lsof)"
   echo
   echo '```text'
   printf '%s\n' "$topic_qos_snapshot"
+  echo '```'
+  echo
+  echo "## 通信优化推荐"
+  echo
+  echo '```text'
+  printf '%s\n' "$communication_optimization_recs"
   echo '```'
   echo
   echo "## 线速预算外推"

@@ -493,6 +493,18 @@ tools/com-status-report.sh morning_$(date +%Y%m%d_%H%M)
 tools/summarize-com-unresolved.sh morning_$(date +%Y%m%d_%H%M)
 ```
 
+要把已有 wire log、PC 调度 sweep、staircase QoS 结果收敛成通信优化推荐：
+
+```bash
+tools/recommend-communication-optimizations.py
+```
+
+输出里的 `RECOMMENDATION control_link=pc_200hz_latest_target_mcu_status_decimated`
+表示控制链路目标仍是 PC 200Hz latest-target、MCU 状态降频回传；`CANDIDATE ...`
+会列出 921600/2Mbps 线速预算、当前最优 PC 调度样本、可靠 full-echo 避免项和
+`qos_incompatibility` gate。只要 QoS 还不匹配，就不能把 best-effort latest-target
+验收为闭环 OK。
+
 如果要无人值守地持续观察一晚，可用 overnight watcher。它只跑 no-flash smoke
 和 handoff 报告，不 build、不 flash、不 reset：
 
