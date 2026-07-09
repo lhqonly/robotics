@@ -31,6 +31,8 @@ assert_contains "$actual" "CANDIDATE motor_m2_wire_budget_200hz_state50_health5_
   "M2 motor 921600 budget candidate"
 assert_contains "$actual" "CANDIDATE motor_m2_wire_budget_200hz_state50_health5_2000000" \
   "M2 motor 2Mbps budget candidate"
+assert_contains "$actual" "CANDIDATE motor_m2_wire_budget_200hz_state2_health1_921600" \
+  "M2 motor 921600 low-telemetry budget candidate"
 assert_contains "$actual" "CANDIDATE qos_matching_required" \
   "QoS gate candidate"
 assert_contains "$actual" "CANDIDATE staircase_acceptance_contract" \
@@ -75,6 +77,9 @@ assert_contains "$synthetic" \
 assert_contains "$synthetic" \
   "CANDIDATE motor_m2_wire_budget_200hz_state50_health5_2000000 util_pct=16.95 total_kbit_s=339.05 target_wire_ms=0.680 state_wire_ms=0.610 health_wire_ms=0.605 verdict=PASS_STATIC adoption=prefer_if_921600_runtime_margin_is_poor" \
   "synthetic M2 motor 2Mbps budget"
+assert_contains "$synthetic" \
+  "CANDIDATE motor_m2_wire_budget_200hz_state2_health1_921600 util_pct=29.91 total_kbit_s=275.65 target_wire_ms=1.476 state_wire_ms=1.324 health_wire_ms=1.313 verdict=PASS_STATIC adoption=test_as_921600_low_telemetry_profile_after_default_2mbps_smoke" \
+  "synthetic M2 motor 921600 low-telemetry budget"
 assert_contains "$synthetic" \
   "CANDIDATE pc_scheduler_best_observed tag=taskset_cpu2 p99_ms=8.000 max_ms=12.000 catchup_events=0 catchup_extra=0" \
   "synthetic scheduler best candidate"

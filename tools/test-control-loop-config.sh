@@ -61,6 +61,27 @@ assert_contains "$CMAKE" \
 assert_contains "$CMAKE" \
   "add_compile_definitions(EXO_CONTROL_TIMER_IRQ_PRIORITY=\${EXO_CONTROL_TIMER_IRQ_PRIORITY})" \
   "control timer priority compile definition"
+assert_contains "$CMAKE" \
+  'set(EXO_MOTOR_STATE_PERIOD_MS "20" CACHE STRING "M2 motor JointState publish period in milliseconds")' \
+  "default motor state publish period"
+assert_contains "$CMAKE" \
+  'set(EXO_MOTOR_HEALTH_PERIOD_MS "200" CACHE STRING "M2 motor MotorHealth publish period in milliseconds")' \
+  "default motor health publish period"
+assert_contains "$CMAKE" \
+  "add_compile_definitions(EXO_MOTOR_STATE_PERIOD_MS=\${EXO_MOTOR_STATE_PERIOD_MS})" \
+  "motor state period compile definition"
+assert_contains "$CMAKE" \
+  "add_compile_definitions(EXO_MOTOR_HEALTH_PERIOD_MS=\${EXO_MOTOR_HEALTH_PERIOD_MS})" \
+  "motor health period compile definition"
+assert_contains "$APP" \
+  "#if EXO_MOTOR_STATE_PERIOD_MS < 10u || EXO_MOTOR_STATE_PERIOD_MS > 1000u" \
+  "motor state period range guard"
+assert_contains "$APP" \
+  "#if EXO_MOTOR_HEALTH_PERIOD_MS < 100u || EXO_MOTOR_HEALTH_PERIOD_MS > 5000u" \
+  "motor health period range guard"
+assert_contains "$APP" \
+  "#if EXO_MOTOR_HEALTH_PERIOD_MS < EXO_MOTOR_STATE_PERIOD_MS" \
+  "motor health period slower-than-state guard"
 
 assert_contains "$MAIN" "#if EXO_CONTROL_LOOP_HZ <= 1000u" \
   "1kHz-and-below FreeRTOS task branch"

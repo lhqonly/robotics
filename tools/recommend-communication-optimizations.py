@@ -280,6 +280,7 @@ def main() -> int:
     full_echo_200_921600 = project_wire(wire_metrics, 200.0, 1, 921600)
     motor_m2_921600 = project_motor_m2(200.0, 50.0, 5.0, 921600)
     motor_m2_2m = project_motor_m2(200.0, 50.0, 5.0, 2_000_000)
+    motor_m2_low_921600 = project_motor_m2(200.0, 2.0, 1.0, 921600)
     best_sched = best_scheduler(scheduler_rows)
     low_max_sched = lowest_max_scheduler(scheduler_rows)
     best_exploratory_sched = best_scheduler(exploratory_scheduler_rows)
@@ -389,6 +390,20 @@ def main() -> int:
         health_wire_ms=fmt(motor_m2_2m.health_wire_ms, 3),
         verdict=motor_verdict_2m,
         adoption="prefer_if_921600_runtime_margin_is_poor",
+    ))
+    print(candidate_line(
+        "motor_m2_wire_budget_200hz_state2_health1_921600",
+        util_pct=fmt(motor_m2_low_921600.util_pct, 2),
+        total_kbit_s=fmt(motor_m2_low_921600.total_kbit_s, 2),
+        target_wire_ms=fmt(motor_m2_low_921600.target_wire_ms, 3),
+        state_wire_ms=fmt(motor_m2_low_921600.state_wire_ms, 3),
+        health_wire_ms=fmt(motor_m2_low_921600.health_wire_ms, 3),
+        verdict=(
+            "PASS_STATIC"
+            if motor_m2_low_921600.util_pct <= args.baud_util_budget_pct
+            else "OVER_BUDGET"
+        ),
+        adoption="test_as_921600_low_telemetry_profile_after_default_2mbps_smoke",
     ))
 
     if best_sched:

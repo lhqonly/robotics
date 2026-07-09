@@ -65,6 +65,7 @@ health_after_ttl_stale_targets=1
 
 # Topic rates from ros2 topic hz.
 motor_state_hz=50.0
+motor_health_hz=5.0
 com_status_hz=5.0
 
 # Motor-enabled runtime memory evidence.
@@ -245,6 +246,7 @@ def read_evidence_dir(path: Path) -> dict[str, str]:
 
     derived_files = {
         "motor_state_hz": (path / "rate.motor_state.txt", average_rate_from_text),
+        "motor_health_hz": (path / "rate.motor_health.txt", average_rate_from_text),
         "com_status_hz": (path / "rate.com_status.txt", average_rate_from_text),
         "microros_stack_free_words": (
             path / "stack-hwm.txt",
@@ -435,6 +437,7 @@ class Checker:
                 f"{after_stale}_le_{before_stale}"
             )
         self.require_rate("motor_state_hz", args.min_motor_state_hz, args.max_motor_state_hz)
+        self.require_rate("motor_health_hz", args.min_motor_health_hz, args.max_motor_health_hz)
         self.require_rate("com_status_hz", args.min_com_status_hz, args.max_com_status_hz)
         free_words = self.require_int("microros_stack_free_words")
         if free_words is not None and free_words < args.min_microros_stack_free_words:
@@ -457,6 +460,7 @@ class Checker:
             f"accepted_seq={args.accepted_seq} legal_seq={args.legal_seq} "
             f"clamp_seq={args.clamp_seq} "
             f"motor_state_hz_range={args.min_motor_state_hz:g}..{args.max_motor_state_hz:g} "
+            f"motor_health_hz_range={args.min_motor_health_hz:g}..{args.max_motor_health_hz:g} "
             f"com_status_hz_range={args.min_com_status_hz:g}..{args.max_com_status_hz:g} "
             f"min_microros_stack_free_words={args.min_microros_stack_free_words}"
         )
@@ -473,6 +477,8 @@ def main() -> int:
     parser.add_argument("--strict-applied-stable", action="store_true", default=True)
     parser.add_argument("--min-motor-state-hz", type=float, default=45.0)
     parser.add_argument("--max-motor-state-hz", type=float, default=55.0)
+    parser.add_argument("--min-motor-health-hz", type=float, default=4.5)
+    parser.add_argument("--max-motor-health-hz", type=float, default=5.5)
     parser.add_argument("--min-com-status-hz", type=float, default=4.5)
     parser.add_argument("--max-com-status-hz", type=float, default=5.5)
     parser.add_argument("--min-microros-stack-free-words", type=int, default=128)

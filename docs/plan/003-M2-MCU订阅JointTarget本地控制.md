@@ -24,7 +24,7 @@
 
 - 尚未在真机上烧录 `EXO_MOTOR_ROS_ENTITIES=ON` 固件并连接 micro-ROS Agent 验证 ROS graph 能看到 `/motor` 三个 topic。
 - 尚未发布真实 `/motor/tp_joint_target` 验证 `JointState.last_target_seq`、TTL stale、clamp/fault 和 `/com/tp_mcu_status` 并存稳定性。
-- 尚未做 200Hz target + motor state/health 并发下的 921600/2000000 baud runtime 对比；静态预算显示默认 200Hz target + 50Hz state + 5Hz health 在 921600 baud 超过 30% 预算，2Mbps 通过。
+- 尚未做 200Hz target + configurable motor state/health 并发下的 921600/2000000 baud runtime 对比；静态预算显示默认 200Hz target + 20ms state + 200ms health（50Hz/5Hz）在 921600 baud 超过 30% 预算，2Mbps 通过；低遥测候选 500ms state + 1000ms health 在 921600 baud 静态约低于 30%，但不能替代运行期证据。
 - 尚未在 motor-enabled 固件上读取栈水位、MSP/heap 余量和 reconnect/soak 结果；`build-motor-opt` 只是候选，不能在无真机证据时改默认。
 - 非空 `header.frame_id` 已做静态防护，但仍需运行期注入验证它会被干净拒绝，且不会破坏 executor/reconnect。
 

@@ -54,6 +54,8 @@ assert_contains "$out" "PASS motor_m2_smoke" \
   "passing evidence"
 assert_contains "$out" "motor_state_hz_range=45..55" \
   "passing rate contract"
+assert_contains "$out" "motor_health_hz_range=4.5..5.5" \
+  "passing health rate contract"
 
 offline="$TMPDIR/offline.env"
 cp "$template" "$offline"
@@ -122,6 +124,13 @@ sed -i 's/^motor_state_hz=.*/motor_state_hz=20.0/' "$rate"
 out="$(run_expect_fail "motor state rate low" "$ROOT/tools/check-motor-m2-smoke-evidence.py" "$rate")"
 assert_contains "$out" "motor_state_hz_out_of_range_45_55_got_20" \
   "motor state rate reason"
+
+health_rate="$TMPDIR/health-rate.env"
+cp "$template" "$health_rate"
+sed -i 's/^motor_health_hz=.*/motor_health_hz=1.0/' "$health_rate"
+out="$(run_expect_fail "motor health rate low" "$ROOT/tools/check-motor-m2-smoke-evidence.py" "$health_rate")"
+assert_contains "$out" "motor_health_hz_out_of_range_4.5_5.5_got_1" \
+  "motor health rate reason"
 
 stack="$TMPDIR/stack.env"
 cp "$template" "$stack"
@@ -226,6 +235,10 @@ cat >"$dir/rate.motor_state.txt" <<'EOF'
 average rate: 50.000
 min: 0.019s max: 0.021s std dev: 0.00100s window: 10
 EOF
+cat >"$dir/rate.motor_health.txt" <<'EOF'
+average rate: 5.000
+min: 0.190s max: 0.210s std dev: 0.00400s window: 10
+EOF
 cat >"$dir/rate.com_status.txt" <<'EOF'
 average rate: 5.000
 min: 0.190s max: 0.210s std dev: 0.00400s window: 10
@@ -264,6 +277,13 @@ rm "$missing_rate_dir/rate.motor_state.txt"
 out="$(run_expect_fail "missing motor state rate file" "$ROOT/tools/check-motor-m2-smoke-evidence.py" "$missing_rate_dir")"
 assert_contains "$out" "missing_motor_state_hz" \
   "missing motor state rate reason"
+
+missing_health_rate_dir="$TMPDIR/missing-health-rate-dir"
+cp -a "$dir" "$missing_health_rate_dir"
+rm "$missing_health_rate_dir/rate.motor_health.txt"
+out="$(run_expect_fail "missing motor health rate file" "$ROOT/tools/check-motor-m2-smoke-evidence.py" "$missing_health_rate_dir")"
+assert_contains "$out" "missing_motor_health_hz" \
+  "missing motor health rate reason"
 
 bad_stack_dir="$TMPDIR/bad-stack-dir"
 cp -a "$dir" "$bad_stack_dir"

@@ -93,6 +93,18 @@
 #  error "EXO_EXECUTOR_SPIN_TIMEOUT_US must be >= 1"
 #endif
 
+#if EXO_MOTOR_STATE_PERIOD_MS < 10u || EXO_MOTOR_STATE_PERIOD_MS > 1000u
+#  error "EXO_MOTOR_STATE_PERIOD_MS must be in [10, 1000]"
+#endif
+
+#if EXO_MOTOR_HEALTH_PERIOD_MS < 100u || EXO_MOTOR_HEALTH_PERIOD_MS > 5000u
+#  error "EXO_MOTOR_HEALTH_PERIOD_MS must be in [100, 5000]"
+#endif
+
+#if EXO_MOTOR_HEALTH_PERIOD_MS < EXO_MOTOR_STATE_PERIOD_MS
+#  error "EXO_MOTOR_HEALTH_PERIOD_MS must be >= EXO_MOTOR_STATE_PERIOD_MS"
+#endif
+
 /* ===== MCU 本地控制基线 =====
  * 通信回调更新 latest target,本地控制 tick 读取最新目标。这里不驱动电机,只验证
  * "本地闭环频率"与"ROS 通信频率"解耦。>1kHz 时 TIM2 ISR 可设为高于 FreeRTOS

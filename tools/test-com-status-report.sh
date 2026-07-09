@@ -112,7 +112,7 @@ assert_contains "$report" "### M2 motor memory optimization candidate" \
   "M2 motor optimized build size section"
 assert_contains "$report" "# M2 Motor Wire Budget Estimate" \
   "M2 motor wire budget output"
-assert_contains "$report" "200Hz target + 50Hz state + 5Hz health" \
+assert_contains "$report" "200Hz target + 20ms state + 200ms health（50Hz/5Hz）" \
   "M2 motor unresolved communication budget"
 assert_contains "$report" "graph/QoS" \
   "graph QoS source"
