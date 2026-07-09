@@ -594,7 +594,8 @@ tools/com-status-report.sh morning_$(date +%Y%m%d_%H%M)
 ```
 
 报告会写到 `log/handoff/<tag>.md`，里面汇总当前 git 版本、最近提交、SWD 状态、
-串口设备、最近 no-flash 指标、latest overnight summary、静态内存矩阵、栈候选和未解决项。
+串口设备、最近 no-flash 指标、overnight contract/趋势、staircase preflight、
+静态内存矩阵、栈候选和未解决项。
 只想看 blockers 时，可以直接抽取 `未解决项`：
 
 ```bash
