@@ -55,6 +55,27 @@ latest_watch_summary_min_samples() {
     done
 }
 
+active_overnight_watchers() {
+  ps -eo pid=,etimes=,args= 2>/dev/null |
+    awk '
+      /tools\/overnight-com-watch\.sh/ {
+        pid = $1
+        elapsed_s = $2
+        $1 = ""
+        $2 = ""
+        sub(/^[[:space:]]+/, "")
+        cmd = $0
+        tag = cmd
+        sub(/^.*tools\/overnight-com-watch\.sh[[:space:]]+/, "", tag)
+        sub(/[[:space:]].*$/, "", tag)
+        if (tag == cmd || tag == "") {
+          tag = "-"
+        }
+        printf("pid=%s elapsed_s=%s tag=%s cmd=%s\n", pid, elapsed_s, tag, cmd)
+      }
+    ' || true
+}
+
 relpath() {
   local path="${1:-}"
   if [ -z "$path" ]; then
@@ -480,6 +501,7 @@ staircase_contract="$(staircase_contract_status)"
 microros_config="$(microros_config_summary)"
 topic_qos_snapshot="$(graph_qos_snapshot "$latest_graph")"
 duplicate_node_warning="$(graph_duplicate_node_warning "$latest_graph")"
+active_watchers="$(active_overnight_watchers)"
 latest_watch_live_summary=""
 if [ -n "$latest_watch_log" ] && [ -f "$latest_watch_log" ] &&
     [ -x "$ROOT/tools/summarize-overnight-com-watch.sh" ]; then
@@ -718,6 +740,16 @@ serial_users="$(serial_lsof)"
   echo "- staircase metrics：$(relpath "$latest_staircase_metrics")"
   echo "- staircase contract CSV：$(relpath "$latest_staircase_contract_metrics")"
   echo "- staircase summary：$(relpath "$latest_staircase_summary")"
+  echo
+  echo "## 活跃 overnight watcher"
+  echo
+  echo '```text'
+  if [ -n "$active_watchers" ]; then
+    printf '%s\n' "$active_watchers"
+  else
+    echo "none"
+  fi
+  echo '```'
   echo
   echo "## 最新通信指标"
   echo
