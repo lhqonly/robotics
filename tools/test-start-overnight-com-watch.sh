@@ -42,6 +42,7 @@ chmod +x "$fake_watch"
 
 start_out="$TMPDIR/start.txt"
 LOGDIR="$TMPDIR/live" WATCH_CMD="$fake_watch" STARTUP_WAIT_SECONDS=0 \
+  ALLOW_MULTIPLE=1 \
   "$ROOT/tools/start-overnight-com-watch.sh" live_watch >"$start_out"
 assert_contains "$start_out" "started pid=" \
   "launcher reports started pid"

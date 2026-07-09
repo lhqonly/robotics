@@ -97,8 +97,15 @@ assert_contains "$bad_log" "DRY_RUN $ROOT/tools/run-com-perf.sh dry_bad_noflash_
   "no-flash smoke command is recorded"
 assert_contains "$bad_log" "DRY_RUN $ROOT/tools/com-status-report.sh dry_bad_handoff" \
   "handoff report command is recorded on fallback path"
+assert_contains "$bad_log" "SKIP overnight_watch START_OVERNIGHT_WATCH_ON_SWD_FAIL=0" \
+  "fallback does not start overnight watcher by default"
 assert_not_contains "$bad_log" "run-com-staircase.sh dry_bad" \
   "fallback path does not run full staircase"
+
+run_cycle dry_watch SWD_STATUS_OVERRIDE=bad_unknown_target START_OVERNIGHT_WATCH_ON_SWD_FAIL=1
+watch_log="$TMPDIR/logs/dry_watch.log"
+assert_contains "$watch_log" "DRY_RUN $ROOT/tools/start-overnight-com-watch.sh dry_watch_watch" \
+  "fallback can start detached overnight watcher"
 
 run_cycle dry_skip SWD_STATUS_OVERRIDE=bad_probe_failed RUN_NO_FLASH_ON_SWD_FAIL=0
 skip_log="$TMPDIR/logs/dry_skip.log"

@@ -12,6 +12,7 @@ SWD_STATUS_OVERRIDE="${SWD_STATUS_OVERRIDE:-}"
 RUN_NO_FLASH_ON_SWD_FAIL="${RUN_NO_FLASH_ON_SWD_FAIL:-1}"
 RUN_STACK_HWM_ON_CONTRACT_PASS="${RUN_STACK_HWM_ON_CONTRACT_PASS:-0}"
 USE_RECOMMENDED_STAIRCASE_CASES="${USE_RECOMMENDED_STAIRCASE_CASES:-1}"
+START_OVERNIGHT_WATCH_ON_SWD_FAIL="${START_OVERNIGHT_WATCH_ON_SWD_FAIL:-0}"
 NOFLASH_RUN_SECONDS="${NOFLASH_RUN_SECONDS:-18}"
 NOFLASH_WARMUP_SECONDS="${NOFLASH_WARMUP_SECONDS:-5}"
 NOFLASH_HZ_SECONDS="${NOFLASH_HZ_SECONDS:-10}"
@@ -23,6 +24,8 @@ COM_PERF_CMD="${COM_PERF_CMD:-$ROOT/tools/run-com-perf.sh}"
 CONTRACT_CMD="${CONTRACT_CMD:-$ROOT/tools/check-com-staircase-contract.py}"
 STAIRCASE_CONTRACT_ARGS="${STAIRCASE_CONTRACT_ARGS:-}"
 STATUS_REPORT_CMD="${STATUS_REPORT_CMD:-$ROOT/tools/com-status-report.sh}"
+START_WATCH_CMD="${START_WATCH_CMD:-$ROOT/tools/start-overnight-com-watch.sh}"
+OVERNIGHT_WATCH_TAG="${OVERNIGHT_WATCH_TAG:-${TAG}_watch}"
 STACK_HWM_CMD="${STACK_HWM_CMD:-$ROOT/tools/measure-stack-hwm.sh}"
 FIRMWARE_ELF="${FIRMWARE_ELF:-$ROOT/firmware/f103-microros/build/f103-microros.elf}"
 
@@ -166,6 +169,16 @@ else
     fi
   else
     record "SKIP no_flash_fallback RUN_NO_FLASH_ON_SWD_FAIL=0"
+  fi
+  if [ "$START_OVERNIGHT_WATCH_ON_SWD_FAIL" = "1" ]; then
+    if run_or_record "$START_WATCH_CMD" "$OVERNIGHT_WATCH_TAG"; then
+      :
+    else
+      watch_status=$?
+      record "WARN overnight_watch_status=$watch_status"
+    fi
+  else
+    record "SKIP overnight_watch START_OVERNIGHT_WATCH_ON_SWD_FAIL=0"
   fi
 fi
 

@@ -393,6 +393,17 @@ DRY_RUN=1 tools/run-com-validation-cycle.sh dry_cycle
 SWD_STATUS_OVERRIDE=ok DRY_RUN=1 tools/run-com-validation-cycle.sh dry_full
 ```
 
+如果希望无人值守 cycle 在 SWD 失败后也自动确保夜间观察继续跑，可以打开：
+
+```bash
+START_OVERNIGHT_WATCH_ON_SWD_FAIL=1 \
+tools/run-com-validation-cycle.sh validation_$(date +%Y%m%d_%H%M)
+```
+
+它会调用 `tools/start-overnight-com-watch.sh`，默认检测已有活跃 watcher 并返回
+`already_running`，避免重复启动多个任务抢 `/dev/ttyUSB0`；需要并行观察时再显式
+设置 `ALLOW_MULTIPLE=1`。
+
 在 `SWD_STATUS=ok` 的路径里，validation cycle 会自动读取推荐器的
 `FORMAT=cases` 输出作为 PC scheduler 候选，也会在未显式设置
 `STAIRCASE_CONTRACT_ARGS` 时读取 `FORMAT=contract_args` 输出作为验收条件。
