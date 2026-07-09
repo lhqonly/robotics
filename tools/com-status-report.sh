@@ -130,6 +130,21 @@ markdown_section_body_from_text() {
   '
 }
 
+graph_qos_snapshot() {
+  local file="$1"
+  if [ ! -f "$file" ]; then
+    echo "-"
+    return 0
+  fi
+  awk '
+    /^--- after_pc_warmup ---/ {capture = 1; next}
+    capture && /^--- after_/ {exit}
+    capture && /^--- topic info -v / {print; next}
+    capture && /^(Publisher count:|Subscription count:|Node name:|Endpoint type:|Unknown topic)/ {print; next}
+    capture && /^  Reliability:/ {print; next}
+  ' "$file"
+}
+
 firmware_ram_categories() {
   if [ ! -f "$FIRMWARE_ELF" ]; then
     echo "-"
@@ -295,6 +310,10 @@ latest_sampler="$(latest_file "$COM_LOGDIR" '*.sampler.log')"
 latest_hz="$(latest_file "$COM_LOGDIR" '*.hz.log')"
 latest_cmd="$(latest_file "$COM_LOGDIR" '*.cmd.log')"
 latest_tag="$(tag_from_log_file "$latest_cmd")"
+latest_graph=""
+if [ -n "$latest_tag" ] && [ -f "$COM_LOGDIR/$latest_tag.graph.log" ]; then
+  latest_graph="$COM_LOGDIR/$latest_tag.graph.log"
+fi
 latest_wire=""
 if [ -n "$latest_tag" ] && [ -f "$COM_LOGDIR/$latest_tag.wire.log" ]; then
   latest_wire="$COM_LOGDIR/$latest_tag.wire.log"
@@ -322,6 +341,7 @@ latest_staircase_summary="$(latest_file "$STAIRCASE_LOGDIR" '*.summary.log')"
 ram_categories="$(firmware_ram_categories)"
 ram_category_symbols="$(firmware_ram_category_symbols)"
 microros_config="$(microros_config_summary)"
+topic_qos_snapshot="$(graph_qos_snapshot "$latest_graph")"
 latest_watch_live_summary=""
 if [ -n "$latest_watch_log" ] && [ -f "$latest_watch_log" ] &&
     [ -x "$ROOT/tools/summarize-overnight-com-watch.sh" ]; then
@@ -520,6 +540,7 @@ serial_users="$(serial_lsof)"
   echo "- sampler：$(relpath "$latest_sampler")"
   echo "- topic hz：$(relpath "$latest_hz")"
   echo "- PC cmd：$(relpath "$latest_cmd")"
+  echo "- graph/QoS：$(relpath "$latest_graph")"
   echo "- same-tag wire stats：$(relpath "$latest_wire")"
   echo "- latest standalone wire stats：$(relpath "$latest_any_wire")"
   echo "- size matrix：$(relpath "$latest_size_md")"
@@ -544,6 +565,14 @@ serial_users="$(serial_lsof)"
     echo
     echo "说明：latest tag 是调度/健康门槛实验样本，只代表最后一次运行；PC 调度结论请看下面的 sweep/短测对照表。"
   fi
+  echo
+  echo "## 最新 topic endpoint QoS"
+  echo
+  echo "来源：$(relpath "$latest_graph")"
+  echo
+  echo '```text'
+  printf '%s\n' "$topic_qos_snapshot"
+  echo '```'
   echo
   echo "## 线速预算外推"
   echo
