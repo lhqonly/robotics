@@ -68,25 +68,43 @@ printf '%s\n' "$watch_status" | print_block "PREFLIGHT_WATCH "
 
 ready="no"
 next_action=""
+blocker=""
+commands=()
 case "$swd_status" in
   ok)
     if [ "$recommend_status" = "ok" ]; then
       ready="yes"
       next_action="run_recommended_staircase_then_contract"
+      blocker="none"
+      commands+=("tools/recommend-staircase-command.sh")
+      commands+=("run_printed_tools_run_com_staircase_command")
+      commands+=("run_printed_tools_check_com_staircase_contract_command")
     else
       next_action="run_pc_scheduler_sweep_before_staircase"
+      blocker="missing_recommended_scheduler_case"
+      commands+=("tools/run-pc-latest-scheduler-sweep.sh pc_sched_latest_$(date +%Y%m%d_%H%M)")
+      commands+=("tools/recommend-staircase-command.sh")
     fi
     ;;
   skipped|unknown)
     next_action="run_tools_diagnose_swd"
+    blocker="swd_status_unknown"
+    commands+=("tools/diagnose-swd.sh")
     ;;
   *)
     next_action="recover_swd_keep_noflash_watch_running"
+    blocker="swd_not_ok:$swd_status"
+    commands+=("tools/diagnose-swd.sh")
+    commands+=("START_OVERNIGHT_WATCH_ON_SWD_FAIL=1 tools/run-com-validation-cycle.sh validation_$(date +%Y%m%d_%H%M)")
     ;;
 esac
 
 echo "PREFLIGHT_READY=$ready"
+echo "PREFLIGHT_BLOCKER=$blocker"
 echo "PREFLIGHT_NEXT_ACTION=$next_action"
+for command in "${commands[@]}"; do
+  echo "PREFLIGHT_COMMAND=$command"
+done
 
 if [ "$ready" = "yes" ]; then
   echo

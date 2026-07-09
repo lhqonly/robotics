@@ -57,8 +57,12 @@ assert_contains "$ok_out" "PREFLIGHT_CONTRACT_ARGS=--max-pc-catchup-events 0 --m
   "contract args listed"
 assert_contains "$ok_out" "PREFLIGHT_READY=yes" \
   "preflight ready when SWD and recommendation are OK"
+assert_contains "$ok_out" "PREFLIGHT_BLOCKER=none" \
+  "ready preflight has no blocker"
 assert_contains "$ok_out" "PREFLIGHT_NEXT_ACTION=run_recommended_staircase_then_contract" \
   "ready next action"
+assert_contains "$ok_out" "PREFLIGHT_COMMAND=tools/recommend-staircase-command.sh" \
+  "ready command includes recommendation"
 assert_contains "$ok_out" "PREFLIGHT_WATCH pid=123" \
   "watch status included"
 
@@ -69,6 +73,10 @@ assert_contains "$bad_out" "PREFLIGHT_READY=no" \
   "preflight not ready when SWD is bad"
 assert_contains "$bad_out" "PREFLIGHT_NEXT_ACTION=recover_swd_keep_noflash_watch_running" \
   "SWD recovery next action"
+assert_contains "$bad_out" "PREFLIGHT_BLOCKER=swd_not_ok:bad_unknown_target" \
+  "SWD blocker is reported"
+assert_contains "$bad_out" "PREFLIGHT_COMMAND=tools/diagnose-swd.sh" \
+  "SWD recovery diagnostic command"
 
 missing_out="$TMPDIR/missing.txt"
 SWD_STATUS_OVERRIDE=ok RECOMMEND_CMD="$TMPDIR/missing-recommend" WATCH_STATUS_CMD="$fake_watch" \
@@ -77,5 +85,9 @@ assert_contains "$missing_out" "PREFLIGHT_RECOMMEND_STATUS=missing" \
   "missing recommendation is reported"
 assert_contains "$missing_out" "PREFLIGHT_NEXT_ACTION=run_pc_scheduler_sweep_before_staircase" \
   "scheduler sweep next action"
+assert_contains "$missing_out" "PREFLIGHT_BLOCKER=missing_recommended_scheduler_case" \
+  "missing scheduler blocker"
+assert_contains "$missing_out" "PREFLIGHT_COMMAND=tools/run-pc-latest-scheduler-sweep.sh" \
+  "scheduler sweep command"
 
 echo "PASS: communication staircase preflight tests"
