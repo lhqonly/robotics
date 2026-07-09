@@ -108,6 +108,14 @@ assert_contains "$report" "firmware/f103-microros/colcon.motor.notypedesc.meta" 
   "M2 motor meta path"
 assert_contains "$report" "### M2 motor build size" \
   "M2 motor build size section"
+assert_contains "$report" "### M2 motor ROSIDL metadata breakdown" \
+  "M2 motor ROSIDL metadata breakdown section"
+assert_contains "$report" "JointTarget" \
+  "M2 motor metadata includes JointTarget row"
+assert_contains "$report" "JointState" \
+  "M2 motor metadata includes JointState row"
+assert_contains "$report" "MotorHealth" \
+  "M2 motor metadata includes MotorHealth row"
 assert_contains "$report" "### M2 motor memory optimization candidate" \
   "M2 motor optimized build size section"
 assert_contains "$report" "# M2 Motor Wire Budget Estimate" \

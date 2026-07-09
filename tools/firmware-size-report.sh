@@ -159,6 +159,12 @@ arm-none-eabi-nm -S --size-sort "$ELF" |
       if (name ~ /exo_msgs__msg__ExoHeader/) return "ExoHeader"
       if (name ~ /exo_msgs__msg__ExoCmd/) return "ExoCmd"
       if (name ~ /exo_msgs__msg__ExoStatus/) return "ExoStatus"
+      if (name ~ /exo_motor_msgs__msg__JointTarget/ ||
+          name ~ /_JointTarget_/) return "JointTarget"
+      if (name ~ /exo_motor_msgs__msg__JointState/ ||
+          name ~ /_JointState_/) return "JointState"
+      if (name ~ /exo_motor_msgs__msg__MotorHealth/ ||
+          name ~ /_MotorHealth_/) return "MotorHealth"
       if (name ~ /toplevel_type_raw_source/) return "toplevel_type_raw_source"
       return "other_rosidl_metadata"
     }
@@ -172,9 +178,12 @@ arm-none-eabi-nm -S --size-sort "$ELF" |
       order[1] = "ExoHeader"
       order[2] = "ExoCmd"
       order[3] = "ExoStatus"
-      order[4] = "toplevel_type_raw_source"
-      order[5] = "other_rosidl_metadata"
-      for (idx = 1; idx <= 5; idx++) {
+      order[4] = "JointTarget"
+      order[5] = "JointState"
+      order[6] = "MotorHealth"
+      order[7] = "toplevel_type_raw_source"
+      order[8] = "other_rosidl_metadata"
+      for (idx = 1; idx <= 8; idx++) {
         group = order[idx]
         printf "%-24s bytes=%6d\n", group, bytes[group] + 0
       }

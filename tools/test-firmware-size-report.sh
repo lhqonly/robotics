@@ -38,6 +38,12 @@ assert_contains "$report" "rosidl_type_metadata_breakdown:" \
   "size report emits rosidl metadata breakdown"
 assert_contains "$report" "ExoStatus" \
   "size report includes ExoStatus metadata breakdown row"
+assert_contains "$report" "JointTarget" \
+  "size report includes JointTarget metadata breakdown row"
+assert_contains "$report" "JointState" \
+  "size report includes JointState metadata breakdown row"
+assert_contains "$report" "MotorHealth" \
+  "size report includes MotorHealth metadata breakdown row"
 assert_contains "$report" "toplevel_type_raw_source" \
   "size report includes raw source metadata breakdown row"
 assert_contains "$report" "[rosidl_type_metadata]" \
@@ -64,6 +70,32 @@ if ! awk -F, 'NR > 1 && $22 + 0 > 0 && $23 + 0 >= 0 && $24 + 0 > 0 {found = 1} E
   echo "FAIL: size matrix did not report rosidl/pool category bytes" >&2
   cat "$csv" >&2
   exit 1
+fi
+
+motor_elf="$ROOT/firmware/f103-microros/build-motor/f103-microros.elf"
+if [ -f "$motor_elf" ]; then
+  motor_report="$(CATEGORY_LIMIT=5 "$ROOT/tools/firmware-size-report.sh" "$motor_elf")"
+  for label in JointTarget JointState MotorHealth; do
+    if ! awk -v label="$label" '
+      /^rosidl_type_metadata_breakdown:/ {in_section = 1; next}
+      in_section && NF == 0 {exit}
+      in_section && $1 == label {
+        for (i = 1; i <= NF; i++) {
+          if ($i == "bytes=" && (i + 1) <= NF) {
+            value = $(i + 1) + 0
+          } else if ($i ~ /^bytes=./) {
+            sub(/^bytes=/, "", $i)
+            value = $i + 0
+          }
+        }
+      }
+      END {exit !(value > 0)}
+    ' <<<"$motor_report"; then
+      echo "FAIL: motor ELF metadata breakdown did not report $label bytes" >&2
+      printf '%s\n' "$motor_report" >&2
+      exit 1
+    fi
+  done
 fi
 
 echo "PASS: firmware size report tests"

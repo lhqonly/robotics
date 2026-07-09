@@ -39,6 +39,8 @@ template="$TMPDIR/template.env"
 "$ROOT/tools/check-motor-m2-smoke-evidence.py" --template >"$template"
 assert_contains "$(cat "$template")" "topic_motor_target=present" \
   "template includes motor target topic"
+assert_contains "$(cat "$template")" "evidence_source=template" \
+  "template marks evidence source"
 assert_contains "$(cat "$template")" "state_after_ttl_fault_bits=2" \
   "template includes TTL stale evidence"
 
@@ -49,6 +51,11 @@ assert_contains "$out" "sample_template_not_filled" \
   "unfilled template reason"
 
 sed -i 's/^sample_only=.*/sample_only=false/' "$template"
+out="$(run_expect_fail "template source without provenance" "$ROOT/tools/check-motor-m2-smoke-evidence.py" "$template")"
+assert_contains "$out" "sample_template_not_filled" \
+  "template source still blocked after sample_only flip"
+
+sed -i 's/^evidence_source=.*/evidence_source=manual_raw_capture/' "$template"
 out="$("$ROOT/tools/check-motor-m2-smoke-evidence.py" "$template")"
 assert_contains "$out" "PASS motor_m2_smoke" \
   "passing evidence"

@@ -16,6 +16,7 @@ from pathlib import Path
 TEMPLATE = """# M2 motor smoke evidence.
 # Fill this file from the commands printed by tools/recommend-motor-m2-smoke-command.sh.
 sample_only=true
+evidence_source=template
 swd_status=ok
 firmware_build=ok
 firmware_flash=ok
@@ -150,6 +151,7 @@ def read_evidence_dir(path: Path) -> dict[str, str]:
     env = path / "evidence.env"
     if env.exists():
         values.update(read_evidence(env))
+    values["evidence_source"] = "directory_raw_capture"
 
     topics = read_text_if_exists(path / "topics.txt")
     topic_map = {
@@ -373,6 +375,14 @@ class Checker:
         sample_only = self.value("sample_only")
         if sample_only is not None and as_bool(sample_only) is True:
             self.reason("sample_template_not_filled")
+
+        evidence_source = self.value("evidence_source")
+        if evidence_source is None:
+            self.reason("missing_evidence_source")
+        elif evidence_source == "template":
+            self.reason("sample_template_not_filled")
+        elif evidence_source not in {"manual_raw_capture", "directory_raw_capture"}:
+            self.reason(f"invalid_evidence_source_{evidence_source}")
 
         swd = self.value("swd_status")
         if swd is None:

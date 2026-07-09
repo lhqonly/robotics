@@ -268,7 +268,8 @@ firmware_ram_category_symbols() {
 }
 
 firmware_rosidl_metadata_breakdown() {
-  if [ ! -f "$FIRMWARE_ELF" ]; then
+  local elf="${1:-$FIRMWARE_ELF}"
+  if [ ! -f "$elf" ]; then
     echo "-"
     return 0
   fi
@@ -278,7 +279,7 @@ firmware_rosidl_metadata_breakdown() {
   fi
 
   local size_report
-  size_report="$(CATEGORY_LIMIT=5 "$ROOT/tools/firmware-size-report.sh" "$FIRMWARE_ELF" 2>/dev/null || true)"
+  size_report="$(CATEGORY_LIMIT=5 "$ROOT/tools/firmware-size-report.sh" "$elf" 2>/dev/null || true)"
   printf '%s\n' "$size_report" |
     awk '
       /^rosidl_type_metadata_breakdown:/ {in_section = 1; print; next}
@@ -520,6 +521,8 @@ latest_staircase_contract_metrics="$(latest_file "$STAIRCASE_LOGDIR" '*.metrics.
 latest_staircase_summary="$(latest_file "$STAIRCASE_LOGDIR" '*.summary.log')"
 ram_categories="$(firmware_ram_categories)"
 rosidl_metadata_breakdown="$(firmware_rosidl_metadata_breakdown)"
+motor_rosidl_metadata_breakdown="$(
+  firmware_rosidl_metadata_breakdown "$FIRMWARE_MOTOR_ELF")"
 ram_category_symbols="$(firmware_ram_category_symbols)"
 firmware_optimization_recs="$(firmware_optimization_recommendations)"
 communication_optimization_recs="$(communication_optimization_recommendations)"
@@ -890,6 +893,14 @@ preflight_commands="$(printf '%s\n' "$staircase_preflight" |
   echo
   echo '```text'
   printf '%s\n' "$motor_default_size"
+  echo '```'
+  echo
+  echo "### M2 motor ROSIDL metadata breakdown"
+  echo
+  echo "来源：$(relpath "$FIRMWARE_MOTOR_ELF")"
+  echo
+  echo '```text'
+  printf '%s\n' "$motor_rosidl_metadata_breakdown"
   echo '```'
   echo
   echo "### M2 motor memory optimization candidate"
