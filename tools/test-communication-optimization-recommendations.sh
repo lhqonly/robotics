@@ -70,4 +70,36 @@ assert_contains "$synthetic" \
   "CANDIDATE qos_matching_required qos_incompatibility=0" \
   "synthetic QoS gate clear"
 
+auto_dir="$TMPDIR/auto"
+mkdir -p "$auto_dir"
+cat >"$auto_dir/old_200.metrics.csv" <<'EOF'
+tag,pc_wire_gap_p99_ms,pc_wire_gap_max_ms,pc_cmd_catchup_events,pc_cmd_catchup_extra
+old_200_threads4_r1,5.2,6.0,0,0
+EOF
+cat >"$auto_dir/old_200.summary.log" <<'EOF'
+profile cmd_rate_hz=200 cmd_catchup_max=0 qos=best_effort depth=1 tracking=sampled status_every_n=40 sample_window=1024 summary_period_s=5.0 link_health_period_s=5.0 startup_grace_s=3.0 executor_threads=0 require_core_metrics=0 require_health_pass=0 max_catchup_events=0 max_catchup_extra=0 isolate_ros_domain_per_case=auto resolved_isolate_ros_domain_per_case=1 ros_domain_base=0 run_seconds=30 warmup_seconds=5 hz_seconds=20
+EOF
+cat >"$auto_dir/new_1000.metrics.csv" <<'EOF'
+tag,pc_wire_gap_p99_ms,pc_wire_gap_max_ms,pc_cmd_catchup_events,pc_cmd_catchup_extra
+new_1000_threads4_r1,1.1,5.0,0,0
+EOF
+cat >"$auto_dir/new_1000.summary.log" <<'EOF'
+profile cmd_rate_hz=1000 cmd_catchup_max=0 qos=best_effort depth=1 tracking=sampled status_every_n=200 sample_window=1024 summary_period_s=5.0 link_health_period_s=5.0 startup_grace_s=3.0 executor_threads=0 require_core_metrics=0 require_health_pass=0 max_catchup_events=0 max_catchup_extra=0 isolate_ros_domain_per_case=auto resolved_isolate_ros_domain_per_case=1 ros_domain_base=0 run_seconds=20 warmup_seconds=3 hz_seconds=12
+EOF
+touch -t 202607090101 "$auto_dir/old_200.metrics.csv" "$auto_dir/old_200.summary.log"
+touch -t 202607090102 "$auto_dir/new_1000.metrics.csv" "$auto_dir/new_1000.summary.log"
+
+auto="$TMPDIR/auto.md"
+"$ROOT/tools/recommend-communication-optimizations.py" \
+  --wire-log "$TMPDIR/sample.wire.log" \
+  --scheduler-logdir "$auto_dir" \
+  --staircase-csv "$TMPDIR/staircase.csv" >"$auto"
+
+assert_contains "$auto" \
+  "scheduler CSV: $auto_dir/old_200.metrics.csv" \
+  "auto scheduler selection skips newer non-200Hz profile"
+assert_contains "$auto" \
+  "CANDIDATE pc_scheduler_best_observed tag=old_200_threads4_r1" \
+  "auto scheduler recommendation uses latest matching 200Hz profile"
+
 echo "PASS: communication optimization recommendation tests"

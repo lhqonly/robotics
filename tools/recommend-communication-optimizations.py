@@ -19,6 +19,39 @@ def latest_file(directory: Path, pattern: str) -> Path | None:
     return max(files, key=lambda path: path.stat().st_mtime)
 
 
+def summary_matches_expected_profile(summary: Path) -> bool:
+    if not summary.exists():
+        return False
+    profile = ""
+    for line in summary.read_text(encoding="utf-8").splitlines():
+        if line.startswith("profile "):
+            profile = line
+    if not profile:
+        return False
+    required = [
+        "cmd_rate_hz=200",
+        "cmd_catchup_max=0",
+        "qos=best_effort",
+        "tracking=sampled",
+        "status_every_n=40",
+    ]
+    tokens = set(profile.split())
+    return all(item in tokens for item in required)
+
+
+def latest_matching_scheduler_csv(directory: Path) -> Path | None:
+    files = sorted(
+        directory.glob("*.metrics.csv"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for csv_path in files:
+        summary = csv_path.with_suffix("").with_suffix(".summary.log")
+        if summary_matches_expected_profile(summary):
+            return csv_path
+    return None
+
+
 def relpath(path: Path | None) -> str:
     if path is None:
         return "-"
@@ -160,13 +193,15 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--wire-log", type=Path)
     parser.add_argument("--scheduler-csv", type=Path)
+    parser.add_argument("--scheduler-logdir", type=Path,
+                        default=ROOT / "log/pc-scheduler-sweep")
     parser.add_argument("--staircase-csv", type=Path)
     parser.add_argument("--baud-util-budget-pct", type=float, default=30.0)
     args = parser.parse_args()
 
     wire_log = args.wire_log or latest_file(ROOT / "log/com-perf", "*.wire.log")
-    scheduler_csv = args.scheduler_csv or latest_file(
-        ROOT / "log/pc-scheduler-sweep", "*.metrics.csv"
+    scheduler_csv = args.scheduler_csv or latest_matching_scheduler_csv(
+        args.scheduler_logdir
     )
     staircase_csv = args.staircase_csv or latest_file(
         ROOT / "log/com-staircase", "*.metrics.csv"
