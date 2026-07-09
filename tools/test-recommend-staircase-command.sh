@@ -52,6 +52,18 @@ assert_contains "$out" "'threads2||2'" \
   "selected executor thread case included"
 assert_contains "$out" "tools/run-com-staircase.sh 'staircase_demo'" \
   "staircase command tag"
+assert_contains "$out" \
+  "tools/check-com-staircase-contract.py 'log/com-staircase/staircase_demo.metrics.csv' --max-pc-catchup-events 0 --max-pc-catchup-extra 0" \
+  "matching staircase acceptance contract command"
+
+contract_out="$TMPDIR/contract_args.md"
+STAIRCASE_CONTRACT_ARGS="--max-pc-catchup-events 0 --max-pc-catchup-extra 0 --max-wire-baud-util-pct 30" \
+  SCHEDULER_CSV="$TMPDIR/scheduler.metrics.csv" \
+  SUMMARY="$TMPDIR/scheduler.summary.log" \
+  TAG_PREFIX="staircase_demo" \
+  "$ROOT/tools/recommend-staircase-command.sh" >"$contract_out"
+assert_contains "$contract_out" "--max-wire-baud-util-pct 30" \
+  "custom staircase acceptance contract args"
 
 cases_out="$TMPDIR/cases.txt"
 FORMAT=cases \

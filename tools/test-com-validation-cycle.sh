@@ -44,7 +44,8 @@ fi
 EOF
 chmod +x "$fake_recommend"
 
-run_cycle dry_ok SWD_STATUS_OVERRIDE=ok RECOMMEND_STAIRCASE_CMD="$fake_recommend"
+run_cycle dry_ok SWD_STATUS_OVERRIDE=ok RECOMMEND_STAIRCASE_CMD="$fake_recommend" \
+  STAIRCASE_CONTRACT_ARGS="--max-wire-baud-util-pct 30"
 ok_log="$TMPDIR/logs/dry_ok.log"
 assert_contains "$ok_log" "SWD_STATUS=ok" \
   "SWD OK status is recorded"
@@ -60,8 +61,8 @@ assert_contains "$ok_log" \
   "DRY_RUN STAIRCASE_PC_LAUNCH_PREFIX_CASES=recommended $ROOT/tools/run-com-staircase.sh dry_ok" \
   "full staircase command with recommended cases is recorded"
 assert_contains "$ok_log" \
-  "DRY_RUN $ROOT/tools/check-com-staircase-contract.py $ROOT/log/com-staircase/dry_ok.metrics.csv" \
-  "staircase contract command is recorded"
+  "DRY_RUN $ROOT/tools/check-com-staircase-contract.py $ROOT/log/com-staircase/dry_ok.metrics.csv --max-wire-baud-util-pct 30" \
+  "staircase contract command with extra args is recorded"
 assert_contains "$ok_log" "DRY_RUN $ROOT/tools/com-status-report.sh dry_ok_handoff" \
   "handoff report command is recorded on OK path"
 assert_not_contains "$ok_log" "run-com-perf.sh dry_ok_noflash_smoke" \

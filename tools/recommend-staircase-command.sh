@@ -8,6 +8,7 @@ SCHEDULER_CSV="${SCHEDULER_CSV:-}"
 SUMMARY="${SUMMARY:-}"
 STAIRCASE_BAUDS="${STAIRCASE_BAUDS:-921600 2000000}"
 STAIRCASE_EXECUTOR_SPIN_TIMEOUT_US="${STAIRCASE_EXECUTOR_SPIN_TIMEOUT_US:-1000 100}"
+STAIRCASE_CONTRACT_ARGS="${STAIRCASE_CONTRACT_ARGS:---max-pc-catchup-events 0 --max-pc-catchup-extra 0}"
 TAG_PREFIX="${TAG_PREFIX:-staircase_$(date +%Y%m%d_%H%M)}"
 FORMAT="${FORMAT:-markdown}"
 EXPECTED_CMD_RATE_HZ="${EXPECTED_CMD_RATE_HZ:-200}"
@@ -210,4 +211,10 @@ for staircase_case in "${staircase_cases[@]}"; do
 done
 printf ')" \\\n'
 printf 'tools/run-com-staircase.sh %s\n' "$(shell_quote "$TAG_PREFIX")"
+printf '```\n'
+printf '\nThen run the matching acceptance contract:\n\n'
+printf '```bash\n'
+printf 'tools/check-com-staircase-contract.py %s %s\n' \
+  "$(shell_quote "log/com-staircase/$TAG_PREFIX.metrics.csv")" \
+  "$STAIRCASE_CONTRACT_ARGS"
 printf '```\n'

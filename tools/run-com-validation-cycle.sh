@@ -21,6 +21,7 @@ STAIRCASE_CMD="${STAIRCASE_CMD:-$ROOT/tools/run-com-staircase.sh}"
 RECOMMEND_STAIRCASE_CMD="${RECOMMEND_STAIRCASE_CMD:-$ROOT/tools/recommend-staircase-command.sh}"
 COM_PERF_CMD="${COM_PERF_CMD:-$ROOT/tools/run-com-perf.sh}"
 CONTRACT_CMD="${CONTRACT_CMD:-$ROOT/tools/check-com-staircase-contract.py}"
+STAIRCASE_CONTRACT_ARGS="${STAIRCASE_CONTRACT_ARGS:-}"
 STATUS_REPORT_CMD="${STATUS_REPORT_CMD:-$ROOT/tools/com-status-report.sh}"
 STACK_HWM_CMD="${STACK_HWM_CMD:-$ROOT/tools/measure-stack-hwm.sh}"
 FIRMWARE_ELF="${FIRMWARE_ELF:-$ROOT/firmware/f103-microros/build/f103-microros.elf}"
@@ -109,9 +110,10 @@ if [ "$swd_status" = "ok" ]; then
     fi
   metrics_csv="$ROOT/log/com-staircase/$TAG.metrics.csv"
   if [ "$DRY_RUN" = "1" ]; then
-    record "DRY_RUN $CONTRACT_CMD $metrics_csv > $CONTRACT_LOG"
+    record "DRY_RUN $CONTRACT_CMD $metrics_csv $STAIRCASE_CONTRACT_ARGS > $CONTRACT_LOG"
   else
-    if "$CONTRACT_CMD" "$metrics_csv" >"$CONTRACT_LOG" 2>&1; then
+    read -r -a contract_args <<<"$STAIRCASE_CONTRACT_ARGS"
+    if "$CONTRACT_CMD" "$metrics_csv" "${contract_args[@]}" >"$CONTRACT_LOG" 2>&1; then
       contract_status=0
     else
       contract_status=$?

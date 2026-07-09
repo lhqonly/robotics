@@ -411,6 +411,9 @@ tools/recommend-staircase-command.sh
 `STAIRCASE_PC_LAUNCH_PREFIX_CASES=...` 的 `tools/run-com-staircase.sh` 命令。推荐命令
 还会附带 `STAIRCASE_EXECUTOR_SPIN_TIMEOUT_US='1000 100'`，用于上板比较默认
 executor 等待粒度和低延迟候选。
+输出末尾也会给出匹配的 `tools/check-com-staircase-contract.py` 验收命令；
+若要把串口占用率也纳入验收，可以运行推荐器时设置
+`STAIRCASE_CONTRACT_ARGS="--max-pc-catchup-events 0 --max-pc-catchup-extra 0 --max-wire-baud-util-pct 30"`。
 这条命令仍必须等 `tools/diagnose-swd.sh` 显示 `SWD_STATUS=ok` 后再执行。
 
 `tools/diagnose-swd.sh` 只读检查 ST-LINK/SWD，不会 reset 或 flash。输出里
