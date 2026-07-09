@@ -75,6 +75,8 @@ assert_contains "$report" "generated_stream_history=in:2/out:2" \
   "generated stream history"
 assert_contains "$report" "## overnight no-flash 趋势" \
   "overnight section"
+assert_contains "$report" "overnight_watch_contract" \
+  "overnight contract status"
 assert_contains "$report" "## 活跃 overnight watcher" \
   "active overnight watcher section"
 assert_contains "$report" "next_wake_at" \

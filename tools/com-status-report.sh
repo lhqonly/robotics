@@ -316,6 +316,19 @@ staircase_contract_status() {
     "$latest_staircase_contract_metrics" 2>&1 || true
 }
 
+watch_contract_status() {
+  local watch_log="$1"
+  if [ -z "$watch_log" ] || [ ! -f "$watch_log" ]; then
+    echo "FAIL overnight_watch_contract reason=missing_watch_log"
+    return 0
+  fi
+  if [ ! -x "$ROOT/tools/check-overnight-watch-contract.sh" ]; then
+    echo "FAIL overnight_watch_contract reason=missing_checker"
+    return 0
+  fi
+  (cd "$ROOT" && tools/check-overnight-watch-contract.sh "$watch_log" 2>&1 || true)
+}
+
 staircase_preflight_status() {
   local swd_status
   if [ ! -x "$ROOT/tools/com-staircase-preflight.sh" ]; then
@@ -541,6 +554,8 @@ if [ -n "$overnight_summary_source" ]; then
   overnight_reasons="$(printf '%s\n' "$overnight_summary_source" |
     awk -F': ' '/^- reasons:/ {print $2; exit}')"
 fi
+latest_watch_contract="$(watch_contract_status "$latest_watch_log")"
+overnight_watch_contract="$(watch_contract_status "$baseline_watch_log")"
 latest_is_scheduler_experiment=0
 case "${latest_tag:-}" in
   scheduler_*|pc_sched_*|latest_gate_*)
@@ -826,6 +841,8 @@ preflight_commands="$(printf '%s\n' "$staircase_preflight" |
     echo
     echo "来源：$(relpath "$latest_watch_log")"
     echo
+    echo "contract：${latest_watch_contract:-unknown}"
+    echo
     if [ -n "$latest_watch_live_summary" ]; then
       echo "### Verdict Summary"
       echo
@@ -849,6 +866,8 @@ preflight_commands="$(printf '%s\n' "$staircase_preflight" |
   echo "## overnight no-flash 趋势"
   echo
   echo "来源：$(relpath "$baseline_watch_log")"
+  echo
+  echo "contract：${overnight_watch_contract:-unknown}"
   echo
   if [ -n "$overnight_live_summary" ]; then
     echo "### Verdict Summary"
