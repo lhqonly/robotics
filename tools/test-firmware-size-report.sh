@@ -34,6 +34,12 @@ assert_contains "$report" "microros_custom_pools" \
   "size report classifies micro-ROS custom pools"
 assert_contains "$report" "largest_ram_symbols_by_category:" \
   "size report emits per-category symbol details"
+assert_contains "$report" "rosidl_type_metadata_breakdown:" \
+  "size report emits rosidl metadata breakdown"
+assert_contains "$report" "ExoStatus" \
+  "size report includes ExoStatus metadata breakdown row"
+assert_contains "$report" "toplevel_type_raw_source" \
+  "size report includes raw source metadata breakdown row"
 assert_contains "$report" "[rosidl_type_metadata]" \
   "size report emits rosidl category detail header"
 assert_contains "$report" "toplevel_type_raw_source" \

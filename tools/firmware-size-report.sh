@@ -141,6 +141,47 @@ arm-none-eabi-nm -S --size-sort "$ELF" |
   '
 
 echo
+echo "rosidl_type_metadata_breakdown:"
+arm-none-eabi-nm -S --size-sort "$ELF" |
+  awk '
+    function is_rosidl_metadata(name) {
+      return name ~ /toplevel_type_raw_source/ ||
+        name ~ /type_description/ ||
+        name ~ /typesupport/ ||
+        name ~ /message_member/ ||
+        name ~ /__FIELDS$/ ||
+        name ~ /FIELD_NAME/ ||
+        name ~ /TYPE_NAME/ ||
+        name ~ /REFERENCED_TYPE_DESCRIPTIONS/
+    }
+
+    function rosidl_group(name) {
+      if (name ~ /exo_msgs__msg__ExoHeader/) return "ExoHeader"
+      if (name ~ /exo_msgs__msg__ExoCmd/) return "ExoCmd"
+      if (name ~ /exo_msgs__msg__ExoStatus/) return "ExoStatus"
+      if (name ~ /toplevel_type_raw_source/) return "toplevel_type_raw_source"
+      return "other_rosidl_metadata"
+    }
+
+    $3 ~ /^[BbDd]$/ && is_rosidl_metadata($4) {
+      group = rosidl_group($4)
+      bytes[group] += strtonum("0x" $2)
+    }
+
+    END {
+      order[1] = "ExoHeader"
+      order[2] = "ExoCmd"
+      order[3] = "ExoStatus"
+      order[4] = "toplevel_type_raw_source"
+      order[5] = "other_rosidl_metadata"
+      for (idx = 1; idx <= 5; idx++) {
+        group = order[idx]
+        printf "%-24s bytes=%6d\n", group, bytes[group] + 0
+      }
+    }
+  '
+
+echo
 echo "largest_ram_symbols_by_category:"
 for category in \
   rosidl_type_metadata \
