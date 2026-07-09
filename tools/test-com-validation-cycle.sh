@@ -104,7 +104,7 @@ assert_not_contains "$bad_log" "run-com-staircase.sh dry_bad" \
 
 run_cycle dry_watch SWD_STATUS_OVERRIDE=bad_unknown_target START_OVERNIGHT_WATCH_ON_SWD_FAIL=1
 watch_log="$TMPDIR/logs/dry_watch.log"
-assert_contains "$watch_log" "DRY_RUN $ROOT/tools/start-overnight-com-watch.sh dry_watch_watch" \
+assert_contains "$watch_log" "DRY_RUN $ROOT/tools/start-overnight-com-watch.sh dry_watch_watch > $TMPDIR/logs/dry_watch.watch-start.log" \
   "fallback can start detached overnight watcher"
 
 run_cycle dry_skip SWD_STATUS_OVERRIDE=bad_probe_failed RUN_NO_FLASH_ON_SWD_FAIL=0

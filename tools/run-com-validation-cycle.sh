@@ -34,6 +34,7 @@ LOG="$LOGDIR/$TAG.log"
 DIAG_REPORT="$HANDOFF_DIR/${TAG}.swd.md"
 CONTRACT_LOG="$LOGDIR/$TAG.contract.log"
 STACK_HWM_LOG="$LOGDIR/$TAG.stack-hwm.log"
+START_WATCH_LOG="$LOGDIR/$TAG.watch-start.log"
 
 : >"$LOG"
 
@@ -171,11 +172,13 @@ else
     record "SKIP no_flash_fallback RUN_NO_FLASH_ON_SWD_FAIL=0"
   fi
   if [ "$START_OVERNIGHT_WATCH_ON_SWD_FAIL" = "1" ]; then
-    if run_or_record "$START_WATCH_CMD" "$OVERNIGHT_WATCH_TAG"; then
-      :
+    if [ "$DRY_RUN" = "1" ]; then
+      record "DRY_RUN $START_WATCH_CMD $OVERNIGHT_WATCH_TAG > $START_WATCH_LOG"
+    elif "$START_WATCH_CMD" "$OVERNIGHT_WATCH_TAG" >"$START_WATCH_LOG" 2>&1; then
+      record "OVERNIGHT_WATCH_STATUS=0 log=$START_WATCH_LOG"
     else
       watch_status=$?
-      record "WARN overnight_watch_status=$watch_status"
+      record "WARN overnight_watch_status=$watch_status log=$START_WATCH_LOG"
     fi
   else
     record "SKIP overnight_watch START_OVERNIGHT_WATCH_ON_SWD_FAIL=0"
