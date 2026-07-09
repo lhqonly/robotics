@@ -366,7 +366,8 @@ tools/run-com-staircase.sh staircase_$(date +%Y%m%d_%H%M)
 ```
 
 它会依次跑 1kHz/20Hz reliable baseline，然后跑 1/2/5/10kHz MCU 本地闭环
-与 200Hz PC latest-target profile。单个阶段失败会写入
+与 200Hz PC latest-target profile；latest-target 默认同时比较 `921600` 和
+`2000000` 两个 baud。单个阶段失败会写入
 `log/com-staircase/<tag>.summary.log` 并继续；每个完成阶段会追加一行
 `METRICS`，汇总 `sampler_hz`、gap p95/p99/max、seq 步长和
 `zero_gap_count`、`lost/duplicate/inflight`。当前 ST-LINK/SWD 不可用时，
@@ -382,9 +383,9 @@ tools/run-com-staircase.sh staircase_$(date +%Y%m%d_%H%M)
 DRY_RUN=1 tools/run-com-staircase.sh dryrun
 ```
 
-要同时比较不同波特率，设置 `STAIRCASE_BAUDS`。这会为每个 1/2/5/10kHz
-latest-target 阶段分别编译/烧录对应 `EXO_UART_BAUD` 的固件，并用同样 baud 启动
-bridge：
+默认已经比较 `921600` 与 `2000000`。如果只想收窄或扩展波特率矩阵，设置
+`STAIRCASE_BAUDS`；这会为每个 1/2/5/10kHz latest-target 阶段分别编译/烧录
+对应 `EXO_UART_BAUD` 的固件，并用同样 baud 启动 bridge：
 
 ```bash
 STAIRCASE_BAUDS="921600 2000000" tools/run-com-staircase.sh baud_sweep

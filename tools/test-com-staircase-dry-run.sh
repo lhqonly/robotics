@@ -37,6 +37,9 @@ assert_contains "$default_summary" \
   "START latest_1000hz_921600baud_irqp4_poll0_spin1000us_200hz_be_n40" \
   "default 1k latest stage"
 assert_contains "$default_summary" \
+  "START latest_1000hz_2000000baud_irqp4_poll0_spin1000us_200hz_be_n40" \
+  "default 1k latest 2Mbps stage"
+assert_contains "$default_summary" \
   "SUMMARY_PERIOD_S=5.0 LINK_HEALTH_PERIOD_S=5.0" \
   "default latest diagnostic periods"
 assert_contains "$default_summary" "pc_launch_prefix=none" \
@@ -55,7 +58,10 @@ assert_contains "$default_summary" \
 assert_contains "$default_summary" \
   "START latest_10000hz_921600baud_irqp4_poll0_spin1000us_200hz_be_n40" \
   "default 10k latest stage"
-assert_count "$default_summary" '^START latest_' 4 \
+assert_contains "$default_summary" \
+  "START latest_10000hz_2000000baud_irqp4_poll0_spin1000us_200hz_be_n40" \
+  "default 10k latest 2Mbps stage"
+assert_count "$default_summary" '^START latest_' 8 \
   "default latest stage count"
 
 LOGDIR="$TMPDIR/matrix" DRY_RUN=1 \
