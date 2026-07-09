@@ -53,7 +53,7 @@ def generate_launch_description():
             description='Recent sent seq window for sampled status matching.'),
         DeclareLaunchArgument(
             'rtt_warn_ms',
-            default_value='10.0',
+            default_value='50.0',
             description='Soft RTT warning threshold in milliseconds.'),
         DeclareLaunchArgument(
             'rtt_deadline_ms',

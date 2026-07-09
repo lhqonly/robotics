@@ -220,7 +220,8 @@ ros2 launch com_bringup pc_latest_target.launch.py
 
 它默认等价于 `cmd_rate_hz=200`、`cmd_catchup_max=0`、`qos_depth=1`、
 `qos_reliability=best_effort`、`tracking_mode=sampled`、`status_every_n=40`、
-`sample_window=1024`、`summary_period_s=5.0`、`link_health_period_s=5.0`。
+`sample_window=1024`、`rtt_warn_ms=50.0`、`summary_period_s=5.0`、
+`link_health_period_s=5.0`。
 这组参数的含义是：
 
 | 参数 | 默认值 | 用途 |
@@ -230,6 +231,7 @@ ros2 launch com_bringup pc_latest_target.launch.py
 | `qos_reliability` | `best_effort` | 控制目标采用“最新值优先”，避免 reliable 重传拖慢实时链路 |
 | `status_every_n` | `40` | MCU 每 40 条命令回一次状态，200Hz 下约 5Hz 状态 topic |
 | `sample_window` | `1024` | PC 侧 sampled 匹配窗口，200Hz 下覆盖约 5.1s |
+| `rtt_warn_ms` | `50.0` | 只影响手动观察时的 RTT soft warning，避免 200Hz/WSL 串口链路一直刷 10ms 级提醒 |
 | `summary_period_s` | `5.0` | 降低 PC 诊断 summary timer 对 200Hz command timer 的干扰 |
 | `link_health_period_s` | `5.0` | 降低 `/com/tp_link_health` 发布频率，保留链路健康观测但减少热路径负载 |
 

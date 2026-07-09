@@ -24,6 +24,7 @@ def test_latest_target_preset_uses_low_overhead_diagnostics():
     assert_contains(text, "'qos_reliability': 'best_effort'")
     assert_contains(text, "'tracking_mode': 'sampled'")
     assert_contains(text, "default_value='1024'")
+    assert_contains(text, "default_value='50.0'")
     assert_contains(text, "default_value='5.0'")
     assert_contains(text, "'summary_period_s': ParameterValue(")
     assert_contains(text, "'link_health_period_s': ParameterValue(")
