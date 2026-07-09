@@ -922,6 +922,7 @@ serial_users="$(serial_lsof)"
   echo
   echo "- SWD 仍需恢复：当前无法 flash 新 profile，也无法读取高频运行期栈水位。"
   echo "- 10kHz/200Hz/best_effort/status_every_40 和 2Mbps profile 已能编译，但运行收益待 SWD 恢复后实测。"
+  echo "- 1000Hz PC-only scheduler probe 当前只证明 PC 侧发包节拍候选（threads4 p99≈1.17ms/max≈5.02ms）；它尚未经过 matching best-effort firmware、2Mbps/921600 线速、MCU 接收率和 1/2/5/10kHz 本地闭环联合验证，不能替代 200Hz 上板验收默认。"
   echo "- UART read polling 候选 \`EXO_UART_READ_POLL_YIELDS=4\` 仅完成编译/size 验证，是否改善 RTT/gap 长尾待上板实测。"
   echo "- executor spin timeout 候选 \`EXO_EXECUTOR_SPIN_TIMEOUT_US=500/200/100\` 仅完成编译/size 验证，是否改善 RTT/gap 长尾待上板实测。"
   echo "- linker heap/MSP reserve 候选 \`EXO_NEWLIB_HEAP_BYTES=0\`、\`EXO_MSP_STACK_BYTES=512/768\` 仅完成静态验证；默认仍保持 512B/1024B，必须等 SWD 恢复后确认 MSP/ISR 栈和 newlib malloc 失败路径。"
