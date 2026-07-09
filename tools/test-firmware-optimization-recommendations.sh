@@ -32,6 +32,8 @@ assert_contains "$actual_out" "CANDIDATE combined_stack_linker_min_static" \
   "combined stack/linker recommendation"
 assert_contains "$actual_out" "CANDIDATE rosidl_type_metadata" \
   "ROSIDL metadata recommendation"
+assert_contains "$actual_out" "CANDIDATE rosidl_raw_source_metadata" \
+  "ROSIDL raw source metadata recommendation"
 assert_contains "$actual_out" "SWD_STATUS=ok" \
   "runtime SWD gate"
 
@@ -61,6 +63,14 @@ case,verdict,ram_static_bytes
 baseline,PASS_STATIC,14000
 stack640_heap0_stack512,PASS_STATIC,12488
 EOF
+cat >"$TMPDIR/size-report.txt" <<'EOF'
+rosidl_type_metadata_breakdown:
+ExoHeader                bytes=   511
+ExoCmd                   bytes=   347
+ExoStatus                bytes=   350
+toplevel_type_raw_source bytes=  1555
+other_rosidl_metadata    bytes=    72
+EOF
 
 synthetic_out="$TMPDIR/synthetic.md"
 SIZE_MATRIX_CSV="$TMPDIR/size.csv" \
@@ -68,6 +78,7 @@ SIZE_MATRIX_CSV="$TMPDIR/size.csv" \
   SPIN_CSV="$TMPDIR/spin.csv" \
   LINKER_CSV="$TMPDIR/linker.csv" \
   COMBINED_CSV="$TMPDIR/combined.csv" \
+  FIRMWARE_SIZE_REPORT="$TMPDIR/size-report.txt" \
   "$ROOT/tools/recommend-firmware-optimizations.sh" >"$synthetic_out"
 
 assert_contains "$synthetic_out" \
@@ -85,5 +96,8 @@ assert_contains "$synthetic_out" \
 assert_contains "$synthetic_out" \
   "CANDIDATE rosidl_type_metadata bytes=3000" \
   "synthetic ROSIDL metadata bytes"
+assert_contains "$synthetic_out" \
+  "CANDIDATE rosidl_raw_source_metadata bytes=1555 parent_bytes=3000" \
+  "synthetic ROSIDL raw source metadata bytes"
 
 echo "PASS: firmware optimization recommendation tests"

@@ -956,7 +956,7 @@ serial_users="$(serial_lsof)"
   echo "- executor spin timeout 候选 \`EXO_EXECUTOR_SPIN_TIMEOUT_US=500/200/100\` 仅完成编译/size 验证，是否改善 RTT/gap 长尾待上板实测。"
   echo "- linker heap/MSP reserve 候选 \`EXO_NEWLIB_HEAP_BYTES=0\`、\`EXO_MSP_STACK_BYTES=512/768\` 仅完成静态验证；默认仍保持 512B/1024B，必须等 SWD 恢复后确认 MSP/ISR 栈和 newlib malloc 失败路径。"
   echo "- combined stack/linker 候选不能只把单项 saved_bytes 相加后直接采用；必须跑 combined sweep，并在同一个高频 firmware profile 下同时验证 HWM、MSP/heap 和 HardFault 行为。"
-  echo "- 当前 ELF 中 \`rosidl_type_metadata\` 约 2.8KB RAM，是新的内存优化重点；但 \`ROSIDL_TYPESUPPORT_SINGLE_TYPESUPPORT\` 曾是 T5 HardFault/agent 兼容修复的一部分，需用独立 libmicroros rebuild 矩阵验证后再改默认。"
+  echo "- 当前 ELF 中 \`rosidl_type_metadata\` 约 2.8KB RAM，其中 \`toplevel_type_raw_source\` 约 1.5KB，是新的内存优化重点；但 \`ROSIDL_TYPESUPPORT_SINGLE_TYPESUPPORT\` 曾是 T5 HardFault/agent 兼容修复的一部分，需用独立 libmicroros rebuild/strip type-description 矩阵验证后再改默认。"
   echo "- DWT snapshot 算法已有 host-side 模型测试 \`tools/test-dwt-snapshot-model.sh\`，但真实 stamp 单调性仍需 SWD 恢复后做 >60s 静默恢复对抗。"
   echo "- idle stack 96 words、micro-ROS stack 704/640 words 目前是静态候选，必须上板用 \`tools/measure-stack-hwm.sh\` 复测后再设为默认。"
   if [ -n "$latest_watch_fail_count" ] && [ "$latest_watch_fail_count" -gt 0 ] 2>/dev/null &&

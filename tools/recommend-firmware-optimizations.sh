@@ -13,6 +13,8 @@ STACK_CSV="${STACK_CSV:-}"
 SPIN_CSV="${SPIN_CSV:-}"
 LINKER_CSV="${LINKER_CSV:-}"
 COMBINED_CSV="${COMBINED_CSV:-}"
+FIRMWARE_ELF="${FIRMWARE_ELF:-$ROOT/firmware/f103-microros/build/f103-microros.elf}"
+FIRMWARE_SIZE_REPORT="${FIRMWARE_SIZE_REPORT:-}"
 
 latest_file() {
   local dir="$1"
@@ -149,9 +151,43 @@ num_or_zero() {
   fi
 }
 
+firmware_size_report() {
+  if [ -n "$FIRMWARE_SIZE_REPORT" ] && [ -f "$FIRMWARE_SIZE_REPORT" ]; then
+    cat "$FIRMWARE_SIZE_REPORT"
+    return 0
+  fi
+  if [ -f "$FIRMWARE_ELF" ] && [ -x "$ROOT/tools/firmware-size-report.sh" ]; then
+    "$ROOT/tools/firmware-size-report.sh" "$FIRMWARE_ELF" 2>/dev/null || true
+  fi
+}
+
+size_report_breakdown_bytes() {
+  local report="$1"
+  local label="$2"
+  printf '%s\n' "$report" |
+    awk -v label="$label" '
+      /^rosidl_type_metadata_breakdown:/ {in_section = 1; next}
+      in_section && NF == 0 {exit}
+      in_section && $1 == label {
+        for (i = 1; i <= NF; i++) {
+          if ($i == "bytes=" && (i + 1) <= NF) {
+            print $(i + 1)
+            exit
+          } else if ($i ~ /^bytes=./) {
+            sub(/^bytes=/, "", $i)
+            print $i
+            exit
+          }
+        }
+      }
+    '
+}
+
+size_report="$(firmware_size_report)"
 default_ram="$(csv_value "$SIZE_MATRIX_CSV" profile default_reliable_1khz ram_static_bytes)"
 best_10k_ram="$(csv_value "$SIZE_MATRIX_CSV" profile besteffort_10000hz_status40 ram_static_bytes)"
 rosidl_metadata_bytes="$(csv_value "$SIZE_MATRIX_CSV" profile default_reliable_1khz ram_rosidl_type_metadata_bytes)"
+rosidl_raw_source_bytes="$(size_report_breakdown_bytes "$size_report" toplevel_type_raw_source)"
 microros_pools_bytes="$(csv_value "$SIZE_MATRIX_CSV" profile default_reliable_1khz ram_microros_custom_pools_bytes)"
 default_stack_ram="$(csv_value "$STACK_CSV" microros_stack_words 768 ram_static_bytes)"
 best_stack_row="$(csv_min_row "$STACK_CSV" ram_static_bytes verdict PASS_STATIC)"
@@ -188,6 +224,7 @@ cat <<EOF
 - spin-timeout sweep: $(relpath "$SPIN_CSV")
 - linker reserve sweep: $(relpath "$LINKER_CSV")
 - combined memory sweep: $(relpath "$COMBINED_CSV")
+- firmware ELF: $(relpath "$FIRMWARE_ELF")
 
 ## Current Safe Recommendation
 
@@ -210,6 +247,8 @@ CANDIDATE combined_stack_linker_min_static case=${best_combined_case:-NA} saved_
 CANDIDATE executor_spin_timeout values="${spin_values:-NA}" saved_bytes=0 adoption=runtime_latency_only gate=compare_staircase_gap_and_cpu
 
 CANDIDATE rosidl_type_metadata bytes=${rosidl_metadata_bytes:-NA} adoption=hold gate=libmicroros_rebuild_compatibility_matrix
+
+CANDIDATE rosidl_raw_source_metadata bytes=${rosidl_raw_source_bytes:-NA} parent_bytes=${rosidl_metadata_bytes:-NA} adoption=hold gate=libmicroros_rebuild_strip_type_description_matrix
 
 CANDIDATE microros_custom_pools bytes=${microros_pools_bytes:-NA} adoption=hold gate=libmicroros_rebuild_and_agent_compatibility
 
