@@ -13,6 +13,7 @@ tests=(
   "tools/test-com-perf-contract.sh"
   "tools/test-com-summary-parsers.sh"
   "tools/test-com-staircase-contract.sh"
+  "tools/test-com-staircase-preflight.sh"
   "tools/test-com-staircase-dry-run.sh"
   "tools/test-com-validation-cycle.sh"
   "tools/test-start-overnight-com-watch.sh"

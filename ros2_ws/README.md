@@ -418,6 +418,17 @@ tools/diagnose-swd.sh
 tools/run-com-staircase.sh staircase_$(date +%Y%m%d_%H%M)
 ```
 
+也可以先跑只读 preflight，把 SWD gate、当前推荐 PC case、contract args 和
+overnight watcher 新鲜度汇总到一起：
+
+```bash
+tools/com-staircase-preflight.sh
+```
+
+只有输出 `PREFLIGHT_READY=yes` 时，才表示可以进入推荐的完整上板 staircase；
+`PREFLIGHT_READY=no` 时看 `PREFLIGHT_NEXT_ACTION`，通常是先恢复 SWD 或先补 PC
+scheduler sweep 证据。
+
 如果已经跑过 PC scheduler sweep，可以先生成一条带当前最佳 PC case 的推荐命令：
 
 ```bash
