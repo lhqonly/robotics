@@ -62,6 +62,18 @@ size_matrix_contract() {
   fi
 }
 
+optimization_recommendations() {
+  if [ -x "$ROOT/tools/recommend-firmware-optimizations.sh" ]; then
+    "$ROOT/tools/recommend-firmware-optimizations.sh" 2>/dev/null |
+      awk '
+        /^RECOMMENDATION / {print; next}
+        /^CANDIDATE / {print; next}
+      '
+  else
+    echo "missing_recommend_firmware_optimizations"
+  fi
+}
+
 cat <<EOF
 # Firmware Memory Optimization Snapshot
 
@@ -99,6 +111,12 @@ $(first_table_rows "$linker_md" 8)
 
 \`\`\`text
 $(size_matrix_contract)
+\`\`\`
+
+## Optimization Recommendations
+
+\`\`\`text
+$(optimization_recommendations)
 \`\`\`
 
 ## Guardrails

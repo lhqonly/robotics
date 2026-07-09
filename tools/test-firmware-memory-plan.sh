@@ -35,6 +35,12 @@ assert_contains "## Static Size Matrix Contract" \
   "static size matrix contract section"
 assert_contains "firmware_size_matrix_contract" \
   "static size matrix contract output"
+assert_contains "## Optimization Recommendations" \
+  "optimization recommendation section"
+assert_contains "RECOMMENDATION default_policy=keep_defaults_until_runtime_evidence" \
+  "default recommendation policy"
+assert_contains "CANDIDATE linker_reserve_min_static" \
+  "linker reserve recommendation"
 assert_contains "Do not change default micro-ROS task stack" \
   "hardware HWM guardrail"
 

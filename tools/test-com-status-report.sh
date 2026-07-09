@@ -45,6 +45,10 @@ assert_contains "$report" "## 固件静态内存矩阵" \
   "firmware size matrix section"
 assert_contains "$report" "## micro-ROS 栈候选" \
   "micro-ROS stack candidates section"
+assert_contains "$report" "## 固件优化推荐" \
+  "firmware optimization recommendations section"
+assert_contains "$report" "CANDIDATE microros_stack_min_static" \
+  "firmware stack recommendation row"
 assert_contains "$report" "## executor spin timeout 候选" \
   "executor spin-timeout candidates section"
 assert_contains "$report" "## linker heap/MSP 预留候选" \

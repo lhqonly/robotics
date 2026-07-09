@@ -263,6 +263,15 @@ firmware_ram_category_symbols() {
     '
 }
 
+firmware_optimization_recommendations() {
+  if [ ! -x "$ROOT/tools/recommend-firmware-optimizations.sh" ]; then
+    echo "-"
+    return 0
+  fi
+  "$ROOT/tools/recommend-firmware-optimizations.sh" 2>/dev/null |
+    awk '/^RECOMMENDATION / || /^CANDIDATE / {print}'
+}
+
 cmake_arg_value() {
   local file="$1"
   local key="$2"
@@ -418,6 +427,7 @@ latest_staircase_metrics="$(latest_file "$STAIRCASE_LOGDIR" '*.metrics.md')"
 latest_staircase_summary="$(latest_file "$STAIRCASE_LOGDIR" '*.summary.log')"
 ram_categories="$(firmware_ram_categories)"
 ram_category_symbols="$(firmware_ram_category_symbols)"
+firmware_optimization_recs="$(firmware_optimization_recommendations)"
 microros_config="$(microros_config_summary)"
 topic_qos_snapshot="$(graph_qos_snapshot "$latest_graph")"
 duplicate_node_warning="$(graph_duplicate_node_warning "$latest_graph")"
@@ -828,6 +838,12 @@ serial_users="$(serial_lsof)"
   echo
   echo '```text'
   printf '%s\n' "$ram_category_symbols"
+  echo '```'
+  echo
+  echo "## 固件优化推荐"
+  echo
+  echo '```text'
+  printf '%s\n' "$firmware_optimization_recs"
   echo '```'
   echo
   echo "## micro-ROS 栈候选"

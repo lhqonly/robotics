@@ -30,5 +30,9 @@ assert_contains "$README" "SWD_STATUS=ok" \
   "SWD diagnostic status is documented"
 assert_contains "$README" "qos_incompatibility" \
   "staircase documents QoS incompatibility metric"
+assert_contains "$README" "tools/recommend-firmware-optimizations.sh" \
+  "firmware optimization recommendations command is documented"
+assert_contains "$README" "default_policy=keep_defaults_until_runtime_evidence" \
+  "firmware optimization default policy is documented"
 
 echo "PASS: communication docs checks"

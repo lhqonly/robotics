@@ -570,6 +570,18 @@ tools/summarize-firmware-memory-plan.sh
 这份报告不会连接硬件；其中 `PASS_STATIC` 只代表静态编译和 size 预算通过，
 默认栈/heap/MSP 仍必须等 SWD 恢复后用运行期水位确认。
 
+要把这些静态结果收敛成“现在能不能改默认值、恢复 SWD 后先验证什么”的候选清单：
+
+```bash
+tools/recommend-firmware-optimizations.sh
+```
+
+输出里的 `RECOMMENDATION default_policy=keep_defaults_until_runtime_evidence`
+表示当前默认值先不动；`CANDIDATE ... saved_bytes=... gate=...` 会列出每个
+候选最多能省多少 SRAM，以及必须满足的运行期门槛。例如 linker reserve 和
+micro-ROS stack 候选都必须等 SWD 恢复后完成 HWM/MSP/heap/HardFault 证据，
+不能只靠静态 RAM 余量直接改默认。
+
 要比较 1/2/5/10kHz、reliable/best-effort 等固件 profile 的静态
 Flash/RAM，不需要连接硬件，可以跑：
 
