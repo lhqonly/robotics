@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TMPDIR="$(mktemp -d)"
+trap 'rm -rf "$TMPDIR"' EXIT
+
+assert_contains() {
+  local file="$1"
+  local needle="$2"
+  local label="$3"
+  if ! grep -Fq -- "$needle" "$file"; then
+    echo "FAIL: $label missing '$needle' in $file" >&2
+    cat "$file" >&2
+    exit 1
+  fi
+}
+
+bash -n "$ROOT/tools/recommend-motor-m2-smoke-command.sh"
+
+out="$TMPDIR/default.md"
+"$ROOT/tools/recommend-motor-m2-smoke-command.sh" >"$out"
+
+assert_contains "$out" "# Recommended M2 Motor Smoke Command" \
+  "title"
+assert_contains "$out" "EXO_MOTOR_ROS_ENTITIES=ON" \
+  "motor entity build flag"
+assert_contains "$out" "-DEXO_UART_BAUD=2000000" \
+  "default first smoke baud"
+assert_contains "$out" "tools/com-wire-budget.py --profile motor-m2" \
+  "motor wire budget precheck"
+assert_contains "$out" "tools/diagnose-swd.sh" \
+  "SWD gate"
+assert_contains "$out" "tools/run-bridge.sh '/dev/ttyUSB0' '2000000'" \
+  "default bridge command"
+assert_contains "$out" "ros2 topic info -v /motor/tp_joint_target" \
+  "target topic info command"
+assert_contains "$out" "ros2 topic info -v /motor/tp_joint_state" \
+  "state topic info command"
+assert_contains "$out" "ros2 topic info -v /motor/tp_motor_health" \
+  "health topic info command"
+assert_contains "$out" "ros2 topic info -v /com/tp_mcu_status" \
+  "com coexistence topic info command"
+assert_contains "$out" "frame_id: ''" \
+  "empty frame_id positive publish"
+assert_contains "$out" "frame_id: reject" \
+  "non-empty frame_id negative publish"
+assert_contains "$out" "last_target_seq remains 42" \
+  "negative frame_id last_target_seq assertion"
+assert_contains "$out" "targets_received/targets_applied do not increase" \
+  "negative frame_id health counter assertion"
+assert_contains "$out" "seq: 44" \
+  "legal target after negative frame_id"
+assert_contains "$out" "tools/measure-stack-hwm.sh 'firmware/f103-microros/build-motor/f103-microros.elf'" \
+  "motor stack HWM command"
+assert_contains "$out" "Passing \`/com\` 10kHz/200Hz validation is not a substitute" \
+  "surrogate evidence warning"
+assert_contains "$out" "CHECK non_empty_frame_id_keeps_last_target_seq_at_previous_accepted_seq" \
+  "negative frame_id seq checklist"
+assert_contains "$out" "CHECK non_empty_frame_id_does_not_increment_targets_received_or_applied" \
+  "negative frame_id counter checklist"
+assert_contains "$out" "CHECK legal_target_after_reject_proves_executor_still_serves_topics" \
+  "negative frame_id executor checklist"
+assert_contains "$out" "CHECK 921600_is_comparison_only_when_static_budget_is_over_30_percent" \
+  "921600 budget warning checklist"
+
+commands="$TMPDIR/commands.sh"
+FORMAT=commands M2_MOTOR_BAUD=921600 M2_MOTOR_SERIAL=/dev/ttyACM0 \
+  M2_MOTOR_BUILD_DIR=firmware/f103-microros/build-motor-921k \
+  "$ROOT/tools/recommend-motor-m2-smoke-command.sh" >"$commands"
+
+assert_contains "$commands" "-DEXO_UART_BAUD=921600" \
+  "custom baud in commands format"
+assert_contains "$commands" "tools/run-bridge.sh '/dev/ttyACM0' '921600'" \
+  "custom serial in commands format"
+assert_contains "$commands" "cmake --build 'firmware/f103-microros/build-motor-921k'" \
+  "custom build dir in commands format"
+assert_contains "$commands" "st-flash --connect-under-reset write 'firmware/f103-microros/build-motor-921k/f103-microros.bin' 0x08000000" \
+  "custom flash path in commands format"
+
+checklist="$TMPDIR/checklist.txt"
+FORMAT=checklist M2_MOTOR_TAG=demo_motor "$ROOT/tools/recommend-motor-m2-smoke-command.sh" >"$checklist"
+assert_contains "$checklist" "M2_MOTOR_SMOKE_TAG=demo_motor" \
+  "custom tag in checklist"
+assert_contains "$checklist" "CHECK ros_graph_has_motor_target_state_health_and_com_status" \
+  "graph checklist"
+assert_contains "$checklist" "CHECK stack_hwm_msp_heap_margin_recorded_before_default_memory_reduction" \
+  "memory gate checklist"
+
+echo "PASS: recommended M2 motor smoke command tests"

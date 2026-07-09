@@ -1,0 +1,142 @@
+#!/usr/bin/env bash
+# Emit the first hardware smoke sequence for M2 motor micro-ROS entities.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+FORMAT="${FORMAT:-markdown}"
+M2_MOTOR_BAUD="${M2_MOTOR_BAUD:-2000000}"
+M2_MOTOR_SERIAL="${M2_MOTOR_SERIAL:-/dev/ttyUSB0}"
+M2_MOTOR_BUILD_DIR="${M2_MOTOR_BUILD_DIR:-firmware/f103-microros/build-motor}"
+M2_MOTOR_CONTROL_LOOP_HZ="${M2_MOTOR_CONTROL_LOOP_HZ:-10000}"
+M2_MOTOR_STATUS_EVERY_N="${M2_MOTOR_STATUS_EVERY_N:-40}"
+M2_MOTOR_QOS_BEST_EFFORT="${M2_MOTOR_QOS_BEST_EFFORT:-ON}"
+M2_MOTOR_TAG="${M2_MOTOR_TAG:-motor_m2_smoke_$(date +%Y%m%d_%H%M)}"
+
+case "$FORMAT" in
+  markdown|commands|checklist) ;;
+  *)
+    echo "ERROR: FORMAT must be markdown, commands, or checklist, got '$FORMAT'" >&2
+    exit 1
+    ;;
+esac
+
+shell_quote() {
+  local value="$1"
+  printf "'%s'" "$(printf '%s' "$value" | sed "s/'/'\\\\''/g")"
+}
+
+build_dir_abs="$ROOT/$M2_MOTOR_BUILD_DIR"
+elf="$M2_MOTOR_BUILD_DIR/f103-microros.elf"
+bin="$M2_MOTOR_BUILD_DIR/f103-microros.bin"
+
+print_commands() {
+  cat <<EOF
+tools/diagnose-swd.sh
+tools/com-wire-budget.py --profile motor-m2 --cmd-hz 200 --motor-state-hz 50 --motor-health-hz 5 --baud '921600 2000000' --max-baud-util-pct 30 --show-wire-time
+cmake -S firmware/f103-microros -B $(shell_quote "$M2_MOTOR_BUILD_DIR") \\
+  -DCMAKE_TOOLCHAIN_FILE="\$(pwd)/firmware/f103-microros/toolchain-arm-m3.cmake" \\
+  -DCMAKE_BUILD_TYPE=MinSizeRel \\
+  -DEXO_MOTOR_ROS_ENTITIES=ON \\
+  -DEXO_QOS_BEST_EFFORT=$M2_MOTOR_QOS_BEST_EFFORT \\
+  -DEXO_UART_BAUD=$M2_MOTOR_BAUD \\
+  -DEXO_CONTROL_LOOP_HZ=$M2_MOTOR_CONTROL_LOOP_HZ \\
+  -DEXO_STATUS_EVERY_N=$M2_MOTOR_STATUS_EVERY_N
+cmake --build $(shell_quote "$M2_MOTOR_BUILD_DIR")
+tools/firmware-size-report.sh $(shell_quote "$elf")
+st-flash --connect-under-reset write $(shell_quote "$bin") 0x08000000
+MICROROS_AGENT_VERBOSITY=6 tools/run-bridge.sh $(shell_quote "$M2_MOTOR_SERIAL") $(shell_quote "$M2_MOTOR_BAUD")
+
+source /opt/ros/jazzy/setup.bash
+source ros2_ws/install/setup.bash
+ros2 topic list | grep -E '^/(com|motor)/'
+ros2 topic info -v /motor/tp_joint_target
+ros2 topic info -v /motor/tp_joint_state
+ros2 topic info -v /motor/tp_motor_health
+ros2 topic info -v /com/tp_mcu_status
+ros2 topic pub --once /motor/tp_joint_target exo_motor_msgs/msg/JointTarget "{header: {frame_id: ''}, seq: 42, joint_id: 0, control_mode: 1, position_rad: 0.0, velocity_rad_s: 0.0, torque_nm: 0.0, kp_nm_per_rad: 0.0, kd_nm_s_per_rad: 0.0, max_torque_nm: 0.2, max_velocity_rad_s: 0.5, max_position_rad: 0.5, min_position_rad: -0.5, ttl_us: 100000, flags: 0}"
+ros2 topic echo --once /motor/tp_joint_state
+ros2 topic echo --once /motor/tp_motor_health
+timeout 10 ros2 topic hz /motor/tp_joint_state
+timeout 10 ros2 topic hz /com/tp_mcu_status
+# Record last_target_seq plus targets_received/targets_applied before the negative frame_id test.
+ros2 topic echo --once /motor/tp_joint_state
+ros2 topic echo --once /motor/tp_motor_health
+ros2 topic pub --once /motor/tp_joint_target exo_motor_msgs/msg/JointTarget "{header: {frame_id: reject}, seq: 43, joint_id: 0, control_mode: 1, position_rad: 0.0, velocity_rad_s: 0.0, torque_nm: 0.0, kp_nm_per_rad: 0.0, kd_nm_s_per_rad: 0.0, max_torque_nm: 0.2, max_velocity_rad_s: 0.5, max_position_rad: 0.5, min_position_rad: -0.5, ttl_us: 100000, flags: 0}"
+# Negative-test pass condition: last_target_seq remains 42 and targets_received/targets_applied do not increase because of seq=43.
+ros2 topic echo --once /motor/tp_joint_state
+ros2 topic echo --once /motor/tp_motor_health
+# Follow with a legal target so the negative test also proves the executor is still alive.
+ros2 topic pub --once /motor/tp_joint_target exo_motor_msgs/msg/JointTarget "{header: {frame_id: ''}, seq: 44, joint_id: 0, control_mode: 1, position_rad: 0.0, velocity_rad_s: 0.0, torque_nm: 0.0, kp_nm_per_rad: 0.0, kd_nm_s_per_rad: 0.0, max_torque_nm: 0.2, max_velocity_rad_s: 0.5, max_position_rad: 0.5, min_position_rad: -0.5, ttl_us: 100000, flags: 0}"
+ros2 topic echo --once /motor/tp_joint_state
+
+tools/measure-stack-hwm.sh $(shell_quote "$elf")
+EOF
+}
+
+print_checklist() {
+  cat <<EOF
+M2_MOTOR_SMOKE_TAG=$M2_MOTOR_TAG
+M2_MOTOR_SMOKE_BAUD=$M2_MOTOR_BAUD
+M2_MOTOR_SMOKE_SERIAL=$M2_MOTOR_SERIAL
+M2_MOTOR_SMOKE_BUILD_DIR=$M2_MOTOR_BUILD_DIR
+CHECK swd_status_ok
+CHECK motor_enabled_firmware_builds
+CHECK motor_firmware_flashes
+CHECK agent_connects_without_reconnect_loop
+CHECK ros_graph_has_motor_target_state_health_and_com_status
+CHECK empty_frame_id_target_updates_joint_state_last_target_seq
+CHECK ttl_stale_or_stop_publish_safes_target
+CHECK clamp_or_fault_fields_observable_for_limited_target
+CHECK non_empty_frame_id_keeps_last_target_seq_at_previous_accepted_seq
+CHECK non_empty_frame_id_does_not_increment_targets_received_or_applied
+CHECK legal_target_after_reject_proves_executor_still_serves_topics
+CHECK motor_state_hz_and_com_status_hz_match_expected_decimation
+CHECK stack_hwm_msp_heap_margin_recorded_before_default_memory_reduction
+CHECK 921600_is_comparison_only_when_static_budget_is_over_30_percent
+EOF
+}
+
+if [ "$FORMAT" = "commands" ]; then
+  print_commands
+  exit 0
+fi
+
+if [ "$FORMAT" = "checklist" ]; then
+  print_checklist
+  exit 0
+fi
+
+cat <<EOF
+# Recommended M2 Motor Smoke Command
+
+- tag: $M2_MOTOR_TAG
+- serial: $M2_MOTOR_SERIAL
+- baud: $M2_MOTOR_BAUD
+- build dir: $M2_MOTOR_BUILD_DIR
+- ELF: $elf
+- profile: EXO_MOTOR_ROS_ENTITIES=ON, best_effort=$M2_MOTOR_QOS_BEST_EFFORT, loop=${M2_MOTOR_CONTROL_LOOP_HZ}Hz, status_every_n=$M2_MOTOR_STATUS_EVERY_N
+
+Gate: run \`tools/diagnose-swd.sh\` first; only flash when \`SWD_STATUS=ok\`.
+
+The first M2 smoke should prefer 2Mbps. Static budget says 200Hz target + 50Hz
+state + 5Hz health is over the 30% budget at 921600 baud, so 921600 is a
+comparison case after the 2Mbps smoke connects.
+
+## Commands
+
+\`\`\`bash
+$(print_commands)
+\`\`\`
+
+## Acceptance Checklist
+
+\`\`\`text
+$(print_checklist)
+\`\`\`
+
+## Evidence Boundaries
+
+- Passing \`/com\` 10kHz/200Hz validation is not a substitute for this \`/motor\` topic smoke.
+- The non-empty \`header.frame_id\` command is a negative test. Do not count it as passing just because \`/motor/tp_joint_state\` still publishes: \`last_target_seq\` must remain at the previous accepted seq, \`targets_received/targets_applied\` must not increase because of the rejected target, and a later legal target must still be accepted.
+- Do not reduce motor-enabled stack/linker reserve defaults until \`tools/measure-stack-hwm.sh\` and MSP/heap evidence are recorded on the motor-enabled firmware.
+EOF
