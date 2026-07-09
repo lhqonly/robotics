@@ -33,6 +33,13 @@ write_tag qos_bad 200.000 12.0 30.0 0 0 200.000
 printf '%s\n' \
   "[node_com_cmd] [WARN] [1.0] [node_com_cmd]: New subscription discovered on topic '/com/tp_cmd_heartbeat', requesting incompatible QoS. No messages will be sent to it. Last incompatible policy: RELIABILITY" \
   >>"$TMPDIR/com-perf/qos_bad.cmd.log"
+printf '%s\n' \
+  "[node_com_cmd] link-health summary: sent=0 matched=0 lost=0 duplicate=0 inflight=0 wire_rate_hz=200.000 target_rate_hz=0.000 target_window_hz=0.000 wire_gap_p99_ms=10.0 wire_gap_max_ms=30.0" \
+  "[node_com_cmd] [WARN] [1.0] [node_com_cmd]: New subscription discovered on topic '/com/tp_cmd_heartbeat', requesting incompatible QoS. No messages will be sent to it. Last incompatible policy: RELIABILITY" \
+  >"$TMPDIR/com-perf/qos_target_zero.cmd.log"
+printf '%s\n' \
+  "status_sampler: count=0 rate_hz=0.000 seq_rate_hz=0.000 seq_delta_avg=0 seq_delta_min=0 seq_delta_max=0 p95_gap_s=0.000 p99_gap_s=0.000 max_gap_s=0.000 zero_gap_count=0" \
+  >"$TMPDIR/com-perf/qos_target_zero.sampler.log"
 
 pass_out="$(LOGDIR="$TMPDIR/com-perf" EXPECTED_CMD_RATE_HZ=200 \
   "$ROOT/tools/check-com-perf-contract.sh" pass200)"
@@ -66,6 +73,21 @@ if LOGDIR="$TMPDIR/com-perf" EXPECTED_CMD_RATE_HZ=200 \
 fi
 grep -Fq 'qos_incompatible' "$TMPDIR/contract.out"
 grep -Fq 'Last incompatible policy: RELIABILITY' "$TMPDIR/contract.out"
+
+if LOGDIR="$TMPDIR/com-perf" STATUS_EVERY_N=40 \
+    "$ROOT/tools/check-com-perf-contract.sh" qos_target_zero >"$TMPDIR/contract.out" 2>&1; then
+  echo "ERROR: expected qos_target_zero to fail" >&2
+  cat "$TMPDIR/contract.out" >&2
+  exit 1
+fi
+grep -Fq 'qos_incompatible' "$TMPDIR/contract.out"
+grep -Fq 'pc_target_rate_out_of_band' "$TMPDIR/contract.out"
+grep -Fq 'expected_cmd_hz=200.000' "$TMPDIR/contract.out"
+if grep -Fq 'division by zero' "$TMPDIR/contract.out"; then
+  echo "ERROR: qos_target_zero triggered division by zero" >&2
+  cat "$TMPDIR/contract.out" >&2
+  exit 1
+fi
 
 status40_out="$(LOGDIR="$TMPDIR/com-perf" EXPECTED_CMD_RATE_HZ=200 STATUS_EVERY_N=40 \
   "$ROOT/tools/check-com-perf-contract.sh" status40)"

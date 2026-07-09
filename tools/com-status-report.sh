@@ -422,8 +422,26 @@ pc_wire_gap_p99_ms="$(metric_from_line "$link_summary" wire_gap_p99_ms)"
 pc_wire_gap_max_ms="$(metric_from_line "$link_summary" wire_gap_max_ms)"
 latest_contract=""
 latest_expected_cmd_hz="$(metric_from_line "$link_summary" target_rate_hz)"
+if ! awk -v value="${latest_expected_cmd_hz:-0}" 'BEGIN {exit !((value + 0) > 0)}'; then
+  latest_expected_cmd_hz="$(metric_from_line "$link_summary" wire_rate_hz)"
+fi
+latest_status_every_n=""
+if [ -f "$latest_cmd" ]; then
+  latest_status_every_n="$(grep 'status_every_n=' "$latest_cmd" |
+    head -1 |
+    awk '{
+      for (idx = 1; idx <= NF; idx++) {
+        if ($idx ~ /^status_every_n=/) {
+          split($idx, parts, "=")
+          print parts[2]
+          exit
+        }
+      }
+    }')"
+fi
 if [ -n "$latest_tag" ] && [ -x "$ROOT/tools/check-com-perf-contract.sh" ]; then
   latest_contract="$(cd "$ROOT" && EXPECTED_CMD_RATE_HZ="${latest_expected_cmd_hz:-20}" \
+    STATUS_EVERY_N="${latest_status_every_n:-1}" \
     tools/check-com-perf-contract.sh "$latest_tag" 2>&1 || true)"
 fi
 wire_metrics=""

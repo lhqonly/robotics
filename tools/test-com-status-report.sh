@@ -15,6 +15,19 @@ assert_contains() {
   fi
 }
 
+assert_not_contains() {
+  local file="$1"
+  local needle="$2"
+  local label="$3"
+  if grep -Fq -- "$needle" "$file"; then
+    echo "FAIL: $label unexpectedly contains '$needle' in $file" >&2
+    exit 1
+  fi
+}
+
+assert_contains "$ROOT/tools/com-status-report.sh" 'STATUS_EVERY_N="${latest_status_every_n:-1}"' \
+  "perf contract status decimation env"
+
 OUTDIR="$TMPDIR" COM_STATUS_PROBE_STLINK=0 \
   "$ROOT/tools/com-status-report.sh" status_report_smoke >/dev/null
 
@@ -58,6 +71,8 @@ if find "$ROOT/log/com-perf" -maxdepth 1 -type f -name '*.wire.log' | grep -q .;
 fi
 assert_contains "$report" "## 未解决项" \
   "unresolved section"
+assert_not_contains "$report" "division by zero" \
+  "status report contract output"
 
 unresolved="$(
   OUTDIR="$TMPDIR" COM_STATUS_PROBE_STLINK=0 \

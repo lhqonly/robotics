@@ -52,6 +52,7 @@ fi
 
 pc_target_hz="$(metric_from_line "$cmd_line" target_rate_hz)"
 pc_target_window_hz="$(metric_from_line "$cmd_line" target_window_hz)"
+pc_wire_hz="$(metric_from_line "$cmd_line" wire_rate_hz)"
 pc_wire_gap_p99_ms="$(metric_from_line "$cmd_line" wire_gap_p99_ms)"
 pc_wire_gap_max_ms="$(metric_from_line "$cmd_line" wire_gap_max_ms)"
 lost="$(metric_from_line "$cmd_line" lost)"
@@ -61,17 +62,29 @@ sampler_seq_delta_min="$(metric_from_line "$sampler_line" seq_delta_min)"
 sampler_seq_delta_max="$(metric_from_line "$sampler_line" seq_delta_max)"
 
 expected_cmd_hz="${EXPECTED_CMD_RATE_HZ:-$pc_target_hz}"
+if ! awk -v value="${expected_cmd_hz:-0}" 'BEGIN {exit !((value + 0) > 0)}'; then
+  expected_cmd_hz="$pc_wire_hz"
+fi
 expected_status_hz="${EXPECTED_STATUS_RATE_HZ:-}"
-if [ -z "$expected_status_hz" ]; then
+expected_cmd_hz_is_valid=1
+if ! awk -v value="${expected_cmd_hz:-0}" 'BEGIN {exit !((value + 0) > 0)}'; then
+  expected_cmd_hz_is_valid=0
+fi
+if [ -z "$expected_status_hz" ] && [ "$expected_cmd_hz_is_valid" -eq 1 ]; then
   expected_status_hz="$(awk -v cmd="$expected_cmd_hz" -v n="$STATUS_EVERY_N" \
     'BEGIN { printf "%.6f", cmd / n }')"
 fi
 
-period_ms="$(awk -v hz="$expected_cmd_hz" 'BEGIN { printf "%.6f", 1000.0 / hz }')"
-pc_p99_limit_ms="$(awk -v p="$period_ms" -v ratio="$MAX_PC_P99_GAP_RATIO" \
-  'BEGIN { printf "%.6f", p * ratio }')"
-pc_max_limit_ms="$(awk -v p="$period_ms" -v ratio="$MAX_PC_MAX_GAP_RATIO" \
-  'BEGIN { printf "%.6f", p * ratio }')"
+period_ms="NA"
+pc_p99_limit_ms="NA"
+pc_max_limit_ms="NA"
+if [ "$expected_cmd_hz_is_valid" -eq 1 ]; then
+  period_ms="$(awk -v hz="$expected_cmd_hz" 'BEGIN { printf "%.6f", 1000.0 / hz }')"
+  pc_p99_limit_ms="$(awk -v p="$period_ms" -v ratio="$MAX_PC_P99_GAP_RATIO" \
+    'BEGIN { printf "%.6f", p * ratio }')"
+  pc_max_limit_ms="$(awk -v p="$period_ms" -v ratio="$MAX_PC_MAX_GAP_RATIO" \
+    'BEGIN { printf "%.6f", p * ratio }')"
+fi
 
 reasons=""
 add_reason() {
@@ -85,6 +98,9 @@ add_reason() {
 if [ -n "$qos_incompatibility" ]; then
   add_reason "qos_incompatible"
 fi
+if [ "$expected_cmd_hz_is_valid" -ne 1 ]; then
+  add_reason "invalid_expected_cmd_hz"
+fi
 
 require_number() {
   local value="$1"
@@ -96,7 +112,8 @@ require_number() {
   return 0
 }
 
-if require_number "$pc_target_window_hz" pc_target_window_hz; then
+if [ "$expected_cmd_hz_is_valid" -eq 1 ] &&
+    require_number "$pc_target_window_hz" pc_target_window_hz; then
   if ! awk -v actual="$pc_target_window_hz" -v expected="$expected_cmd_hz" \
       -v min="$MIN_RATE_RATIO" -v max="$MAX_RATE_RATIO" \
       'BEGIN { exit !((actual + 0) >= expected * min && (actual + 0) <= expected * max) }'; then
@@ -104,7 +121,8 @@ if require_number "$pc_target_window_hz" pc_target_window_hz; then
   fi
 fi
 
-if require_number "$sampler_hz" sampler_hz; then
+if [ "$expected_cmd_hz_is_valid" -eq 1 ] &&
+    require_number "$sampler_hz" sampler_hz; then
   if ! awk -v actual="$sampler_hz" -v expected="$expected_status_hz" \
       -v min="$MIN_RATE_RATIO" -v max="$MAX_RATE_RATIO" \
       'BEGIN { exit !((actual + 0) >= expected * min && (actual + 0) <= expected * max) }'; then
@@ -112,14 +130,16 @@ if require_number "$sampler_hz" sampler_hz; then
   fi
 fi
 
-if require_number "$pc_wire_gap_p99_ms" pc_wire_gap_p99_ms; then
+if [ "$expected_cmd_hz_is_valid" -eq 1 ] &&
+    require_number "$pc_wire_gap_p99_ms" pc_wire_gap_p99_ms; then
   if ! awk -v actual="$pc_wire_gap_p99_ms" -v limit="$pc_p99_limit_ms" \
       'BEGIN { exit !((actual + 0) <= (limit + 0)) }'; then
     add_reason "pc_wire_gap_p99_high"
   fi
 fi
 
-if require_number "$pc_wire_gap_max_ms" pc_wire_gap_max_ms; then
+if [ "$expected_cmd_hz_is_valid" -eq 1 ] &&
+    require_number "$pc_wire_gap_max_ms" pc_wire_gap_max_ms; then
   if ! awk -v actual="$pc_wire_gap_max_ms" -v limit="$pc_max_limit_ms" \
       'BEGIN { exit !((actual + 0) <= (limit + 0)) }'; then
     add_reason "pc_wire_gap_max_high"
