@@ -7,6 +7,21 @@
 
 让 MCU 端 `/node_mcu` 订阅 `/motor/tp_joint_target`，在本地 10kHz 控制 tick 中消费 latest target，完成 seq 追踪、ttl 过期、安全限幅和状态发布。
 
+## 当前进度
+
+- 已完成 MCU 侧 `motor_control` 核心模块：不依赖 micro-ROS、不依赖 CyberGear/CubeMars、不依赖真实电机。
+- 控制热路径使用固定点整数单位（mrad、mrad/s、mNm），避免 1kHz-10kHz tick 中跑浮点。
+- 已实现 latest target 双缓冲、TTL 过期、安全 disabled、位置/速度/力矩本地限幅、fresh/enabled/fault 状态、health 计数。
+- 已接入现有 `com_control_tick_isr()`：每个 MCU 本地控制 tick 都会推进 motor 控制核心；没有真实 `/motor` target 时默认保持 safe disabled。
+- 已保留 `/com` 心跳链路，不把 `/com/tp_cmd_heartbeat` 误当作 motor 指令。
+- 已通过 host C 测试和 STM32 固件构建验证。
+
+当前尚未完成：
+
+- `ThirdParty/microros/include` 里还没有 `exo_motor_msgs` 生成头，因此本阶段没有直接新增 `/motor/tp_joint_target` micro-ROS subscription。
+- `colcon.meta` 仍是 1 publisher + 1 subscription 的 `/com` 最小池；真正接入 `/motor` topic 前需要重生成 libmicroros，并扩大 publisher/subscription/executor 资源。
+- `/motor/tp_joint_state` 和 `/motor/tp_motor_health` 的 micro-ROS 发布尚未接入；当前只有 MCU 内部 state/health，可用 GDB 或后续 ROS publisher 桥接读取。
+
 ## 接口契约
 
 MCU 端最小 ROS 节点仍然可以只有：
@@ -81,4 +96,3 @@ motor_backend_get_capability()
 - 不做高层助力算法 `/ctrl/node_assist_ctrl`。
 - 不做真实人体穿戴。
 - 不要求完成所有 service/action，只要求 topic 闭环和本地控制骨架。
-

@@ -26,6 +26,32 @@ micro-ROS 官方推荐最低 32KB RAM,F103RB 只有 20KB,**低于官方下限**(
 
 - `colcon.meta`            —— 纯 JSON,真正用于构建(JSON 不支持注释,勿加注释)。
 - `colcon.meta.annotated`  —— 带逐键注释的说明版,**仅供阅读**,勿用于构建。
+- `src/motor_control.*`    —— M2 MCU 侧 motor latest-target / TTL / 限幅 / safe-state 核心。
+
+## M2 motor core 自测
+
+`motor_control` 目前是 MCU 内部控制核心，尚未接入 `exo_motor_msgs` micro-ROS 实体。它可以先在 PC
+上用 gcc 做无硬件自测：
+
+```bash
+cd ~/robotics
+gcc -std=c11 -Wall -Wextra -Werror \
+  -I firmware/f103-microros/src \
+  firmware/f103-microros/src/motor_control.c \
+  firmware/f103-microros/tests/motor_control_host_test.c \
+  -o /tmp/motor_control_host_test
+/tmp/motor_control_host_test
+```
+
+STM32 固件构建：
+
+```bash
+cd ~/robotics
+cmake -S firmware/f103-microros -B firmware/f103-microros/build \
+  -DCMAKE_TOOLCHAIN_FILE=$(pwd)/firmware/f103-microros/toolchain-arm-m3.cmake \
+  -DCMAKE_BUILD_TYPE=MinSizeRel
+cmake --build firmware/f103-microros/build
+```
 
 ## 内存模型(static memory pool / 关动态分配)
 

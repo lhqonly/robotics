@@ -78,6 +78,7 @@ void *_sbrk(ptrdiff_t incr)
 #include "microros_app.h"   /* T5:micro-ROS 应用任务(替代 T4 的 echo AppTask) */
 #include "uart_ll.h"        /* T5:本文件实现 uart_ll_write_blocking / uart_ll_read 供 transport 用 */
 #include "dwt_time.h"       /* M-B 任务 3:DWT CYCCNT 单调时钟(stamp_mono_ns)+ tick 钩子回绕扩展 */
+#include "motor_control.h"  /* M2:MCU 侧 motor latest-target / safety core */
 
 #include <time.h>           /* T5:clock_gettime 实现(libmicroros 的 rcutils/xrce 取时依赖) */
 
@@ -532,6 +533,7 @@ int main(void)
      * 不死等/不 fail:stamp 不可用不该让整个 micro-ROS 链路停摆(回环值仍正确,只是 stamp=0
      * 可观测),与「值正确性 > 时效地基」的分层一致。 */
     (void)dwt_init();
+    motor_control_init();
 
     rx_last_pos   = 0;
     app_ring_head = 0;

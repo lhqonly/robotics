@@ -40,6 +40,7 @@
 #include "microros_transport.h"
 #include "dwt_time.h"   /* M-B 任务 3:DWT CYCCNT 单调时钟,stamp_mono_ns 来源 */
 #include "exo_crc.h"    /* M-B 任务 4:应用级 CRC-32(§7.9),与 WSL zlib.crc32 逐字节对齐 */
+#include "motor_control.h"  /* M2:latest target / safety core, vendor independent */
 
 #include "FreeRTOS.h"
 #include "task.h"
@@ -131,6 +132,7 @@ void com_control_tick_isr(void)
     (void)seq;
     (void)payload;
     g_control_tick_count++;
+    motor_control_tick();
 }
 
 uint32_t com_control_tick_count(void)
