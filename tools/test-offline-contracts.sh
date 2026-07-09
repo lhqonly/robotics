@@ -12,6 +12,7 @@ tests=(
   "tools/test-communication-optimization-recommendations.sh"
   "tools/test-com-perf-contract.sh"
   "tools/test-com-summary-parsers.sh"
+  "tools/test-com-staircase-contract.sh"
   "tools/test-com-staircase-dry-run.sh"
   "tools/test-pc-scheduler-sweep.sh"
   "tools/test-run-com-perf-config.sh"

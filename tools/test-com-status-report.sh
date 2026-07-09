@@ -79,6 +79,10 @@ assert_contains "$report" "long overnight summary" \
   "long overnight summary source"
 assert_contains "$report" "## staircase 阶梯汇总" \
   "staircase section"
+assert_contains "$report" "contract：FAIL com_staircase_contract" \
+  "staircase acceptance contract status"
+assert_contains "$report" "missing_required_stage" \
+  "staircase contract missing stage reason"
 if find "$ROOT/log/com-perf" -maxdepth 1 -type f -name '*.wire.log' | grep -q .; then
   assert_contains "$report" "full echo wire ms" \
     "wire-time budget columns"

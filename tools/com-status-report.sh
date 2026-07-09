@@ -281,6 +281,20 @@ communication_optimization_recommendations() {
     awk '/^RECOMMENDATION / || /^CANDIDATE / {print}'
 }
 
+staircase_contract_status() {
+  if [ -z "$latest_staircase_contract_metrics" ] ||
+      [ ! -f "$latest_staircase_contract_metrics" ]; then
+    echo "FAIL com_staircase_contract reason=missing_metrics"
+    return 0
+  fi
+  if [ ! -x "$ROOT/tools/check-com-staircase-contract.py" ]; then
+    echo "FAIL com_staircase_contract reason=missing_checker"
+    return 0
+  fi
+  "$ROOT/tools/check-com-staircase-contract.py" \
+    "$latest_staircase_contract_metrics" 2>&1 || true
+}
+
 cmake_arg_value() {
   local file="$1"
   local key="$2"
@@ -433,11 +447,13 @@ baseline_watch_summary="${long_watch_summary:-$latest_watch_summary}"
 baseline_watch_log="${long_watch_log:-$latest_watch_log}"
 latest_scheduler_metrics="$(latest_file "$SCHED_LOGDIR" '*.metrics.md')"
 latest_staircase_metrics="$(latest_file "$STAIRCASE_LOGDIR" '*.metrics.md')"
+latest_staircase_contract_metrics="$(latest_file "$STAIRCASE_LOGDIR" '*.metrics.csv')"
 latest_staircase_summary="$(latest_file "$STAIRCASE_LOGDIR" '*.summary.log')"
 ram_categories="$(firmware_ram_categories)"
 ram_category_symbols="$(firmware_ram_category_symbols)"
 firmware_optimization_recs="$(firmware_optimization_recommendations)"
 communication_optimization_recs="$(communication_optimization_recommendations)"
+staircase_contract="$(staircase_contract_status)"
 microros_config="$(microros_config_summary)"
 topic_qos_snapshot="$(graph_qos_snapshot "$latest_graph")"
 duplicate_node_warning="$(graph_duplicate_node_warning "$latest_graph")"
@@ -674,6 +690,7 @@ serial_users="$(serial_lsof)"
   echo "- long overnight summary：$(relpath "$baseline_watch_summary")"
   echo "- PC scheduler sweep：$(relpath "$latest_scheduler_metrics")"
   echo "- staircase metrics：$(relpath "$latest_staircase_metrics")"
+  echo "- staircase contract CSV：$(relpath "$latest_staircase_contract_metrics")"
   echo "- staircase summary：$(relpath "$latest_staircase_summary")"
   echo
   echo "## 最新通信指标"
@@ -798,6 +815,8 @@ serial_users="$(serial_lsof)"
   echo "## staircase 阶梯汇总"
   echo
   echo "来源：$(relpath "$latest_staircase_metrics")"
+  echo
+  echo "contract：$staircase_contract"
   echo
   markdown_table_from_prefix "$latest_staircase_metrics" '| Stage |'
   echo

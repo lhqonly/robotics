@@ -30,6 +30,10 @@ assert_contains "$README" "SWD_STATUS=ok" \
   "SWD diagnostic status is documented"
 assert_contains "$README" "qos_incompatibility" \
   "staircase documents QoS incompatibility metric"
+assert_contains "$README" "tools/check-com-staircase-contract.py" \
+  "staircase acceptance contract command is documented"
+assert_contains "$README" "missing_required_stage" \
+  "staircase contract fallback failure is documented"
 assert_contains "$README" "tools/recommend-firmware-optimizations.sh" \
   "firmware optimization recommendations command is documented"
 assert_contains "$README" "default_policy=keep_defaults_until_runtime_evidence" \

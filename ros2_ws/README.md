@@ -452,6 +452,17 @@ tools/summarize-com-staircase.sh log/com-staircase/<tag>.summary.log
 FORMAT=csv tools/summarize-com-staircase.sh log/com-staircase/<tag>.summary.log
 ```
 
+完整上板验收可以再跑 contract 检查：
+
+```bash
+tools/check-com-staircase-contract.py log/com-staircase/<tag>.metrics.csv
+```
+
+默认要求 `1/2/5/10kHz × 921600/2000000` 的 8 个 latest-target 阶段都存在，
+并且每个组合至少有一个 `PASS` 行，`lost=0`、`duplicate=0`、
+`qos_incompatibility=0`。如果当前 SWD 不可用、只有 no-flash fallback 表，
+这个 contract 会明确 `FAIL missing_required_stage(...)`，不能当作上板矩阵完成。
+
 表格会从 stage 名拆出 `loop_hz`、`baud`、`timer_irq_priority`、
 `uart_read_poll_yields`、`executor_spin_timeout_us`、`pc_cmd_hz`、`qos`、
 `status_every_n`，并从 summary 里带出 `pc_launch_prefix`，方便横向比较
