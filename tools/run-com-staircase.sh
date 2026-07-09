@@ -37,6 +37,7 @@ STAIRCASE_BAUDS="${STAIRCASE_BAUDS:-921600 2000000}"
 STAIRCASE_CONTROL_TIMER_IRQ_PRIORITIES="${STAIRCASE_CONTROL_TIMER_IRQ_PRIORITIES:-${STAIRCASE_CONTROL_TIMER_IRQ_PRIORITY:-4}}"
 STAIRCASE_UART_READ_POLL_YIELDS="${STAIRCASE_UART_READ_POLL_YIELDS:-0}"
 STAIRCASE_EXECUTOR_SPIN_TIMEOUT_US="${STAIRCASE_EXECUTOR_SPIN_TIMEOUT_US:-1000}"
+STAIRCASE_PC_LAUNCH_PREFIX_CASES="${STAIRCASE_PC_LAUNCH_PREFIX_CASES:-default|${PC_LAUNCH_PREFIX:-}}"
 POST_STAGE_SETTLE_SECONDS="${POST_STAGE_SETTLE_SECONDS:-3}"
 STAIRCASE_ISOLATE_ROS_DOMAIN_PER_STAGE="${STAIRCASE_ISOLATE_ROS_DOMAIN_PER_STAGE:-0}"
 STAIRCASE_ROS_DOMAIN_BASE="${STAIRCASE_ROS_DOMAIN_BASE:-${ROS_DOMAIN_ID:-0}}"
@@ -86,6 +87,29 @@ value_or_na() {
   else
     printf 'NA'
   fi
+}
+
+sanitize_label() {
+  printf '%s' "$1" |
+    tr '[:upper:]' '[:lower:]' |
+    sed -E 's/[^a-z0-9]+/_/g; s/^_+//; s/_+$//'
+}
+
+pc_launch_case_lines() {
+  printf '%s\n' "$STAIRCASE_PC_LAUNCH_PREFIX_CASES"
+}
+
+pc_launch_case_count() {
+  local count=0
+  local line
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    case "$line" in
+      \#*) continue ;;
+    esac
+    count=$((count + 1))
+  done < <(pc_launch_case_lines)
+  printf '%s' "$count"
 }
 
 record_stage_metrics() {
@@ -241,7 +265,14 @@ run_latest_flash_stage() {
   local irq_priority="$3"
   local poll_yields="$4"
   local spin_timeout_us="$5"
-  run_stage "latest_${hz}hz_${baud}baud_irqp${irq_priority}_poll${poll_yields}_spin${spin_timeout_us}us_200hz_be_n${LATEST_STATUS_EVERY_N}" \
+  local pc_case_label="${6:-default}"
+  local pc_launch_prefix="${7:-}"
+  local tag_suffix=""
+  if [ "$STAIRCASE_PC_LAUNCH_CASE_COUNT" -gt 1 ] ||
+      [ "$pc_case_label" != "default" ]; then
+    tag_suffix="_pc${pc_case_label}"
+  fi
+  run_stage "latest_${hz}hz_${baud}baud_irqp${irq_priority}_poll${poll_yields}_spin${spin_timeout_us}us_200hz_be_n${LATEST_STATUS_EVERY_N}${tag_suffix}" \
     BUILD_FIRMWARE="$BUILD_FIRMWARE" \
     FLASH_FIRMWARE="$FLASH_FIRMWARE" \
     BAUD="$baud" \
@@ -257,6 +288,7 @@ run_latest_flash_stage() {
     STATUS_EVERY_N="$LATEST_STATUS_EVERY_N" \
     SUMMARY_PERIOD_S=5.0 \
     LINK_HEALTH_PERIOD_S=5.0 \
+    PC_LAUNCH_PREFIX="$pc_launch_prefix" \
     RUN_SECONDS="$LATEST_RUN_SECONDS" \
     WARMUP_SECONDS="$LATEST_WARMUP_SECONDS" \
     HZ_SECONDS="$LATEST_HZ_SECONDS"
@@ -296,8 +328,10 @@ run_no_flash_latest_qos_probe() {
     HZ_SECONDS="$SMOKE_HZ_SECONDS"
 }
 
+STAIRCASE_PC_LAUNCH_CASE_COUNT="$(pc_launch_case_count)"
+
 record "staircase tag_prefix=$TAG_PREFIX logdir=$LOGDIR"
-record "mode build_firmware=$BUILD_FIRMWARE flash_firmware=$FLASH_FIRMWARE dry_run=$DRY_RUN force_stlink_fail=$STAIRCASE_FORCE_STLINK_FAIL fallback_smoke=$RUN_NO_FLASH_SMOKE_ON_STLINK_FAIL fallback_latest_qos_probe=$RUN_NO_FLASH_LATEST_QOS_PROBE_ON_STLINK_FAIL post_stage_settle_seconds=$POST_STAGE_SETTLE_SECONDS isolate_ros_domain_per_stage=$STAIRCASE_ISOLATE_ROS_DOMAIN_PER_STAGE ros_domain_base=$STAIRCASE_ROS_DOMAIN_BASE staircase_bauds=$STAIRCASE_BAUDS staircase_control_timer_irq_priorities=$STAIRCASE_CONTROL_TIMER_IRQ_PRIORITIES staircase_uart_read_poll_yields=$STAIRCASE_UART_READ_POLL_YIELDS staircase_executor_spin_timeout_us=$STAIRCASE_EXECUTOR_SPIN_TIMEOUT_US pc_launch_prefix=${PC_LAUNCH_PREFIX:-none}"
+record "mode build_firmware=$BUILD_FIRMWARE flash_firmware=$FLASH_FIRMWARE dry_run=$DRY_RUN force_stlink_fail=$STAIRCASE_FORCE_STLINK_FAIL fallback_smoke=$RUN_NO_FLASH_SMOKE_ON_STLINK_FAIL fallback_latest_qos_probe=$RUN_NO_FLASH_LATEST_QOS_PROBE_ON_STLINK_FAIL post_stage_settle_seconds=$POST_STAGE_SETTLE_SECONDS isolate_ros_domain_per_stage=$STAIRCASE_ISOLATE_ROS_DOMAIN_PER_STAGE ros_domain_base=$STAIRCASE_ROS_DOMAIN_BASE staircase_bauds=$STAIRCASE_BAUDS staircase_control_timer_irq_priorities=$STAIRCASE_CONTROL_TIMER_IRQ_PRIORITIES staircase_uart_read_poll_yields=$STAIRCASE_UART_READ_POLL_YIELDS staircase_executor_spin_timeout_us=$STAIRCASE_EXECUTOR_SPIN_TIMEOUT_US pc_launch_prefix=${PC_LAUNCH_PREFIX:-none} staircase_pc_launch_case_count=$STAIRCASE_PC_LAUNCH_CASE_COUNT"
 
 failures=0
 if check_stlink_ready; then
@@ -307,7 +341,32 @@ if check_stlink_ready; then
       for irq_priority in $STAIRCASE_CONTROL_TIMER_IRQ_PRIORITIES; do
         for poll_yields in $STAIRCASE_UART_READ_POLL_YIELDS; do
           for spin_timeout_us in $STAIRCASE_EXECUTOR_SPIN_TIMEOUT_US; do
-            run_latest_flash_stage "$hz" "$baud" "$irq_priority" "$poll_yields" "$spin_timeout_us" || failures=$((failures + 1))
+            while IFS= read -r pc_case_line; do
+              [ -n "$pc_case_line" ] || continue
+              case "$pc_case_line" in
+                \#*) continue ;;
+                *'|'*) ;;
+                *)
+                  record "FAIL invalid_pc_launch_case='$pc_case_line' expected='label|prefix'"
+                  failures=$((failures + 1))
+                  continue
+                  ;;
+              esac
+              pc_case_label="${pc_case_line%%|*}"
+              pc_launch_prefix="${pc_case_line#*|}"
+              if [ -z "$pc_case_label" ]; then
+                record "FAIL invalid_pc_launch_case='$pc_case_line' reason=empty_label"
+                failures=$((failures + 1))
+                continue
+              fi
+              pc_case_label="$(sanitize_label "$pc_case_label")"
+              if [ -z "$pc_case_label" ]; then
+                record "FAIL invalid_pc_launch_case='$pc_case_line' reason=empty_safe_label"
+                failures=$((failures + 1))
+                continue
+              fi
+              run_latest_flash_stage "$hz" "$baud" "$irq_priority" "$poll_yields" "$spin_timeout_us" "$pc_case_label" "$pc_launch_prefix" || failures=$((failures + 1))
+            done < <(pc_launch_case_lines)
           done
         done
       done

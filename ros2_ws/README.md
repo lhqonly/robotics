@@ -416,6 +416,15 @@ STAIRCASE_EXECUTOR_SPIN_TIMEOUT_US="1000 500 200 100" \
 tools/run-com-staircase.sh spin_timeout_sweep
 ```
 
+要把 PC 侧调度策略也纳入 latest-target 阶梯，设置多行
+`STAIRCASE_PC_LAUNCH_PREFIX_CASES`。每行格式为 `label|launch_prefix`，空 prefix
+用 `label|`；多 case 时阶段名会追加 `pc<label>`，避免日志互相覆盖：
+
+```bash
+STAIRCASE_PC_LAUNCH_PREFIX_CASES=$'default|\ntaskset_cpu2|taskset -c 2' \
+tools/run-com-staircase.sh pc_sched_staircase
+```
+
 要比较 TIM2 本地闭环中断优先级，设置
 `STAIRCASE_CONTROL_TIMER_IRQ_PRIORITIES`。例如同时比较高优先级 `4` 和
 FreeRTOS syscall 边界附近的 `5`：
@@ -427,7 +436,7 @@ tools/run-com-staircase.sh irq_priority_sweep
 
 这些维度可以组合使用；矩阵会展开成
 `latest_<loop>hz_<baud>baud_irqp<prio>_poll<n>_spin<us>us_200hz_be_n40`
-这样的阶段名。
+这样的阶段名。若同时扫 PC 调度 case，会追加 `_pc<label>` 后缀。
 
 阶梯跑完后，可以把 summary 转成表格或 CSV：
 

@@ -82,6 +82,25 @@ assert_count "$matrix_summary" '^START latest_' 64 \
 assert_contains "$matrix_summary" "DONE failures=0" \
   "dry-run staircase completes cleanly"
 
+LOGDIR="$TMPDIR/pc_cases" DRY_RUN=1 \
+  STAIRCASE_BAUDS="921600" \
+  STAIRCASE_PC_LAUNCH_PREFIX_CASES=$'default|\ntaskset_cpu2|taskset -c 2' \
+  "$ROOT/tools/run-com-staircase.sh" dry_pc_cases >/dev/null
+pc_cases_summary="$TMPDIR/pc_cases/dry_pc_cases.summary.log"
+assert_contains "$pc_cases_summary" "staircase_pc_launch_case_count=2" \
+  "PC launch case count recorded"
+assert_contains "$pc_cases_summary" \
+  "START latest_1000hz_921600baud_irqp4_poll0_spin1000us_200hz_be_n40_pcdefault" \
+  "PC case default stage suffix"
+assert_contains "$pc_cases_summary" \
+  "START latest_1000hz_921600baud_irqp4_poll0_spin1000us_200hz_be_n40_pctaskset_cpu2" \
+  "PC case taskset stage suffix"
+assert_contains "$pc_cases_summary" \
+  "PC_LAUNCH_PREFIX=taskset\\ -c\\ 2" \
+  "PC launch prefix is passed to run-com-perf"
+assert_count "$pc_cases_summary" '^START latest_' 8 \
+  "PC case matrix doubles one-baud latest stages"
+
 LOGDIR="$TMPDIR/isolated" DRY_RUN=1 STAIRCASE_ISOLATE_ROS_DOMAIN_PER_STAGE=1 \
   "$ROOT/tools/run-com-staircase.sh" dry_isolated >/dev/null
 isolated_summary="$TMPDIR/isolated/dry_isolated.summary.log"
