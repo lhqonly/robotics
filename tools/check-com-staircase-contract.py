@@ -45,6 +45,13 @@ def is_zero(row: dict[str, str], name: str) -> bool:
         return False
 
 
+def numeric_lte(row: dict[str, str], name: str, maximum: float) -> bool:
+    try:
+        return float(field(row, name)) <= maximum
+    except ValueError:
+        return False
+
+
 def row_matches(row: dict[str, str], loop_hz: int, baud: int,
                 pc_launch_prefix: str | None,
                 pc_executor_threads: int | None,
@@ -74,12 +81,16 @@ def row_matches(row: dict[str, str], loop_hz: int, baud: int,
     return True
 
 
-def row_passes(row: dict[str, str]) -> bool:
+def row_passes(row: dict[str, str],
+               max_pc_catchup_events: float,
+               max_pc_catchup_extra: float) -> bool:
     return (
         field(row, "verdict") == "PASS"
         and is_zero(row, "lost")
         and is_zero(row, "duplicate")
         and is_zero(row, "qos_incompatibility")
+        and numeric_lte(row, "pc_cmd_catchup_events", max_pc_catchup_events)
+        and numeric_lte(row, "pc_cmd_catchup_extra", max_pc_catchup_extra)
     )
 
 
@@ -91,6 +102,8 @@ def describe_row(row: dict[str, str]) -> str:
         "target_rx_hz",
         "pc_wire_gap_p99_ms",
         "pc_wire_gap_max_ms",
+        "pc_cmd_catchup_events",
+        "pc_cmd_catchup_extra",
         "lost",
         "duplicate",
         "qos_incompatibility",
@@ -106,6 +119,8 @@ def main() -> int:
     parser.add_argument("--pc-launch-prefix")
     parser.add_argument("--pc-executor-threads", type=int)
     parser.add_argument("--executor-spin-timeout-us", type=int)
+    parser.add_argument("--max-pc-catchup-events", type=float, default=0.0)
+    parser.add_argument("--max-pc-catchup-extra", type=float, default=0.0)
     args = parser.parse_args()
 
     csv_path = args.csv or latest_csv()
@@ -143,7 +158,14 @@ def main() -> int:
             if not matches:
                 failures.append(f"missing_required_stage({label})")
                 continue
-            passing = [row for row in matches if row_passes(row)]
+            passing = [
+                row for row in matches
+                if row_passes(
+                    row,
+                    args.max_pc_catchup_events,
+                    args.max_pc_catchup_extra,
+                )
+            ]
             if not passing:
                 failures.append(
                     f"no_passing_stage({label}; {' | '.join(describe_row(row) for row in matches)})"
@@ -164,7 +186,9 @@ def main() -> int:
         "PASS com_staircase_contract "
         f"csv={csv_path} passed={pass_count}/{required_count} "
         f"loops={','.join(str(item) for item in args.loops)} "
-        f"bauds={','.join(str(item) for item in args.bauds)}"
+        f"bauds={','.join(str(item) for item in args.bauds)} "
+        f"max_pc_catchup_events={args.max_pc_catchup_events:g} "
+        f"max_pc_catchup_extra={args.max_pc_catchup_extra:g}"
     )
     return 0
 

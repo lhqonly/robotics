@@ -514,8 +514,11 @@ tools/check-com-staircase-contract.py log/com-staircase/<tag>.metrics.csv \
 
 默认要求 `1/2/5/10kHz × 921600/2000000` 的 8 个 latest-target 阶段都存在，
 并且每个组合至少有一个 `PASS` 行，`lost=0`、`duplicate=0`、
-`qos_incompatibility=0`。如果当前 SWD 不可用、只有 no-flash fallback 表，
-这个 contract 会明确 `FAIL missing_required_stage(...)`，不能当作上板矩阵完成。
+`qos_incompatibility=0`、`pc_cmd_catchup_events=0`、`pc_cmd_catchup_extra=0`。
+这样默认验收会拒绝靠 burst 补发追平 200Hz 的样本；如果只是做探索对比，
+可以显式加 `--max-pc-catchup-events` / `--max-pc-catchup-extra` 放宽。
+如果当前 SWD 不可用、只有 no-flash fallback 表，这个 contract 会明确
+`FAIL missing_required_stage(...)`，不能当作上板矩阵完成。
 
 表格会从 stage 名拆出 `loop_hz`、`baud`、`timer_irq_priority`、
 `uart_read_poll_yields`、`executor_spin_timeout_us`、`pc_cmd_hz`、`qos`、
