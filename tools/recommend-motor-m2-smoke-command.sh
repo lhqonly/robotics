@@ -79,7 +79,7 @@ ros2 topic echo --once /motor/tp_joint_state | tee "\$evidence_dir/state.after_t
 ros2 topic echo --once /motor/tp_motor_health | tee "\$evidence_dir/health.after_ttl.yaml"
 
 tools/measure-stack-hwm.sh $(shell_quote "$elf") | tee "\$evidence_dir/stack-hwm.txt"
-# Fill evidence.env from the saved rate/stack outputs, set sample_only=false, then run:
+# Set sample_only=false in evidence.env after the hardware run; rate and stack files are parsed automatically.
 tools/check-motor-m2-smoke-evidence.py "\$evidence_dir"
 EOF
 }

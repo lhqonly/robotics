@@ -9,6 +9,7 @@ the checker depend on live ROS tooling.
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
 
 
@@ -114,6 +115,29 @@ def topic_type_from_info(text: str) -> str:
     return scalar_from_text(text, "Type") or ""
 
 
+def average_rate_from_text(text: str) -> str | None:
+    rate: str | None = None
+    for raw in text.splitlines():
+        match = re.search(r"average rate:\s*([0-9]+(?:\.[0-9]+)?)", raw)
+        if match:
+            rate = match.group(1)
+    return rate
+
+
+def microros_stack_free_words_from_text(text: str) -> str | None:
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line.startswith("microros_task_stack"):
+            continue
+        match = re.search(r"\bhwm_free_words=(\d+)\b", line)
+        if match:
+            return match.group(1)
+        match = re.search(r"\bfree=(\d+)\s+words\b", line)
+        if match:
+            return match.group(1)
+    return None
+
+
 def read_text_if_exists(path: Path) -> str:
     if not path.exists():
         return ""
@@ -134,8 +158,7 @@ def read_evidence_dir(path: Path) -> dict[str, str]:
         "topic_com_status": "/com/tp_mcu_status",
     }
     for key, topic in topic_map.items():
-        if key not in values:
-            values[key] = "present" if topic in topics else "missing"
+        values[key] = "present" if topic in topics else "missing"
 
     info_specs = {
         "info_motor_target": (
@@ -160,8 +183,6 @@ def read_evidence_dir(path: Path) -> dict[str, str]:
         ),
     }
     for key, (info_path, expected_type, count_key) in info_specs.items():
-        if key in values:
-            continue
         text = read_text_if_exists(info_path)
         topic_type = topic_type_from_info(text)
         count = count_from_topic_info(text, count_key)
@@ -216,11 +237,26 @@ def read_evidence_dir(path: Path) -> dict[str, str]:
     for filename, mapping in scalar_files.items():
         text = read_text_if_exists(path / filename)
         for source_key, dest_key in mapping.items():
-            if dest_key in values:
-                continue
             value = scalar_from_text(text, source_key)
             if value is not None:
                 values[dest_key] = value
+            else:
+                values.pop(dest_key, None)
+
+    derived_files = {
+        "motor_state_hz": (path / "rate.motor_state.txt", average_rate_from_text),
+        "com_status_hz": (path / "rate.com_status.txt", average_rate_from_text),
+        "microros_stack_free_words": (
+            path / "stack-hwm.txt",
+            microros_stack_free_words_from_text,
+        ),
+    }
+    for key, (source_path, parser) in derived_files.items():
+        value = parser(read_text_if_exists(source_path))
+        if value is not None:
+            values[key] = value
+        else:
+            values.pop(key, None)
 
     return values
 

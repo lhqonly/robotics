@@ -153,9 +153,6 @@ firmware_flash=ok
 agent_connected=ok
 reject_baseline_target_enabled=false
 clamp_target_ttl_us=100000
-motor_state_hz=50.0
-com_status_hz=5.0
-microros_stack_free_words=160
 EOF
 cat >"$dir/topics.txt" <<'EOF'
 /com/tp_mcu_status
@@ -225,6 +222,18 @@ EOF
 cat >"$dir/health.after_ttl.yaml" <<'EOF'
 stale_targets: 1
 EOF
+cat >"$dir/rate.motor_state.txt" <<'EOF'
+average rate: 50.000
+min: 0.019s max: 0.021s std dev: 0.00100s window: 10
+EOF
+cat >"$dir/rate.com_status.txt" <<'EOF'
+average rate: 5.000
+min: 0.190s max: 0.210s std dev: 0.00400s window: 10
+EOF
+cat >"$dir/stack-hwm.txt" <<'EOF'
+elf=firmware/f103-microros/build-motor/f103-microros.elf
+microros_task_stack addr=0x20001150 bytes=3072 total_words=768 hwm_free_words=160 used_words=608
+EOF
 
 out="$("$ROOT/tools/check-motor-m2-smoke-evidence.py" "$dir")"
 assert_contains "$out" "PASS motor_m2_smoke" \
@@ -236,5 +245,33 @@ sed -i 's/^Subscription count:.*/Subscription count: 0/' "$bad_dir/info.motor_ta
 out="$(run_expect_fail "missing motor target subscriber" "$ROOT/tools/check-motor-m2-smoke-evidence.py" "$bad_dir")"
 assert_contains "$out" "info_motor_target_not_ok" \
   "topic info subscription count reason"
+
+template_dir="$TMPDIR/template-dir"
+mkdir -p "$template_dir"
+"$ROOT/tools/check-motor-m2-smoke-evidence.py" --template >"$template_dir/evidence.env"
+sed -i 's/^sample_only=.*/sample_only=false/' "$template_dir/evidence.env"
+out="$(run_expect_fail "directory template without raw files" "$ROOT/tools/check-motor-m2-smoke-evidence.py" "$template_dir")"
+assert_contains "$out" "BLOCKED_MISSING_EVIDENCE motor_m2_smoke" \
+  "directory raw evidence required"
+assert_contains "$out" "topic_motor_target_not_ok" \
+  "directory ignores template topic defaults"
+assert_contains "$out" "missing_state_after_accept_last_target_seq" \
+  "directory ignores template state defaults"
+
+missing_rate_dir="$TMPDIR/missing-rate-dir"
+cp -a "$dir" "$missing_rate_dir"
+rm "$missing_rate_dir/rate.motor_state.txt"
+out="$(run_expect_fail "missing motor state rate file" "$ROOT/tools/check-motor-m2-smoke-evidence.py" "$missing_rate_dir")"
+assert_contains "$out" "missing_motor_state_hz" \
+  "missing motor state rate reason"
+
+bad_stack_dir="$TMPDIR/bad-stack-dir"
+cp -a "$dir" "$bad_stack_dir"
+cat >"$bad_stack_dir/stack-hwm.txt" <<'EOF'
+led_task_stack addr=0x20000100 bytes=256 total_words=64 hwm_free_words=42 used_words=22
+EOF
+out="$(run_expect_fail "missing microros stack HWM" "$ROOT/tools/check-motor-m2-smoke-evidence.py" "$bad_stack_dir")"
+assert_contains "$out" "missing_microros_stack_free_words" \
+  "missing microros stack reason"
 
 echo "PASS: M2 motor smoke evidence checker tests"

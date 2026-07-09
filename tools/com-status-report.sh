@@ -1122,7 +1122,7 @@ preflight_commands="$(printf '%s\n' "$staircase_preflight" |
   echo "   若要把 921600/2Mbps 串口占用收益也纳入验收，生成推荐命令时用：\`STAIRCASE_CONTRACT_ARGS=\"--max-pc-catchup-events 0 --max-pc-catchup-extra 0 --max-wire-baud-util-pct 30\" tools/recommend-staircase-command.sh\`。"
   echo "4. M2 motor 真机首轮先生成推荐命令：\`tools/recommend-motor-m2-smoke-command.sh\`。默认使用 2Mbps 烧 \`EXO_MOTOR_ROS_ENTITIES=ON\` 固件，启动 micro-ROS Agent，确认 \`/motor/tp_joint_target\`、\`/motor/tp_joint_state\`、\`/motor/tp_motor_health\` 和 \`/com/tp_mcu_status\` 同时可见，并把证据保存到 \`log/motor-m2-smoke/<tag>/\`。"
   echo "5. M2 motor topic 闭环按推荐命令执行：发空 \`frame_id\` 的 \`/motor/tp_joint_target\`，检查 \`JointState.last_target_seq\`；停止发布后检查 TTL stale；再注入非空 \`frame_id\` 确认被拒绝且 executor 不掉线。"
-  echo "6. M2 evidence 判定：补齐 \`evidence.env\` 的 rate/stack 字段并设置 \`sample_only=false\` 后运行 \`tools/check-motor-m2-smoke-evidence.py log/motor-m2-smoke/<tag>\`；不要把只有 \`/com\` 的证据当作 M2 PASS。"
+  echo "6. M2 evidence 判定：确认 \`evidence.env\` 的硬件状态字段并设置 \`sample_only=false\` 后运行 \`tools/check-motor-m2-smoke-evidence.py log/motor-m2-smoke/<tag>\`；rate 与 stack 输出会自动解析，不要把只有 \`/com\` 的证据当作 M2 PASS。"
   echo "7. 高频 profile 跑通后读栈水位：\`tools/measure-stack-hwm.sh firmware/f103-microros/build/f103-microros.elf\`，motor-enabled 构建需额外记录 \`firmware/f103-microros/build-motor/f103-microros.elf\` 的 size report。"
   echo "8. 若 SWD 仍未恢复，继续 no-flash：\`BUILD_FIRMWARE=0 FLASH_FIRMWARE=0 tools/run-com-perf.sh noflash_\$(date +%H%M)\`。"
 } >"$REPORT"
