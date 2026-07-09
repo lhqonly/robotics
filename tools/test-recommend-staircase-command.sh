@@ -64,4 +64,41 @@ assert_contains "$cases_out" "default|" \
 assert_contains "$cases_out" "threads2||2" \
   "cases output includes selected executor thread case"
 
+auto_dir="$TMPDIR/auto"
+mkdir -p "$auto_dir"
+cat >"$auto_dir/old_200.metrics.csv" <<'EOF'
+tag,pc_wire_gap_p99_ms,pc_wire_gap_max_ms,pc_cmd_catchup_events,pc_cmd_catchup_extra
+old_200_default_r1,8.400,17.000,0,0
+old_200_threads4_r1,5.200,6.000,0,0
+EOF
+cat >"$auto_dir/old_200.summary.log" <<'EOF'
+pc_scheduler_sweep tag_prefix=old_200 runs=1 dry_run=0 fail_on_case_error=0
+profile cmd_rate_hz=200 cmd_catchup_max=0 qos=best_effort depth=1 tracking=sampled status_every_n=40 sample_window=1024 summary_period_s=5.0 link_health_period_s=5.0 startup_grace_s=3.0 executor_threads=0 require_core_metrics=0 require_health_pass=0 max_catchup_events=0 max_catchup_extra=0 isolate_ros_domain_per_case=auto resolved_isolate_ros_domain_per_case=1 ros_domain_base=0 run_seconds=30 warmup_seconds=5 hz_seconds=20
+START label=default run=1 tag=old_200_default_r1 prefix=none executor_threads=0 stage_ros_domain_id=0
+START label=threads4 run=1 tag=old_200_threads4_r1 prefix=none executor_threads=4 stage_ros_domain_id=1
+EOF
+cat >"$auto_dir/new_1000.metrics.csv" <<'EOF'
+tag,pc_wire_gap_p99_ms,pc_wire_gap_max_ms,pc_cmd_catchup_events,pc_cmd_catchup_extra
+new_1000_threads4_r1,1.500,3.000,0,0
+EOF
+cat >"$auto_dir/new_1000.summary.log" <<'EOF'
+pc_scheduler_sweep tag_prefix=new_1000 runs=1 dry_run=0 fail_on_case_error=0
+profile cmd_rate_hz=1000 cmd_catchup_max=0 qos=best_effort depth=1 tracking=sampled status_every_n=200 sample_window=1024 summary_period_s=5.0 link_health_period_s=5.0 startup_grace_s=3.0 executor_threads=0 require_core_metrics=0 require_health_pass=0 max_catchup_events=0 max_catchup_extra=0 isolate_ros_domain_per_case=auto resolved_isolate_ros_domain_per_case=1 ros_domain_base=0 run_seconds=30 warmup_seconds=5 hz_seconds=20
+START label=threads4 run=1 tag=new_1000_threads4_r1 prefix=none executor_threads=4 stage_ros_domain_id=0
+EOF
+touch -t 202607090101 "$auto_dir/old_200.metrics.csv" "$auto_dir/old_200.summary.log"
+touch -t 202607090102 "$auto_dir/new_1000.metrics.csv" "$auto_dir/new_1000.summary.log"
+
+auto_out="$TMPDIR/auto.md"
+SCHED_LOGDIR="$auto_dir" \
+  TAG_PREFIX="staircase_auto" \
+  "$ROOT/tools/recommend-staircase-command.sh" >"$auto_out"
+
+assert_contains "$auto_out" "scheduler CSV: $auto_dir/old_200.metrics.csv" \
+  "auto mode skips newer non-200Hz scheduler CSV"
+assert_contains "$auto_out" "selected scheduler tag: old_200_threads4_r1" \
+  "auto mode selects latest matching 200Hz profile"
+assert_contains "$auto_out" "'threads4||4'" \
+  "auto mode includes selected 200Hz case"
+
 echo "PASS: recommended staircase command tests"

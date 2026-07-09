@@ -3,13 +3,18 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SCHED_LOGDIR="$ROOT/log/pc-scheduler-sweep"
+SCHED_LOGDIR="${SCHED_LOGDIR:-$ROOT/log/pc-scheduler-sweep}"
 SCHEDULER_CSV="${SCHEDULER_CSV:-}"
 SUMMARY="${SUMMARY:-}"
 STAIRCASE_BAUDS="${STAIRCASE_BAUDS:-921600 2000000}"
 STAIRCASE_EXECUTOR_SPIN_TIMEOUT_US="${STAIRCASE_EXECUTOR_SPIN_TIMEOUT_US:-1000 100}"
 TAG_PREFIX="${TAG_PREFIX:-staircase_$(date +%Y%m%d_%H%M)}"
 FORMAT="${FORMAT:-markdown}"
+EXPECTED_CMD_RATE_HZ="${EXPECTED_CMD_RATE_HZ:-200}"
+EXPECTED_CMD_CATCHUP_MAX="${EXPECTED_CMD_CATCHUP_MAX:-0}"
+EXPECTED_QOS_RELIABILITY="${EXPECTED_QOS_RELIABILITY:-best_effort}"
+EXPECTED_TRACKING_MODE="${EXPECTED_TRACKING_MODE:-sampled}"
+EXPECTED_STATUS_EVERY_N="${EXPECTED_STATUS_EVERY_N:-40}"
 
 latest_file() {
   local dir="$1"
@@ -17,6 +22,51 @@ latest_file() {
   find "$dir" -maxdepth 1 -type f -name "$pattern" -printf '%T@ %p\n' 2>/dev/null |
     sort -nr |
     awk 'NR == 1 {sub(/^[^ ]+ /, ""); print; exit}' || true
+}
+
+summary_matches_expected_profile() {
+  local summary="$1"
+  local profile
+
+  [ -f "$summary" ] || return 1
+  profile="$(grep '^profile ' "$summary" | tail -1 || true)"
+  [ -n "$profile" ] || return 1
+
+  case " $profile " in
+    *" cmd_rate_hz=$EXPECTED_CMD_RATE_HZ "*) ;;
+    *) return 1 ;;
+  esac
+  case " $profile " in
+    *" cmd_catchup_max=$EXPECTED_CMD_CATCHUP_MAX "*) ;;
+    *) return 1 ;;
+  esac
+  case " $profile " in
+    *" qos=$EXPECTED_QOS_RELIABILITY "*) ;;
+    *) return 1 ;;
+  esac
+  case " $profile " in
+    *" tracking=$EXPECTED_TRACKING_MODE "*) ;;
+    *) return 1 ;;
+  esac
+  case " $profile " in
+    *" status_every_n=$EXPECTED_STATUS_EVERY_N "*) ;;
+    *) return 1 ;;
+  esac
+}
+
+latest_matching_scheduler_csv() {
+  local csv summary
+  while IFS= read -r csv; do
+    summary="${csv%.metrics.csv}.summary.log"
+    if summary_matches_expected_profile "$summary"; then
+      printf '%s\n' "$csv"
+      return 0
+    fi
+  done < <(
+    find "$SCHED_LOGDIR" -maxdepth 1 -type f -name '*.metrics.csv' -printf '%T@ %p\n' 2>/dev/null |
+      sort -nr |
+      awk '{sub(/^[^ ]+ /, ""); print}'
+  )
 }
 
 relpath() {
@@ -83,9 +133,9 @@ row_metric() {
   ' "$csv"
 }
 
-SCHEDULER_CSV="${SCHEDULER_CSV:-$(latest_file "$SCHED_LOGDIR" '*.metrics.csv')}"
+SCHEDULER_CSV="${SCHEDULER_CSV:-$(latest_matching_scheduler_csv)}"
 if [ -z "$SCHEDULER_CSV" ] || [ ! -f "$SCHEDULER_CSV" ]; then
-  echo "ERROR: no scheduler metrics CSV found; run tools/run-pc-scheduler-sweep.sh first" >&2
+  echo "ERROR: no matching scheduler metrics CSV found; run tools/run-pc-latest-scheduler-sweep.sh first" >&2
   exit 1
 fi
 
