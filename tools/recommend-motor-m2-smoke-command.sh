@@ -11,6 +11,7 @@ M2_MOTOR_CONTROL_LOOP_HZ="${M2_MOTOR_CONTROL_LOOP_HZ:-10000}"
 M2_MOTOR_STATUS_EVERY_N="${M2_MOTOR_STATUS_EVERY_N:-40}"
 M2_MOTOR_QOS_BEST_EFFORT="${M2_MOTOR_QOS_BEST_EFFORT:-ON}"
 M2_MOTOR_TAG="${M2_MOTOR_TAG:-motor_m2_smoke_$(date +%Y%m%d_%H%M)}"
+M2_MOTOR_EVIDENCE_DIR="${M2_MOTOR_EVIDENCE_DIR:-log/motor-m2-smoke/$M2_MOTOR_TAG}"
 
 case "$FORMAT" in
   markdown|commands|checklist) ;;
@@ -25,7 +26,6 @@ shell_quote() {
   printf "'%s'" "$(printf '%s' "$value" | sed "s/'/'\\\\''/g")"
 }
 
-build_dir_abs="$ROOT/$M2_MOTOR_BUILD_DIR"
 elf="$M2_MOTOR_BUILD_DIR/f103-microros.elf"
 bin="$M2_MOTOR_BUILD_DIR/f103-microros.bin"
 
@@ -48,28 +48,39 @@ MICROROS_AGENT_VERBOSITY=6 tools/run-bridge.sh $(shell_quote "$M2_MOTOR_SERIAL")
 
 source /opt/ros/jazzy/setup.bash
 source ros2_ws/install/setup.bash
-ros2 topic list | grep -E '^/(com|motor)/'
-ros2 topic info -v /motor/tp_joint_target
-ros2 topic info -v /motor/tp_joint_state
-ros2 topic info -v /motor/tp_motor_health
-ros2 topic info -v /com/tp_mcu_status
-ros2 topic pub --once /motor/tp_joint_target exo_motor_msgs/msg/JointTarget "{header: {frame_id: ''}, seq: 42, joint_id: 0, control_mode: 1, position_rad: 0.0, velocity_rad_s: 0.0, torque_nm: 0.0, kp_nm_per_rad: 0.0, kd_nm_s_per_rad: 0.0, max_torque_nm: 0.2, max_velocity_rad_s: 0.5, max_position_rad: 0.5, min_position_rad: -0.5, ttl_us: 100000, flags: 0}"
-ros2 topic echo --once /motor/tp_joint_state
-ros2 topic echo --once /motor/tp_motor_health
-timeout 10 ros2 topic hz /motor/tp_joint_state
-timeout 10 ros2 topic hz /com/tp_mcu_status
+evidence_dir=$(shell_quote "$M2_MOTOR_EVIDENCE_DIR")
+mkdir -p "\$evidence_dir"
+tools/check-motor-m2-smoke-evidence.py --template >"\$evidence_dir/evidence.env"
+ros2 topic list | tee "\$evidence_dir/topics.txt" | grep -E '^/(com|motor)/'
+ros2 topic info -v /motor/tp_joint_target | tee "\$evidence_dir/info.motor_target.txt"
+ros2 topic info -v /motor/tp_joint_state | tee "\$evidence_dir/info.motor_state.txt"
+ros2 topic info -v /motor/tp_motor_health | tee "\$evidence_dir/info.motor_health.txt"
+ros2 topic info -v /com/tp_mcu_status | tee "\$evidence_dir/info.com_status.txt"
+ros2 topic echo --once /motor/tp_joint_state | tee "\$evidence_dir/state.before_seq42.yaml"
+ros2 topic pub --once /motor/tp_joint_target exo_motor_msgs/msg/JointTarget "{header: {frame_id: ''}, seq: 42, joint_id: 0, control_mode: 0, position_rad: 0.0, velocity_rad_s: 0.0, torque_nm: 0.0, kp_nm_per_rad: 0.0, kd_nm_s_per_rad: 0.0, max_torque_nm: 0.2, max_velocity_rad_s: 0.5, max_position_rad: 0.5, min_position_rad: -0.5, ttl_us: 100000, flags: 0}"
+ros2 topic echo --once /motor/tp_joint_state | tee "\$evidence_dir/state.after_seq42.yaml"
+ros2 topic echo --once /motor/tp_motor_health | tee "\$evidence_dir/health.before_reject.yaml"
+timeout 10 ros2 topic hz /motor/tp_joint_state | tee "\$evidence_dir/rate.motor_state.txt"
+timeout 10 ros2 topic hz /com/tp_mcu_status | tee "\$evidence_dir/rate.com_status.txt"
 # Record last_target_seq plus targets_received/targets_applied before the negative frame_id test.
-ros2 topic echo --once /motor/tp_joint_state
-ros2 topic echo --once /motor/tp_motor_health
-ros2 topic pub --once /motor/tp_joint_target exo_motor_msgs/msg/JointTarget "{header: {frame_id: reject}, seq: 43, joint_id: 0, control_mode: 1, position_rad: 0.0, velocity_rad_s: 0.0, torque_nm: 0.0, kp_nm_per_rad: 0.0, kd_nm_s_per_rad: 0.0, max_torque_nm: 0.2, max_velocity_rad_s: 0.5, max_position_rad: 0.5, min_position_rad: -0.5, ttl_us: 100000, flags: 0}"
+ros2 topic pub --once /motor/tp_joint_target exo_motor_msgs/msg/JointTarget "{header: {frame_id: reject}, seq: 43, joint_id: 0, control_mode: 0, position_rad: 0.0, velocity_rad_s: 0.0, torque_nm: 0.0, kp_nm_per_rad: 0.0, kd_nm_s_per_rad: 0.0, max_torque_nm: 0.2, max_velocity_rad_s: 0.5, max_position_rad: 0.5, min_position_rad: -0.5, ttl_us: 100000, flags: 0}"
 # Negative-test pass condition: last_target_seq remains 42 and targets_received/targets_applied do not increase because of seq=43.
-ros2 topic echo --once /motor/tp_joint_state
-ros2 topic echo --once /motor/tp_motor_health
+ros2 topic echo --once /motor/tp_joint_state | tee "\$evidence_dir/state.after_reject_seq43.yaml"
+ros2 topic echo --once /motor/tp_motor_health | tee "\$evidence_dir/health.after_reject_seq43.yaml"
 # Follow with a legal target so the negative test also proves the executor is still alive.
-ros2 topic pub --once /motor/tp_joint_target exo_motor_msgs/msg/JointTarget "{header: {frame_id: ''}, seq: 44, joint_id: 0, control_mode: 1, position_rad: 0.0, velocity_rad_s: 0.0, torque_nm: 0.0, kp_nm_per_rad: 0.0, kd_nm_s_per_rad: 0.0, max_torque_nm: 0.2, max_velocity_rad_s: 0.5, max_position_rad: 0.5, min_position_rad: -0.5, ttl_us: 100000, flags: 0}"
-ros2 topic echo --once /motor/tp_joint_state
+ros2 topic pub --once /motor/tp_joint_target exo_motor_msgs/msg/JointTarget "{header: {frame_id: ''}, seq: 44, joint_id: 0, control_mode: 0, position_rad: 0.0, velocity_rad_s: 0.0, torque_nm: 0.0, kp_nm_per_rad: 0.0, kd_nm_s_per_rad: 0.0, max_torque_nm: 0.2, max_velocity_rad_s: 0.5, max_position_rad: 0.5, min_position_rad: -0.5, ttl_us: 100000, flags: 0}"
+ros2 topic echo --once /motor/tp_joint_state | tee "\$evidence_dir/state.after_seq44.yaml"
+# Clamp/fault path: POSITION target exceeds the allowed max position and should set fault bit 4.
+ros2 topic pub --once /motor/tp_joint_target exo_motor_msgs/msg/JointTarget "{header: {frame_id: ''}, seq: 45, joint_id: 0, control_mode: 4, position_rad: 9.0, velocity_rad_s: 0.0, torque_nm: 0.0, kp_nm_per_rad: 0.0, kd_nm_s_per_rad: 0.0, max_torque_nm: 0.2, max_velocity_rad_s: 0.5, max_position_rad: 0.5, min_position_rad: -0.5, ttl_us: 100000, flags: 0}"
+ros2 topic echo --once /motor/tp_joint_state | tee "\$evidence_dir/state.after_clamp_seq45.yaml"
+ros2 topic echo --once /motor/tp_motor_health | tee "\$evidence_dir/health.before_ttl.yaml"
+sleep 0.2
+ros2 topic echo --once /motor/tp_joint_state | tee "\$evidence_dir/state.after_ttl.yaml"
+ros2 topic echo --once /motor/tp_motor_health | tee "\$evidence_dir/health.after_ttl.yaml"
 
-tools/measure-stack-hwm.sh $(shell_quote "$elf")
+tools/measure-stack-hwm.sh $(shell_quote "$elf") | tee "\$evidence_dir/stack-hwm.txt"
+# Fill evidence.env from the saved rate/stack outputs, set sample_only=false, then run:
+tools/check-motor-m2-smoke-evidence.py "\$evidence_dir"
 EOF
 }
 
@@ -79,6 +90,7 @@ M2_MOTOR_SMOKE_TAG=$M2_MOTOR_TAG
 M2_MOTOR_SMOKE_BAUD=$M2_MOTOR_BAUD
 M2_MOTOR_SMOKE_SERIAL=$M2_MOTOR_SERIAL
 M2_MOTOR_SMOKE_BUILD_DIR=$M2_MOTOR_BUILD_DIR
+M2_MOTOR_SMOKE_EVIDENCE_DIR=$M2_MOTOR_EVIDENCE_DIR
 CHECK swd_status_ok
 CHECK motor_enabled_firmware_builds
 CHECK motor_firmware_flashes
@@ -113,6 +125,7 @@ cat <<EOF
 - serial: $M2_MOTOR_SERIAL
 - baud: $M2_MOTOR_BAUD
 - build dir: $M2_MOTOR_BUILD_DIR
+- evidence dir: $M2_MOTOR_EVIDENCE_DIR
 - ELF: $elf
 - profile: EXO_MOTOR_ROS_ENTITIES=ON, best_effort=$M2_MOTOR_QOS_BEST_EFFORT, loop=${M2_MOTOR_CONTROL_LOOP_HZ}Hz, status_every_n=$M2_MOTOR_STATUS_EVERY_N
 
@@ -138,5 +151,6 @@ $(print_checklist)
 
 - Passing \`/com\` 10kHz/200Hz validation is not a substitute for this \`/motor\` topic smoke.
 - The non-empty \`header.frame_id\` command is a negative test. Do not count it as passing just because \`/motor/tp_joint_state\` still publishes: \`last_target_seq\` must remain at the previous accepted seq, \`targets_received/targets_applied\` must not increase because of the rejected target, and a later legal target must still be accepted.
+- The seq42/seq43/seq44 targets intentionally use \`control_mode=0\` so \`targets_applied\` is not naturally incremented by the enabled control loop during the negative frame_id check.
 - Do not reduce motor-enabled stack/linker reserve defaults until \`tools/measure-stack-hwm.sh\` and MSP/heap evidence are recorded on the motor-enabled firmware.
 EOF

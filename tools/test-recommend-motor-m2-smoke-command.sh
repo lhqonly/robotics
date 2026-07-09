@@ -33,6 +33,10 @@ assert_contains "$out" "tools/diagnose-swd.sh" \
   "SWD gate"
 assert_contains "$out" "tools/run-bridge.sh '/dev/ttyUSB0' '2000000'" \
   "default bridge command"
+assert_contains "$out" "evidence dir: log/motor-m2-smoke/" \
+  "default evidence directory"
+assert_contains "$out" "tools/check-motor-m2-smoke-evidence.py --template" \
+  "evidence template command"
 assert_contains "$out" "ros2 topic info -v /motor/tp_joint_target" \
   "target topic info command"
 assert_contains "$out" "ros2 topic info -v /motor/tp_joint_state" \
@@ -43,6 +47,8 @@ assert_contains "$out" "ros2 topic info -v /com/tp_mcu_status" \
   "com coexistence topic info command"
 assert_contains "$out" "frame_id: ''" \
   "empty frame_id positive publish"
+assert_contains "$out" "control_mode: 0" \
+  "disabled target for clean reject counters"
 assert_contains "$out" "frame_id: reject" \
   "non-empty frame_id negative publish"
 assert_contains "$out" "last_target_seq remains 42" \
@@ -51,6 +57,12 @@ assert_contains "$out" "targets_received/targets_applied do not increase" \
   "negative frame_id health counter assertion"
 assert_contains "$out" "seq: 44" \
   "legal target after negative frame_id"
+assert_contains "$out" "seq: 45" \
+  "clamp target after negative frame_id"
+assert_contains "$out" "state.after_ttl.yaml" \
+  "TTL stale evidence capture"
+assert_contains "$out" 'tools/check-motor-m2-smoke-evidence.py "$evidence_dir"' \
+  "evidence checker command"
 assert_contains "$out" "tools/measure-stack-hwm.sh 'firmware/f103-microros/build-motor/f103-microros.elf'" \
   "motor stack HWM command"
 assert_contains "$out" "Passing \`/com\` 10kHz/200Hz validation is not a substitute" \
@@ -63,6 +75,8 @@ assert_contains "$out" "CHECK legal_target_after_reject_proves_executor_still_se
   "negative frame_id executor checklist"
 assert_contains "$out" "CHECK 921600_is_comparison_only_when_static_budget_is_over_30_percent" \
   "921600 budget warning checklist"
+assert_contains "$out" "seq42/seq43/seq44 targets intentionally use \`control_mode=0\`" \
+  "disabled baseline warning"
 
 commands="$TMPDIR/commands.sh"
 FORMAT=commands M2_MOTOR_BAUD=921600 M2_MOTOR_SERIAL=/dev/ttyACM0 \
@@ -77,11 +91,15 @@ assert_contains "$commands" "cmake --build 'firmware/f103-microros/build-motor-9
   "custom build dir in commands format"
 assert_contains "$commands" "st-flash --connect-under-reset write 'firmware/f103-microros/build-motor-921k/f103-microros.bin' 0x08000000" \
   "custom flash path in commands format"
+assert_contains "$commands" "evidence_dir='log/motor-m2-smoke/" \
+  "default evidence dir in commands format"
 
 checklist="$TMPDIR/checklist.txt"
 FORMAT=checklist M2_MOTOR_TAG=demo_motor "$ROOT/tools/recommend-motor-m2-smoke-command.sh" >"$checklist"
 assert_contains "$checklist" "M2_MOTOR_SMOKE_TAG=demo_motor" \
   "custom tag in checklist"
+assert_contains "$checklist" "M2_MOTOR_SMOKE_EVIDENCE_DIR=log/motor-m2-smoke/demo_motor" \
+  "custom evidence dir in checklist"
 assert_contains "$checklist" "CHECK ros_graph_has_motor_target_state_health_and_com_status" \
   "graph checklist"
 assert_contains "$checklist" "CHECK stack_hwm_msp_heap_margin_recorded_before_default_memory_reduction" \

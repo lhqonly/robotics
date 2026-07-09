@@ -154,6 +154,8 @@ assert_contains "$report" "M2 motor 真机首轮" \
   "M2 motor runtime next step"
 assert_contains "$report" "tools/recommend-motor-m2-smoke-command.sh" \
   "M2 motor smoke command generator in next steps"
+assert_contains "$report" "tools/check-motor-m2-smoke-evidence.py" \
+  "M2 motor smoke evidence checker in next steps"
 assert_contains "$report" "/motor/tp_joint_target" \
   "M2 motor target topic in report"
 assert_contains "$report" "tools/diagnose-swd.sh" \

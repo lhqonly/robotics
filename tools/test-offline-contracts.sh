@@ -24,6 +24,7 @@ tests=(
   "tools/test-pc-latest-scheduler-sweep.sh"
   "tools/test-recommend-staircase-command.sh"
   "tools/test-recommend-motor-m2-smoke-command.sh"
+  "tools/test-check-motor-m2-smoke-evidence.sh"
   "tools/test-run-com-perf-config.sh"
   "tools/test-swd-diagnose.sh"
   "tools/test-com-docs.sh"
