@@ -119,6 +119,10 @@ graph_snapshot() {
     echo "--- $1 ---"
     ros2 node list | sort
     ros2 topic list | grep /com | sort || true
+    for topic in /com/tp_cmd_heartbeat /com/tp_mcu_status /com/tp_link_health; do
+      echo "--- topic info -v $topic ---"
+      timeout 5 ros2 topic info -v "$topic" || true
+    done
   } >>"$GRAPH_LOG" 2>&1
 }
 
