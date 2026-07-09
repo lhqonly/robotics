@@ -76,6 +76,14 @@ assert_contains "$cases_out" "default|" \
 assert_contains "$cases_out" "threads2||2" \
   "cases output includes selected executor thread case"
 
+contract_args_out="$TMPDIR/contract_args.txt"
+FORMAT=contract_args \
+  SCHEDULER_CSV="$TMPDIR/scheduler.metrics.csv" \
+  SUMMARY="$TMPDIR/scheduler.summary.log" \
+  "$ROOT/tools/recommend-staircase-command.sh" >"$contract_args_out"
+assert_contains "$contract_args_out" "--max-pc-catchup-events 0 --max-pc-catchup-extra 0" \
+  "contract args format emits default acceptance args"
+
 auto_dir="$TMPDIR/auto"
 mkdir -p "$auto_dir"
 cat >"$auto_dir/old_200.metrics.csv" <<'EOF'

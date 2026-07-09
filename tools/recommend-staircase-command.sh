@@ -183,8 +183,12 @@ if [ "$FORMAT" = "cases" ]; then
   printf '%s\n' "${staircase_cases[@]}"
   exit 0
 fi
+if [ "$FORMAT" = "contract_args" ]; then
+  printf '%s\n' "$STAIRCASE_CONTRACT_ARGS"
+  exit 0
+fi
 if [ "$FORMAT" != "markdown" ]; then
-  echo "ERROR: FORMAT must be markdown or cases, got '$FORMAT'" >&2
+  echo "ERROR: FORMAT must be markdown, cases, or contract_args, got '$FORMAT'" >&2
   exit 1
 fi
 

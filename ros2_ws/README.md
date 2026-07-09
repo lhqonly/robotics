@@ -393,6 +393,13 @@ DRY_RUN=1 tools/run-com-validation-cycle.sh dry_cycle
 SWD_STATUS_OVERRIDE=ok DRY_RUN=1 tools/run-com-validation-cycle.sh dry_full
 ```
 
+在 `SWD_STATUS=ok` 的路径里，validation cycle 会自动读取推荐器的
+`FORMAT=cases` 输出作为 PC scheduler 候选，也会在未显式设置
+`STAIRCASE_CONTRACT_ARGS` 时读取 `FORMAT=contract_args` 输出作为验收条件。
+如果要临时加严或替换验收条件，例如把串口占用率也纳入 gate，可以显式设置
+`STAIRCASE_CONTRACT_ARGS="--max-pc-catchup-events 0 --max-pc-catchup-extra 0 --max-wire-baud-util-pct 30"`；
+日志里的 `STAIRCASE_CONTRACT_ARGS_SOURCE` 会标出参数来自 `recommended` 还是 `env`。
+
 要按阶梯拆开跑完整验证矩阵，用：
 
 ```bash

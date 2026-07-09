@@ -75,6 +75,7 @@ contract_status=0
 if [ "$swd_status" = "ok" ]; then
   record "PATH full_staircase"
   recommended_cases=""
+  recommended_contract_args=""
   if [ "$USE_RECOMMENDED_STAIRCASE_CASES" = "1" ] &&
       [ -x "$RECOMMEND_STAIRCASE_CMD" ]; then
     if recommended_cases="$(FORMAT=cases "$RECOMMEND_STAIRCASE_CMD" 2>/dev/null)"; then
@@ -85,8 +86,25 @@ if [ "$swd_status" = "ok" ]; then
       record "WARN recommended staircase cases unavailable; using run-com-staircase defaults"
       recommended_cases=""
     fi
+    if [ -z "$STAIRCASE_CONTRACT_ARGS" ] &&
+        recommended_contract_args="$(FORMAT=contract_args "$RECOMMEND_STAIRCASE_CMD" 2>/dev/null)"; then
+      STAIRCASE_CONTRACT_ARGS="$recommended_contract_args"
+      record "STAIRCASE_CONTRACT_ARGS_SOURCE=recommended"
+      record "STAIRCASE_CONTRACT_ARGS=$STAIRCASE_CONTRACT_ARGS"
+    elif [ -n "$STAIRCASE_CONTRACT_ARGS" ]; then
+      record "STAIRCASE_CONTRACT_ARGS_SOURCE=env"
+      record "STAIRCASE_CONTRACT_ARGS=$STAIRCASE_CONTRACT_ARGS"
+    else
+      record "STAIRCASE_CONTRACT_ARGS_SOURCE=default_empty"
+    fi
   else
     record "STAIRCASE_PC_LAUNCH_PREFIX_CASES_SOURCE=default"
+    if [ -n "$STAIRCASE_CONTRACT_ARGS" ]; then
+      record "STAIRCASE_CONTRACT_ARGS_SOURCE=env"
+      record "STAIRCASE_CONTRACT_ARGS=$STAIRCASE_CONTRACT_ARGS"
+    else
+      record "STAIRCASE_CONTRACT_ARGS_SOURCE=default_empty"
+    fi
   fi
   if [ -n "$recommended_cases" ]; then
     if [ "$DRY_RUN" = "1" ]; then
