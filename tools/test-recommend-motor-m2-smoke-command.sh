@@ -18,6 +18,7 @@ assert_contains() {
 
 bash -n "$ROOT/tools/recommend-motor-m2-smoke-command.sh"
 python3 -m py_compile "$ROOT/tools/pub-motor-m2-enabled-target-soak.py"
+python3 -m py_compile "$ROOT/tools/pub-motor-m2-target-capture.py"
 assert_contains "$ROOT/tools/pub-motor-m2-enabled-target-soak.py" \
   "reliability=ReliabilityPolicy.BEST_EFFORT" \
   "enabled soak publisher best-effort QoS"
@@ -51,12 +52,14 @@ assert_contains "$out" "STRICT=1 tools/diagnose-swd.sh" \
   "SWD gate"
 assert_contains "$out" "tools/run-bridge.sh '/dev/ttyUSB0' '2000000'" \
   "default bridge command"
-assert_contains "$out" 'tee "$evidence_dir/agent.log"' \
-  "agent log evidence capture"
+assert_contains "$out" '>"$evidence_dir/agent.log" 2>&1 &' \
+  "agent log direct capture"
 assert_contains "$out" 'agent_pid=$!' \
   "agent background pid capture"
 assert_contains "$out" "trap cleanup_agent EXIT" \
   "agent cleanup trap"
+assert_contains "$out" 'kill -TERM -- "-$agent_pid"' \
+  "agent process group cleanup"
 assert_contains "$out" "cleanup_agent" \
   "agent cleanup before manifest"
 assert_contains "$out" "trap - EXIT" \
@@ -91,24 +94,52 @@ assert_contains "$out" "targets_received/targets_applied do not increase" \
   "negative frame_id health counter assertion"
 assert_contains "$out" "seq: 44" \
   "legal target after negative frame_id"
-assert_contains "$out" "seq: 45" \
+assert_contains "$out" "--seq 45" \
   "clamp target after negative frame_id"
 assert_contains "$out" "state.after_ttl.yaml" \
   "TTL stale evidence capture"
+assert_contains "$out" "clamp_target_ttl_us=100000" \
+  "default clamp TTL evidence"
+assert_contains "$out" "tools/pub-motor-m2-target-capture.py" \
+  "fresh clamp capture helper"
+assert_contains "$out" "--require-fresh" \
+  "fresh clamp sample requirement"
+assert_contains "$out" "--ttl-us 100000" \
+  "contract TTL target command"
+assert_contains "$out" "sleep 0.300" \
+  "TTL stale wait follows clamp TTL"
 assert_contains "$out" 'tools/check-motor-m2-smoke-evidence.py "$evidence_dir"' \
   "evidence checker command"
 assert_contains "$out" "--min-motor-state-hz 45.000000 --max-motor-state-hz 55.000000" \
   "default motor state checker rate band"
 assert_contains "$out" "--min-motor-health-hz 4.500000 --max-motor-health-hz 5.500000" \
   "default motor health checker rate band"
-assert_contains "$out" "timeout 11 ros2 topic hz /motor/tp_joint_state" \
+assert_contains "$out" "capture_topic_hz 11 /motor/tp_joint_state" \
   "default motor state hz timeout"
-assert_contains "$out" "timeout 12 ros2 topic hz /motor/tp_motor_health" \
+assert_contains "$out" "capture_topic_hz 12 /motor/tp_motor_health" \
   "default motor health hz timeout"
+assert_contains "$out" 'timeout -s INT "$timeout_s" ros2 topic hz "$topic" 2>&1 | tee "$output" || true' \
+  "topic hz failure does not abort smoke command"
+assert_contains "$out" "ros2 run exo_cmd status_sampler" \
+  "com status sampler command"
+assert_contains "$out" "--qos-reliability best_effort" \
+  "com status sampler compatible QoS"
+assert_contains "$out" 'timeout -s INT "$timeout_s" ros2 run exo_cmd status_sampler' \
+  "com status sampler timeout wrapper"
 assert_contains "$out" "rate.motor_health.txt" \
   "motor health hz evidence capture"
-assert_contains "$out" "tools/pub-motor-m2-enabled-target-soak.py --hz 200" \
+assert_contains "$out" "tools/pub-motor-m2-enabled-target-soak.py" \
   "enabled 200Hz soak publisher"
+assert_contains "$out" "--hz 200" \
+  "enabled 200Hz soak rate"
+assert_contains "$out" '--state-mid-out "$evidence_dir/state.mid_enabled_soak.yaml"' \
+  "enabled soak writes mid state in-process"
+assert_contains "$out" '--health-mid-out "$evidence_dir/health.mid_enabled_soak.yaml"' \
+  "enabled soak writes mid health in-process"
+assert_contains "$out" '--state-after-out "$evidence_dir/state.after_enabled_soak.yaml"' \
+  "enabled soak writes after state in-process"
+assert_contains "$out" '--health-after-out "$evidence_dir/health.after_enabled_soak.yaml"' \
+  "enabled soak writes after health in-process"
 assert_contains "$out" "health.before_enabled_soak.yaml" \
   "enabled soak health before capture"
 assert_contains "$out" "health.mid_enabled_soak.yaml" \
@@ -166,22 +197,24 @@ assert_contains "$commands" "--min-motor-state-hz 1.800000 --max-motor-state-hz 
   "custom motor checker rate band"
 assert_contains "$commands" "--min-motor-health-hz 0.900000 --max-motor-health-hz 1.100000" \
   "custom motor health checker rate band"
-assert_contains "$commands" "timeout 13 ros2 topic hz /motor/tp_joint_state" \
+assert_contains "$commands" "capture_topic_hz 13 /motor/tp_joint_state" \
   "custom motor state hz timeout"
-assert_contains "$commands" "timeout 16 ros2 topic hz /motor/tp_motor_health" \
+assert_contains "$commands" "capture_topic_hz 16 /motor/tp_motor_health" \
   "custom motor health hz timeout"
 assert_contains "$commands" "tools/run-bridge.sh '/dev/ttyACM0' '921600'" \
   "custom serial in commands format"
-assert_contains "$commands" 'tee "$evidence_dir/agent.log"' \
-  "agent log evidence capture in commands format"
+assert_contains "$commands" '>"$evidence_dir/agent.log" 2>&1 &' \
+  "agent log direct capture in commands format"
 assert_contains "$commands" 'agent_pid=$!' \
   "agent background pid in commands format"
 assert_contains "$commands" "trap cleanup_agent EXIT" \
   "agent cleanup trap in commands format"
 assert_contains "$commands" "> raw.sha256" \
   "raw manifest in commands format"
-assert_contains "$commands" "tools/pub-motor-m2-enabled-target-soak.py --hz 200" \
+assert_contains "$commands" "tools/pub-motor-m2-enabled-target-soak.py" \
   "enabled soak publisher in commands format"
+assert_contains "$commands" "--hz 200" \
+  "enabled soak rate in commands format"
 assert_contains "$commands" "cmake --build 'firmware/f103-microros/build-motor-921k'" \
   "custom build dir in commands format"
 assert_contains "$commands" "st-flash --connect-under-reset write 'firmware/f103-microros/build-motor-921k/f103-microros.bin' 0x08000000" \
@@ -239,6 +272,12 @@ bad_decimal_out="$(M2_MOTOR_HEALTH_PERIOD_MS=100.5 "$ROOT/tools/recommend-motor-
 bad_decimal_rc=$?
 bad_soak_duration_out="$(M2_MOTOR_ENABLED_SOAK_DURATION_S=0.5 "$ROOT/tools/recommend-motor-m2-smoke-command.sh" 2>&1 >/dev/null)"
 bad_soak_duration_rc=$?
+bad_clamp_ttl_out="$(M2_MOTOR_CLAMP_TTL_US=0 "$ROOT/tools/recommend-motor-m2-smoke-command.sh" 2>&1 >/dev/null)"
+bad_clamp_ttl_rc=$?
+bad_soak_ttl_out="$(M2_MOTOR_ENABLED_SOAK_TTL_US=foo "$ROOT/tools/recommend-motor-m2-smoke-command.sh" 2>&1 >/dev/null)"
+bad_soak_ttl_rc=$?
+bad_high_ttl_out="$(M2_MOTOR_CLAMP_TTL_US=1000000 "$ROOT/tools/recommend-motor-m2-smoke-command.sh" 2>&1 >/dev/null)"
+bad_high_ttl_rc=$?
 set -e
 if [ "$bad_health_rc" -eq 0 ]; then
   echo "FAIL: invalid motor health period should fail" >&2
@@ -303,6 +342,33 @@ grep -Fq "ERROR: M2_MOTOR_ENABLED_SOAK_DURATION_S must be a number >= 2" <<<"$ba
   echo "$bad_soak_duration_out" >&2
   exit 1
 }
+if [ "$bad_clamp_ttl_rc" -eq 0 ]; then
+  echo "FAIL: invalid clamp TTL should fail" >&2
+  exit 1
+fi
+grep -Fq "ERROR: M2_MOTOR_CLAMP_TTL_US must be a positive integer" <<<"$bad_clamp_ttl_out" || {
+  echo "FAIL: invalid clamp TTL error missing" >&2
+  echo "$bad_clamp_ttl_out" >&2
+  exit 1
+}
+if [ "$bad_soak_ttl_rc" -eq 0 ]; then
+  echo "FAIL: invalid enabled soak TTL should fail" >&2
+  exit 1
+fi
+grep -Fq "ERROR: M2_MOTOR_ENABLED_SOAK_TTL_US must be a positive integer" <<<"$bad_soak_ttl_out" || {
+  echo "FAIL: invalid enabled soak TTL error missing" >&2
+  echo "$bad_soak_ttl_out" >&2
+  exit 1
+}
+if [ "$bad_high_ttl_rc" -eq 0 ]; then
+  echo "FAIL: TTL above firmware cap should fail" >&2
+  exit 1
+fi
+grep -Fq "ERROR: M2_MOTOR_CLAMP_TTL_US must be <= 100000 because firmware caps M2 target TTL at 100000us" <<<"$bad_high_ttl_out" || {
+  echo "FAIL: high clamp TTL error missing" >&2
+  echo "$bad_high_ttl_out" >&2
+  exit 1
+}
 
 minmax="$TMPDIR/minmax.md"
 M2_MOTOR_STATE_PERIOD_MS=10 M2_MOTOR_HEALTH_PERIOD_MS=5000 \
@@ -311,7 +377,7 @@ assert_contains "$minmax" "- motor state period: 10ms (100.000000Hz)" \
   "minimum state period accepted"
 assert_contains "$minmax" "- motor health period: 5000ms (0.200000Hz)" \
   "maximum health period accepted"
-assert_contains "$minmax" "timeout 40 ros2 topic hz /motor/tp_motor_health" \
+assert_contains "$minmax" "capture_topic_hz 40 /motor/tp_motor_health" \
   "maximum health period gets longer hz timeout"
 assert_contains "$checklist" "CHECK ros_graph_has_motor_target_state_health_and_com_status" \
   "graph checklist"

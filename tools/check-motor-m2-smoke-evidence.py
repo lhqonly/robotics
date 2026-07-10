@@ -37,7 +37,9 @@ REQUIRED_RAW_FILES = (
     "rate.motor_state.txt",
     "rate.motor_health.txt",
     "rate.com_status.txt",
+    "com_cmd.rate.log",
     "rate.com_status.soak.txt",
+    "com_cmd.soak.log",
     "state.after_enabled_soak.yaml",
     "health.after_enabled_soak.yaml",
     "stack-hwm.txt",
@@ -98,7 +100,7 @@ state_after_ttl_fault_bits=2
 health_before_ttl_stale_targets=0
 health_after_ttl_stale_targets=1
 
-# Topic rates from ros2 topic hz.
+# Topic rates from ros2 topic hz or exo_cmd status_sampler.
 motor_state_hz=50.0
 motor_health_hz=5.0
 com_status_hz=5.0
@@ -174,10 +176,13 @@ def topic_type_from_info(text: str) -> str:
     return scalar_from_text(text, "Type") or ""
 
 
-def average_rate_from_text(text: str) -> str | None:
+def rate_from_text(text: str) -> str | None:
     rate: str | None = None
     for raw in text.splitlines():
         match = re.search(r"average rate:\s*([0-9]+(?:\.[0-9]+)?)", raw)
+        if match:
+            rate = match.group(1)
+        match = re.search(r"\bstatus_sampler:.*\brate_hz=([0-9]+(?:\.[0-9]+)?)\b", raw)
         if match:
             rate = match.group(1)
     return rate
@@ -449,12 +454,12 @@ def read_evidence_dir(path: Path) -> dict[str, str]:
             path / "enabled_soak.summary.txt",
             lambda text: key_value_from_text(text, "enabled_soak_last_target_seq"),
         ),
-        "motor_state_hz": (path / "rate.motor_state.txt", average_rate_from_text),
-        "motor_health_hz": (path / "rate.motor_health.txt", average_rate_from_text),
-        "com_status_hz": (path / "rate.com_status.txt", average_rate_from_text),
+        "motor_state_hz": (path / "rate.motor_state.txt", rate_from_text),
+        "motor_health_hz": (path / "rate.motor_health.txt", rate_from_text),
+        "com_status_hz": (path / "rate.com_status.txt", rate_from_text),
         "com_status_soak_hz": (
             path / "rate.com_status.soak.txt",
-            average_rate_from_text,
+            rate_from_text,
         ),
         "microros_stack_free_words": (
             path / "stack-hwm.txt",

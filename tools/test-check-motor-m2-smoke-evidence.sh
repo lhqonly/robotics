@@ -60,7 +60,9 @@ create_raw_manifest() {
       rate.motor_state.txt \
       rate.motor_health.txt \
       rate.com_status.txt \
+      com_cmd.rate.log \
       rate.com_status.soak.txt \
+      com_cmd.soak.log \
       state.after_enabled_soak.yaml \
       health.after_enabled_soak.yaml \
       stack-hwm.txt \
@@ -416,12 +418,16 @@ average rate: 5.000
 min: 0.190s max: 0.210s std dev: 0.00400s window: 10
 EOF
 cat >"$dir/rate.com_status.txt" <<'EOF'
-average rate: 5.000
-min: 0.190s max: 0.210s std dev: 0.00400s window: 10
+status_sampler: count=11 rate_hz=5.000 min_gap_s=0.190 max_gap_s=0.210 p95_gap_s=0.210 p99_gap_s=0.210 std_gap_s=0.00400 zero_gap_count=0 duration_s=2.000 seq_rate_hz=5.000 seq_delta_avg=1.000 seq_delta_min=1 seq_delta_max=1
+EOF
+cat >"$dir/com_cmd.rate.log" <<'EOF'
+[INFO] exo_cmd up: pub /com/tp_cmd_heartbeat @ 200 Hz, sub /com/tp_mcu_status
 EOF
 cat >"$dir/rate.com_status.soak.txt" <<'EOF'
-average rate: 5.000
-min: 0.190s max: 0.210s std dev: 0.00400s window: 10
+status_sampler: count=11 rate_hz=5.000 min_gap_s=0.190 max_gap_s=0.210 p95_gap_s=0.210 p99_gap_s=0.210 std_gap_s=0.00400 zero_gap_count=0 duration_s=2.000 seq_rate_hz=5.000 seq_delta_avg=1.000 seq_delta_min=1 seq_delta_max=1
+EOF
+cat >"$dir/com_cmd.soak.log" <<'EOF'
+[INFO] exo_cmd up: pub /com/tp_cmd_heartbeat @ 200 Hz, sub /com/tp_mcu_status
 EOF
 cat >"$dir/stack-hwm.txt" <<'EOF'
 elf=firmware/f103-microros/build-motor/f103-microros.elf
