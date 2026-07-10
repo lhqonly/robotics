@@ -20,11 +20,14 @@ bash -n "$ROOT/tools/recommend-motor-m2-smoke-command.sh"
 python3 -m py_compile "$ROOT/tools/pub-motor-m2-enabled-target-soak.py"
 python3 -m py_compile "$ROOT/tools/pub-motor-m2-target-capture.py"
 assert_contains "$ROOT/tools/pub-motor-m2-enabled-target-soak.py" \
-  "reliability=ReliabilityPolicy.BEST_EFFORT" \
+  "ReliabilityPolicy.BEST_EFFORT" \
   "enabled soak publisher best-effort QoS"
 assert_contains "$ROOT/tools/pub-motor-m2-enabled-target-soak.py" \
-  "depth=1" \
+  'parser.add_argument("--qos-depth", type=int, default=1)' \
   "enabled soak publisher latest-only depth"
+assert_contains "$ROOT/tools/pub-motor-m2-enabled-target-soak.py" \
+  'default="best_effort"' \
+  "enabled soak publisher default reliability"
 assert_contains "$ROOT/tools/pub-motor-m2-enabled-target-soak.py" \
   "enabled_soak_target_hz={actual_hz:.6f}" \
   "enabled soak publisher reports measured Hz"

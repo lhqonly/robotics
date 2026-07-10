@@ -66,6 +66,12 @@ def main() -> int:
     parser.add_argument("--joint-id", type=int, default=0)
     parser.add_argument("--control-mode", type=int, default=1)
     parser.add_argument("--ttl-us", type=int, default=100000)
+    parser.add_argument(
+        "--qos-reliability",
+        default="best_effort",
+        choices=("best_effort", "reliable"),
+    )
+    parser.add_argument("--qos-depth", type=int, default=1)
     parser.add_argument("--discovery-wait-s", type=float, default=1.0)
     parser.add_argument("--post-spin-s", type=float, default=0.25)
     parser.add_argument("--state-mid-out")
@@ -82,6 +88,8 @@ def main() -> int:
         parser.error("--start-seq must be >= 0")
     if args.ttl_us <= 0:
         parser.error("--ttl-us must be > 0")
+    if args.qos_depth < 1:
+        parser.error("--qos-depth must be >= 1")
     if args.discovery_wait_s < 0.0:
         parser.error("--discovery-wait-s must be >= 0")
     if args.post_spin_s < 0.0:
@@ -102,10 +110,15 @@ def main() -> int:
 
     rclpy.init()
     node = rclpy.create_node("motor_m2_enabled_target_soak_pub")
+    reliability = (
+        ReliabilityPolicy.RELIABLE
+        if args.qos_reliability == "reliable"
+        else ReliabilityPolicy.BEST_EFFORT
+    )
     target_qos = QoSProfile(
         history=HistoryPolicy.KEEP_LAST,
-        depth=1,
-        reliability=ReliabilityPolicy.BEST_EFFORT,
+        depth=args.qos_depth,
+        reliability=reliability,
     )
     reliable_qos = QoSProfile(
         history=HistoryPolicy.KEEP_LAST,
@@ -191,6 +204,8 @@ def main() -> int:
     print(f"enabled_soak_requested_hz={args.hz:.6f}")
     print(f"enabled_soak_target_hz={actual_hz:.6f}")
     print(f"enabled_soak_duration_s={elapsed_s:.6f}")
+    print(f"enabled_soak_qos_reliability={args.qos_reliability}")
+    print(f"enabled_soak_qos_depth={args.qos_depth}")
     print(f"enabled_soak_discovery_wait_s={args.discovery_wait_s:.6f}")
     print(f"enabled_soak_post_spin_s={args.post_spin_s:.6f}")
     print(f"enabled_soak_targets_sent={count}")
