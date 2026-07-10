@@ -26,7 +26,15 @@ Use this workflow for non-trivial project work:
 
 Simple status checks, file reads, single-command queries, or tiny edits may be handled directly by the main Codex thread without forcing the full three-agent workflow.
 
+## Hardware Visibility Rule
+
+When ST-LINK, USB-TTL, SWD, or serial hardware appears missing, check Windows visibility before assuming a physical hardware problem:
+
+1. Run `powershell.exe -NoProfile -Command "usbipd list"` from WSL/Codex and confirm ST-LINK and USB-TTL are visible on the Windows side.
+2. If a device is `Shared` but not `Attached`, attach it into WSL with `powershell.exe -NoProfile -Command "usbipd attach --wsl --busid <BUSID>"`; do this for both ST-LINK and USB-TTL when needed.
+3. Only after Windows/usbipd state is clear, check WSL-side `lsusb`, `/dev/ttyACM*`, `/dev/ttyUSB*`, and `tools/diagnose-swd.sh`.
+4. If the device is missing from Windows too, then investigate cable, power, reset/BOOT, SWD wiring, common ground, or Windows tools holding ST-LINK.
+
 ## Subagent Practical Note
 
 Codex may not expose native tools named exactly `elon`, `tom`, and `gill`. When spawning generic subagents, pass the relevant `.claude/agents/*.md` role instructions into the subagent prompt and require it to follow that role's responsibility boundary.
-

@@ -8,6 +8,8 @@ LSUSB_CMD="${LSUSB_CMD:-lsusb}"
 LSOF_CMD="${LSOF_CMD:-lsof}"
 DMESG_CMD="${DMESG_CMD:-dmesg}"
 TIMEOUT_CMD="${TIMEOUT_CMD:-timeout}"
+POWERSHELL_CMD="${POWERSHELL_CMD:-powershell.exe}"
+USBIPD_CMD="${USBIPD_CMD:-usbipd}"
 STLINK_TIMEOUT_SECONDS="${STLINK_TIMEOUT_SECONDS:-15}"
 STRICT="${STRICT:-0}"
 TTY_USB="${TTY_USB:-/dev/ttyUSB0}"
@@ -20,6 +22,7 @@ stinfo_out=""
 lsusb_out=""
 lsof_out=""
 dmesg_out=""
+windows_usbipd_out=""
 
 have_cmd() {
   command -v "$1" >/dev/null 2>&1
@@ -39,6 +42,16 @@ run_lsusb() {
     "$LSUSB_CMD" 2>&1 || true
   else
     echo "$LSUSB_CMD not found"
+  fi
+}
+
+run_windows_usbipd_list() {
+  if have_cmd "$POWERSHELL_CMD"; then
+    local out
+    out="$("$POWERSHELL_CMD" -NoProfile -Command "$USBIPD_CMD list" 2>&1 || true)"
+    printf '%s\n' "$out" | tr -d '\r'
+  else
+    echo "$POWERSHELL_CMD not found; from Windows run: usbipd list"
   fi
 }
 
@@ -109,6 +122,35 @@ probe_stlink() {
   reason="probe-ok"
 }
 
+usbipd_line_for_pattern() {
+  local pattern="$1"
+  printf '%s\n' "$windows_usbipd_out" |
+    awk -v pat="$pattern" 'BEGIN { IGNORECASE = 1 } $0 ~ pat { print; exit }'
+}
+
+usbipd_presence_from_line() {
+  local line="$1"
+  if [ -n "$line" ]; then
+    printf 'present'
+  else
+    printf 'missing'
+  fi
+}
+
+usbipd_state_from_line() {
+  local line="$1"
+  if [ -n "$line" ]; then
+    awk '{ print $NF }' <<<"$line"
+  else
+    printf 'missing'
+  fi
+}
+
+windows_usbipd="available"
+if ! have_cmd "$POWERSHELL_CMD"; then
+  windows_usbipd="unavailable"
+fi
+windows_usbipd_out="$(run_windows_usbipd_list)"
 lsusb_out="$(run_lsusb)"
 lsof_out="$(run_lsof)"
 dmesg_out="$(run_dmesg_tail)"
@@ -128,12 +170,24 @@ else
   usb_ttl="missing"
 fi
 
+windows_stlink_line="$(usbipd_line_for_pattern 'STMicroelectronics|ST-LINK|STLINK|0483:374')"
+windows_ttl_line="$(usbipd_line_for_pattern 'FTDI|Future Technology|USB.*Serial|UART|0403:6001')"
+windows_stlink="$(usbipd_presence_from_line "$windows_stlink_line")"
+windows_ttl="$(usbipd_presence_from_line "$windows_ttl_line")"
+windows_stlink_state="$(usbipd_state_from_line "$windows_stlink_line")"
+windows_ttl_state="$(usbipd_state_from_line "$windows_ttl_line")"
+
 cat <<EOF
 # SWD Diagnostic
 
 SWD_STATUS=$status
 SWD_REASON=$reason
 STINFO_RC=$stinfo_rc
+WINDOWS_USBIPD=$windows_usbipd
+WINDOWS_STLINK=$windows_stlink
+WINDOWS_STLINK_STATE=$windows_stlink_state
+WINDOWS_TTL=$windows_ttl
+WINDOWS_TTL_STATE=$windows_ttl_state
 USB_STLINK=$usb_stlink
 USB_TTL=$usb_ttl
 TTY_USB=$(presence "$TTY_USB")
@@ -147,7 +201,13 @@ TTY_ACM_PATH=$TTY_ACM
 $stinfo_out
 \`\`\`
 
-## USB Snapshot
+## Windows usbipd Snapshot
+
+\`\`\`text
+$windows_usbipd_out
+\`\`\`
+
+## WSL USB Snapshot
 
 \`\`\`text
 $lsusb_out
@@ -167,11 +227,13 @@ $dmesg_out
 
 ## Recovery Checklist
 
-1. Keep the independent USB-TTL on USART1 for communication; do not move ROS traffic back to ST-LINK VCP.
-2. Make sure ST-LINK and USB-TTL are both attached into WSL, and no Windows tool owns ST-LINK.
-3. Check target power, common ground, SWDIO, SWCLK, NRST, BOOT0=0, and that SWD pins are not reused by firmware or wiring.
-4. Power-cycle the board and reattach usbip if the kernel log shows disconnect/reset/usbip/vhci errors.
-5. If ST-LINK is visible but chipid is 0x000/dev-type unknown, try connect-under-reset flashing only after wiring/power/reset is fixed.
+1. First inspect Windows ownership: \`powershell.exe -NoProfile -Command "usbipd list"\`; confirm ST-LINK and USB-TTL are visible and note each BUSID/state.
+2. If Windows shows a device as \`Shared\` but WSL does not show it in \`lsusb\`, attach it with \`powershell.exe -NoProfile -Command "usbipd attach --wsl --busid <BUSID>"\`; attach both ST-LINK and USB-TTL.
+3. Then verify WSL visibility with \`lsusb\`, \`$TTY_ACM\`, \`$TTY_USB\`, and this diagnostic output.
+4. Keep the independent USB-TTL on USART1 for communication; do not move ROS traffic back to ST-LINK VCP.
+5. If the device is missing from Windows too, then check target power, cable, common ground, SWDIO, SWCLK, NRST, BOOT0=0, and whether another Windows tool owns ST-LINK.
+6. Power-cycle the board and reattach usbip if the kernel log shows disconnect/reset/usbip/vhci errors.
+7. If ST-LINK is visible but chipid is 0x000/dev-type unknown, try connect-under-reset flashing only after wiring/power/reset is fixed.
 
 ## Next Commands
 

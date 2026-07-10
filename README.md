@@ -21,6 +21,14 @@
 - **Phase A（已完成核心）**：ROS2 ↔ 本地回环节点的最小闭环（`std_msgs/Int32` 心跳回环）+ 链路健康监控（往返延迟 / 丢包 / 重复检测 / 对账恒等）。逻辑与对抗测试全绿。
 - **Phase B（进行中）**：换到真实 STM32 Nucleo-F103RB 硬件，micro-ROS over serial 真机联调。当前在做 20KB SRAM 上的 micro-ROS 可行性验证。
 
+## 硬件不可见时
+
+找不到 ST-LINK、USB-TTL、SWD 或串口设备时，先查 Windows 侧，再查 WSL 侧：
+
+1. `powershell.exe -NoProfile -Command "usbipd list"`
+2. 若设备是 `Shared` 但不是 `Attached`：`powershell.exe -NoProfile -Command "usbipd attach --wsl --busid <BUSID>"`
+3. 再跑 `tools/diagnose-swd.sh`，确认 WSL 内 `lsusb`、`/dev/ttyACM*`、`/dev/ttyUSB*` 和 SWD 状态。
+
 ## 目录结构
 
 | 目录 | 内容 |

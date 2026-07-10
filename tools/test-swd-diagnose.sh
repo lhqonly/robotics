@@ -30,6 +30,19 @@ EOF
   chmod +x "$path"
 }
 
+write_fake_powershell() {
+  local path="$1"
+  cat >"$path" <<'EOF'
+#!/usr/bin/env bash
+cat <<'OUT'
+BUSID  VID:PID    DEVICE                                                        STATE
+5-2    0403:6001  Future Technology Devices International USB Serial Converter  Attached
+5-4    0483:374b  STMicroelectronics ST-LINK/V2.1                               Shared
+OUT
+EOF
+  chmod +x "$path"
+}
+
 write_fake_stinfo() {
   local path="$1"
   local mode="$2"
@@ -88,6 +101,7 @@ run_diag() {
     LSOF_CMD="$TMPDIR/missing-lsof" \
     DMESG_CMD="$TMPDIR/missing-dmesg" \
     TIMEOUT_CMD="$TMPDIR/missing-timeout" \
+    POWERSHELL_CMD="$TMPDIR/powershell.exe" \
     TTY_USB="$TMPDIR/ttyUSB0" \
     TTY_ACM="$TMPDIR/ttyACM0" \
     "$ROOT/tools/diagnose-swd.sh"
@@ -95,6 +109,7 @@ run_diag() {
 
 touch "$TMPDIR/ttyUSB0" "$TMPDIR/ttyACM0"
 write_fake_lsusb "$TMPDIR/lsusb"
+write_fake_powershell "$TMPDIR/powershell.exe"
 
 assert_contains "$(cat "$ROOT/tools/measure-stack-hwm.sh")" \
   "Found[[:space:]]+0 stlink programmers" \
@@ -110,8 +125,19 @@ write_fake_stinfo "$TMPDIR/st-info-ok" ok
 out="$(run_diag "$TMPDIR/st-info-ok" "$TMPDIR/lsusb")"
 assert_contains "$out" "SWD_STATUS=ok" "ok probe status"
 assert_contains "$out" "SWD_REASON=probe-ok" "ok probe reason"
+assert_contains "$out" "WINDOWS_USBIPD=available" "Windows usbipd status"
+assert_contains "$out" "WINDOWS_STLINK=present" "Windows ST-LINK present"
+assert_contains "$out" "WINDOWS_STLINK_STATE=Shared" \
+  "Windows ST-LINK shared state"
+assert_contains "$out" "WINDOWS_TTL=present" "Windows USB-TTL present"
+assert_contains "$out" "WINDOWS_TTL_STATE=Attached" \
+  "Windows USB-TTL attached state"
 assert_contains "$out" "USB_STLINK=present" "ST-LINK USB present"
 assert_contains "$out" "TTY_USB=present" "USB-TTL tty present"
+assert_contains "$out" "## Windows usbipd Snapshot" \
+  "Windows usbipd snapshot section"
+assert_contains "$out" "usbipd attach --wsl --busid <BUSID>" \
+  "Windows before WSL attach recovery guidance"
 assert_contains "$out" "tools/recommend-staircase-command.sh" \
   "next recommended staircase command"
 assert_contains "$out" "tools/check-com-staircase-contract.py" \

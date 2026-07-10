@@ -289,6 +289,10 @@ assert_contains "$report" "targets_applied" \
   "M2 motor enabled soak applied counter in report"
 assert_contains "$report" "tools/diagnose-swd.sh" \
   "SWD diagnostic command in next steps"
+assert_contains "$report" "powershell.exe -NoProfile -Command \"usbipd list\"" \
+  "Windows usbipd check before WSL hardware diagnosis"
+assert_contains "$report" "usbipd attach --wsl --busid <BUSID>" \
+  "WSL attach guidance in next steps"
 assert_contains "$report" "tools/recommend-staircase-command.sh" \
   "recommended staircase command in next steps"
 assert_contains "$report" "tools/check-com-staircase-contract.py" \
