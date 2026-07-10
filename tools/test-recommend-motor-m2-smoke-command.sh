@@ -26,8 +26,20 @@ assert_contains "$ROOT/tools/pub-motor-m2-enabled-target-soak.py" \
   'parser.add_argument("--qos-depth", type=int, default=1)' \
   "enabled soak publisher latest-only depth"
 assert_contains "$ROOT/tools/pub-motor-m2-enabled-target-soak.py" \
+  "--telemetry-qos-reliability" \
+  "enabled soak telemetry QoS reliability argument"
+assert_contains "$ROOT/tools/pub-motor-m2-enabled-target-soak.py" \
+  "--telemetry-qos-depth" \
+  "enabled soak telemetry QoS depth argument"
+assert_contains "$ROOT/tools/pub-motor-m2-target-capture.py" \
+  "--state-qos-reliability" \
+  "target capture state QoS reliability argument"
+assert_contains "$ROOT/tools/pub-motor-m2-target-capture.py" \
+  "--state-qos-depth" \
+  "target capture state QoS depth argument"
+assert_contains "$ROOT/tools/pub-motor-m2-enabled-target-soak.py" \
   'default="best_effort"' \
-  "enabled soak publisher default reliability"
+  "enabled soak default reliability"
 assert_contains "$ROOT/tools/pub-motor-m2-enabled-target-soak.py" \
   "enabled_soak_target_hz={actual_hz:.6f}" \
   "enabled soak publisher reports measured Hz"
@@ -39,8 +51,12 @@ assert_contains "$out" "# Recommended M2 Motor Smoke Command" \
   "title"
 assert_contains "$out" "EXO_MOTOR_ROS_ENTITIES=ON" \
   "motor entity build flag"
+assert_contains "$out" "-DEXO_MOTOR_TELEMETRY_QOS_BEST_EFFORT=ON" \
+  "default motor telemetry QoS build flag"
 assert_contains "$out" "-DEXO_UART_BAUD=2000000" \
   "default first smoke baud"
+assert_contains "$out" "-DEXO_CONTROL_LOOP_HZ=10000" \
+  "default motor control loop"
 assert_contains "$out" "-DEXO_MOTOR_STATE_PERIOD_MS=20" \
   "default motor state period"
 assert_contains "$out" "-DEXO_MOTOR_HEALTH_PERIOD_MS=200" \
@@ -55,6 +71,8 @@ assert_contains "$out" "STRICT=1 tools/diagnose-swd.sh" \
   "SWD gate"
 assert_contains "$out" "tools/run-bridge.sh '/dev/ttyUSB0' '2000000'" \
   "default bridge command"
+assert_contains "$out" "st-flash reset" \
+  "flash reset before starting Agent"
 assert_contains "$out" '>"$evidence_dir/agent.log" 2>&1 &' \
   "agent log direct capture"
 assert_contains "$out" 'agent_pid=$!' \
@@ -69,6 +87,22 @@ assert_contains "$out" "trap - EXIT" \
   "agent cleanup trap cleared before checker"
 assert_contains "$out" "evidence dir: log/motor-m2-smoke/" \
   "default evidence directory"
+assert_contains "$out" "motor_telemetry_qos_best_effort=ON" \
+  "default motor telemetry QoS in profile"
+assert_contains "$out" "loop=10000Hz" \
+  "default motor control loop in profile"
+assert_contains "$out" 'motor_telemetry_qos_args=(--qos-reliability best_effort --qos-depth 1)' \
+  "default motor telemetry observer QoS args"
+assert_contains "$out" "wait_for_motor_topics" \
+  "topic graph wait before smoke evidence"
+assert_contains "$out" 'ros2 topic hz "$topic"' \
+  "motor topic hz uses Jazzy-compatible syntax"
+assert_contains "$out" 'ros2 topic echo "${motor_telemetry_qos_args[@]}" --once --timeout 8 "$topic"' \
+  "motor topic echo uses telemetry observer QoS and timeout"
+assert_contains "$out" 'capture_motor_echo_once /motor/tp_joint_state "$evidence_dir/state.before_seq42.yaml"' \
+  "motor state echo uses telemetry observer helper"
+assert_contains "$out" 'capture_motor_echo_once /motor/tp_motor_health "$evidence_dir/health.before_reject.yaml"' \
+  "motor health echo uses telemetry observer helper"
 assert_contains "$out" "cat >\"\$evidence_dir/evidence.env\" <<'EVIDENCE_ENV'" \
   "minimal evidence env command"
 assert_contains "$out" "template_generated=false" \
@@ -123,12 +157,18 @@ assert_contains "$out" "capture_topic_hz 12 /motor/tp_motor_health" \
   "default motor health hz timeout"
 assert_contains "$out" 'timeout -s INT "$timeout_s" ros2 topic hz "$topic" 2>&1 | tee "$output" || true' \
   "topic hz failure does not abort smoke command"
+assert_contains "$out" "timeout 8s ros2 topic pub --once /motor/tp_joint_target" \
+  "topic pub once commands are bounded by timeout"
 assert_contains "$out" "ros2 run exo_cmd status_sampler" \
   "com status sampler command"
 assert_contains "$out" "--qos-reliability best_effort" \
   "com status sampler compatible QoS"
 assert_contains "$out" 'timeout -s INT "$timeout_s" ros2 run exo_cmd status_sampler' \
   "com status sampler timeout wrapper"
+assert_contains "$out" '-p cmd_rate_hz:="$cmd_rate_hz"' \
+  "com status sampler supports configurable probe command rate"
+assert_contains "$out" '-p status_every_n:="$status_every_n"' \
+  "com status sampler supports configurable probe decimation"
 assert_contains "$out" "rate.motor_health.txt" \
   "motor health hz evidence capture"
 assert_contains "$out" "tools/pub-motor-m2-enabled-target-soak.py" \
@@ -153,11 +193,13 @@ assert_contains "$out" "state.after_enabled_soak.yaml" \
   "enabled soak state after capture"
 assert_contains "$out" "rate.com_status.soak.txt" \
   "com status rate during enabled soak"
+assert_contains "$out" 'rate.com_status.soak.txt" "$evidence_dir/com_cmd.soak.log" 20 4 &' \
+  "enabled soak uses light com status probe instead of a second 200Hz stream"
 assert_contains "$out" "enabled_soak.summary.txt" \
   "enabled soak publisher summary"
 assert_contains "$out" "--min-enabled-soak-target-hz 180.000000 --max-enabled-soak-target-hz 220.000000" \
   "enabled soak checker rate band"
-assert_contains "$out" "--min-enabled-soak-duration-s 2" \
+assert_contains "$out" "--min-enabled-soak-duration-s 5" \
   "enabled soak checker duration floor"
 assert_contains "$out" "tools/measure-stack-hwm.sh 'firmware/f103-microros/build-motor/f103-microros.elf'" \
   "motor stack HWM command"
@@ -167,6 +209,8 @@ assert_contains "$out" "no reconnect/session-loss/HardFault" \
   "agent log reconnect boundary"
 assert_contains "$out" "Passing \`/com\` 10kHz/200Hz validation is not a substitute" \
   "surrogate evidence warning"
+assert_contains "$out" "does not add a second 200Hz command stream" \
+  "enabled soak probe load boundary"
 assert_contains "$out" "CHECK non_empty_frame_id_keeps_last_target_seq_at_previous_accepted_seq" \
   "negative frame_id seq checklist"
 assert_contains "$out" "CHECK non_empty_frame_id_does_not_increment_targets_received_or_applied" \
@@ -184,6 +228,7 @@ commands="$TMPDIR/commands.sh"
 FORMAT=commands M2_MOTOR_BAUD=921600 M2_MOTOR_SERIAL=/dev/ttyACM0 \
   M2_MOTOR_BUILD_DIR=firmware/f103-microros/build-motor-921k \
   M2_MOTOR_STATE_PERIOD_MS=500 M2_MOTOR_HEALTH_PERIOD_MS=1000 \
+  M2_MOTOR_TELEMETRY_QOS_BEST_EFFORT=0 \
   "$ROOT/tools/recommend-motor-m2-smoke-command.sh" >"$commands"
 
 assert_contains "$commands" "-DEXO_UART_BAUD=921600" \
@@ -192,6 +237,8 @@ assert_contains "$commands" "-DEXO_MOTOR_STATE_PERIOD_MS=500" \
   "custom state period in commands format"
 assert_contains "$commands" "-DEXO_MOTOR_HEALTH_PERIOD_MS=1000" \
   "custom health period in commands format"
+assert_contains "$commands" "-DEXO_MOTOR_TELEMETRY_QOS_BEST_EFFORT=OFF" \
+  "custom motor telemetry QoS normalizes false value in commands format"
 assert_contains "$commands" "--baud \"921600\" --max-baud-util-pct 30 --fail-on-over-budget" \
   "custom 921600 budget gate"
 assert_contains "$commands" "--motor-state-hz 2.000000 --motor-health-hz 1.000000" \
@@ -239,12 +286,47 @@ assert_contains "$checklist" "M2_MOTOR_SMOKE_REQUIRE_BUDGET_BAUDS=2000000" \
   "budget gate bauds in checklist"
 assert_contains "$checklist" "M2_MOTOR_SMOKE_ENABLED_SOAK_HZ=200" \
   "enabled soak hz in checklist"
+assert_contains "$checklist" "M2_MOTOR_SMOKE_ENABLED_SOAK_DURATION_S=5" \
+  "default enabled soak duration in checklist"
+assert_contains "$checklist" "M2_MOTOR_SMOKE_CONTROL_LOOP_HZ=10000" \
+  "control loop hz in checklist"
+assert_contains "$checklist" "M2_MOTOR_SMOKE_TELEMETRY_QOS_BEST_EFFORT=ON" \
+  "motor telemetry QoS in checklist"
+assert_contains "$checklist" "M2_MOTOR_SMOKE_COM_STATUS_SOAK_CMD_HZ=20" \
+  "enabled soak com probe rate in checklist"
+assert_contains "$checklist" "M2_MOTOR_SMOKE_COM_STATUS_SOAK_EVERY_N=4" \
+  "enabled soak com probe decimation in checklist"
 assert_contains "$checklist" "CHECK enabled_200hz_target_soak_received_and_applied_grow" \
   "enabled soak growth checklist"
 assert_contains "$checklist" "CHECK com_status_hz_during_enabled_soak_stays_in_range" \
   "enabled soak com coexistence checklist"
 assert_contains "$checklist" "CHECK agent_log_has_no_session_loss_disconnect_or_hardfault" \
   "agent log session loss checklist"
+
+true_bool="$TMPDIR/true-bool.sh"
+FORMAT=commands M2_MOTOR_QOS_BEST_EFFORT=TRUE \
+  M2_MOTOR_TELEMETRY_QOS_BEST_EFFORT=TRUE \
+  "$ROOT/tools/recommend-motor-m2-smoke-command.sh" >"$true_bool"
+assert_contains "$true_bool" "-DEXO_QOS_BEST_EFFORT=ON" \
+  "CMake true value normalizes com QoS to ON"
+assert_contains "$true_bool" "-DEXO_MOTOR_TELEMETRY_QOS_BEST_EFFORT=ON" \
+  "CMake true value normalizes telemetry QoS to ON"
+assert_contains "$true_bool" 'if [ "ON" = "ON" ]; then' \
+  "normalized true value enables observer QoS"
+
+set +e
+bad_bool_out="$(M2_MOTOR_TELEMETRY_QOS_BEST_EFFORT=maybe "$ROOT/tools/recommend-motor-m2-smoke-command.sh" 2>&1 >/dev/null)"
+bad_bool_rc=$?
+set -e
+if [ "$bad_bool_rc" -eq 0 ]; then
+  echo "FAIL: invalid motor telemetry QoS bool should fail" >&2
+  exit 1
+fi
+grep -Fq "ERROR: M2_MOTOR_TELEMETRY_QOS_BEST_EFFORT must be a CMake boolean" <<<"$bad_bool_out" || {
+  echo "FAIL: invalid motor telemetry QoS bool error missing" >&2
+  echo "$bad_bool_out" >&2
+  exit 1
+}
 
 set +e
 bad_period_out="$(M2_MOTOR_STATE_PERIOD_MS=0 "$ROOT/tools/recommend-motor-m2-smoke-command.sh" 2>&1 >/dev/null)"

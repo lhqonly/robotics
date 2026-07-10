@@ -65,6 +65,10 @@
 #  define EXO_MOTOR_ROS_ENTITIES 0
 #endif
 
+#ifndef EXO_MOTOR_TELEMETRY_QOS_BEST_EFFORT
+#  define EXO_MOTOR_TELEMETRY_QOS_BEST_EFFORT 0
+#endif
+
 #ifndef EXO_CONTROL_LOOP_HZ
 #  define EXO_CONTROL_LOOP_HZ 1000u
 #endif
@@ -546,6 +550,15 @@ static bool microros_entities_init(void)
 #endif
 
 #if EXO_MOTOR_ROS_ENTITIES
+#if EXO_MOTOR_TELEMETRY_QOS_BEST_EFFORT
+    if (!RCSOFT(rclc_publisher_init_best_effort(
+            &g_pub_joint_state,
+            &g_node,
+            ROSIDL_GET_MSG_TYPE_SUPPORT(exo_motor_msgs, msg, JointState),
+            "motor/tp_joint_state"))) {
+        return false;
+    }
+#else
     if (!RCSOFT(rclc_publisher_init_default(
             &g_pub_joint_state,
             &g_node,
@@ -553,7 +566,17 @@ static bool microros_entities_init(void)
             "motor/tp_joint_state"))) {
         return false;
     }
+#endif
 
+#if EXO_MOTOR_TELEMETRY_QOS_BEST_EFFORT
+    if (!RCSOFT(rclc_publisher_init_best_effort(
+            &g_pub_motor_health,
+            &g_node,
+            ROSIDL_GET_MSG_TYPE_SUPPORT(exo_motor_msgs, msg, MotorHealth),
+            "motor/tp_motor_health"))) {
+        return false;
+    }
+#else
     if (!RCSOFT(rclc_publisher_init_default(
             &g_pub_motor_health,
             &g_node,
@@ -561,6 +584,7 @@ static bool microros_entities_init(void)
             "motor/tp_motor_health"))) {
         return false;
     }
+#endif
 #endif
 
     /* subscription /com/tp_cmd_heartbeat,RELIABLE QoS(同上,_init_default = reliable)。

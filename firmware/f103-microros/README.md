@@ -62,7 +62,9 @@ cd ~/robotics
 cmake -S firmware/f103-microros -B firmware/f103-microros/build-motor \
   -DCMAKE_TOOLCHAIN_FILE=$(pwd)/firmware/f103-microros/toolchain-arm-m3.cmake \
   -DCMAKE_BUILD_TYPE=MinSizeRel \
-  -DEXO_MOTOR_ROS_ENTITIES=ON
+  -DEXO_MOTOR_ROS_ENTITIES=ON \
+  -DEXO_CONTROL_LOOP_HZ=10000 \
+  -DEXO_MOTOR_TELEMETRY_QOS_BEST_EFFORT=ON
 cmake --build firmware/f103-microros/build-motor
 tools/firmware-size-report.sh firmware/f103-microros/build-motor/f103-microros.elf
 ```
@@ -77,6 +79,9 @@ M2 运行期仍未完成真机验收：需要烧录 `EXO_MOTOR_ROS_ENTITIES=ON` 
 micro-ROS Agent，确认 `/motor/tp_joint_target`、`/motor/tp_joint_state`、
 `/motor/tp_motor_health` 与 `/com/tp_mcu_status` 同时可见，并完成 target seq、TTL、
 clamp/fault、非空 `header.frame_id` 拒绝和 `/com` 并存稳定性验证。
+吞吐优化 profile 可打开 `EXO_MOTOR_TELEMETRY_QOS_BEST_EFFORT=ON`，让
+`/motor/tp_joint_state` 和 `/motor/tp_motor_health` 走 best-effort telemetry，
+避免 200Hz target + 10kHz local tick smoke 中 telemetry 反压 reliable stream。
 
 ## 内存模型(static memory pool / 关动态分配)
 

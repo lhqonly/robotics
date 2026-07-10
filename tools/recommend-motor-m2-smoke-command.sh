@@ -14,10 +14,13 @@ M2_MOTOR_STATE_PERIOD_MS="${M2_MOTOR_STATE_PERIOD_MS:-20}"
 M2_MOTOR_HEALTH_PERIOD_MS="${M2_MOTOR_HEALTH_PERIOD_MS:-200}"
 M2_MOTOR_REQUIRE_BUDGET_BAUDS="${M2_MOTOR_REQUIRE_BUDGET_BAUDS:-$M2_MOTOR_BAUD}"
 M2_MOTOR_QOS_BEST_EFFORT="${M2_MOTOR_QOS_BEST_EFFORT:-ON}"
+M2_MOTOR_TELEMETRY_QOS_BEST_EFFORT="${M2_MOTOR_TELEMETRY_QOS_BEST_EFFORT:-$M2_MOTOR_QOS_BEST_EFFORT}"
 M2_MOTOR_AGENT_VERBOSITY="${M2_MOTOR_AGENT_VERBOSITY:-1}"
 M2_MOTOR_ENABLED_SOAK_HZ="${M2_MOTOR_ENABLED_SOAK_HZ:-200}"
-M2_MOTOR_ENABLED_SOAK_DURATION_S="${M2_MOTOR_ENABLED_SOAK_DURATION_S:-2}"
+M2_MOTOR_ENABLED_SOAK_DURATION_S="${M2_MOTOR_ENABLED_SOAK_DURATION_S:-5}"
 M2_MOTOR_ENABLED_SOAK_START_SEQ="${M2_MOTOR_ENABLED_SOAK_START_SEQ:-1000}"
+M2_MOTOR_COM_STATUS_SOAK_CMD_HZ="${M2_MOTOR_COM_STATUS_SOAK_CMD_HZ:-20}"
+M2_MOTOR_COM_STATUS_SOAK_EVERY_N="${M2_MOTOR_COM_STATUS_SOAK_EVERY_N:-4}"
 M2_MOTOR_CLAMP_TTL_US="${M2_MOTOR_CLAMP_TTL_US:-100000}"
 M2_MOTOR_ENABLED_SOAK_TTL_US="${M2_MOTOR_ENABLED_SOAK_TTL_US:-100000}"
 M2_MOTOR_TAG="${M2_MOTOR_TAG:-motor_m2_smoke_$(date +%Y%m%d_%H%M)}"
@@ -30,6 +33,32 @@ case "$FORMAT" in
     exit 1
     ;;
 esac
+
+normalize_cmake_bool() {
+  local label="$1"
+  local raw="$2"
+  local upper
+  upper="$(printf '%s' "$raw" | tr '[:lower:]' '[:upper:]')"
+  case "$upper" in
+    ON|TRUE|YES|Y|1)
+      printf 'ON'
+      ;;
+    OFF|FALSE|NO|N|0)
+      printf 'OFF'
+      ;;
+    *)
+      echo "ERROR: $label must be a CMake boolean (ON/OFF/TRUE/FALSE/YES/NO/1/0), got '$raw'" >&2
+      return 1
+      ;;
+  esac
+}
+
+M2_MOTOR_QOS_BEST_EFFORT="$(
+  normalize_cmake_bool "M2_MOTOR_QOS_BEST_EFFORT" "$M2_MOTOR_QOS_BEST_EFFORT"
+)" || exit 1
+M2_MOTOR_TELEMETRY_QOS_BEST_EFFORT="$(
+  normalize_cmake_bool "M2_MOTOR_TELEMETRY_QOS_BEST_EFFORT" "$M2_MOTOR_TELEMETRY_QOS_BEST_EFFORT"
+)" || exit 1
 
 shell_quote() {
   local value="$1"
@@ -138,6 +167,8 @@ validate_positive_integer_list "M2_MOTOR_BAUD" "$M2_MOTOR_BAUD"
 validate_positive_integer_list "M2_MOTOR_REQUIRE_BUDGET_BAUDS" "$M2_MOTOR_REQUIRE_BUDGET_BAUDS"
 validate_positive_integer "M2_MOTOR_AGENT_VERBOSITY" "$M2_MOTOR_AGENT_VERBOSITY"
 validate_positive_integer "M2_MOTOR_EXECUTOR_SPIN_TIMEOUT_US" "$M2_MOTOR_EXECUTOR_SPIN_TIMEOUT_US"
+validate_positive_integer "M2_MOTOR_COM_STATUS_SOAK_CMD_HZ" "$M2_MOTOR_COM_STATUS_SOAK_CMD_HZ"
+validate_positive_integer "M2_MOTOR_COM_STATUS_SOAK_EVERY_N" "$M2_MOTOR_COM_STATUS_SOAK_EVERY_N"
 validate_target_ttl_us "M2_MOTOR_CLAMP_TTL_US" "$M2_MOTOR_CLAMP_TTL_US"
 validate_target_ttl_us "M2_MOTOR_ENABLED_SOAK_TTL_US" "$M2_MOTOR_ENABLED_SOAK_TTL_US"
 validate_periods
@@ -180,6 +211,7 @@ cmake -S firmware/f103-microros -B $(shell_quote "$M2_MOTOR_BUILD_DIR") \\
   -DCMAKE_BUILD_TYPE=MinSizeRel \\
   -DEXO_MOTOR_ROS_ENTITIES=ON \\
   -DEXO_QOS_BEST_EFFORT=$M2_MOTOR_QOS_BEST_EFFORT \\
+  -DEXO_MOTOR_TELEMETRY_QOS_BEST_EFFORT=$M2_MOTOR_TELEMETRY_QOS_BEST_EFFORT \\
   -DEXO_UART_BAUD=$M2_MOTOR_BAUD \\
   -DEXO_CONTROL_LOOP_HZ=$M2_MOTOR_CONTROL_LOOP_HZ \\
   -DEXO_STATUS_EVERY_N=$M2_MOTOR_STATUS_EVERY_N \\
@@ -189,6 +221,7 @@ cmake -S firmware/f103-microros -B $(shell_quote "$M2_MOTOR_BUILD_DIR") \\
 cmake --build $(shell_quote "$M2_MOTOR_BUILD_DIR")
 tools/firmware-size-report.sh $(shell_quote "$elf")
 st-flash --connect-under-reset write $(shell_quote "$bin") 0x08000000
+st-flash reset
 evidence_dir=$(shell_quote "$M2_MOTOR_EVIDENCE_DIR")
 mkdir -p "\$evidence_dir"
 setsid env MICROROS_AGENT_VERBOSITY=$M2_MOTOR_AGENT_VERBOSITY tools/run-bridge.sh $(shell_quote "$M2_MOTOR_SERIAL") $(shell_quote "$M2_MOTOR_BAUD") >"\$evidence_dir/agent.log" 2>&1 &
@@ -204,6 +237,11 @@ cleanup_agent() {
 }
 trap cleanup_agent EXIT
 
+motor_telemetry_qos_args=()
+if [ "$M2_MOTOR_TELEMETRY_QOS_BEST_EFFORT" = "ON" ]; then
+  motor_telemetry_qos_args=(--qos-reliability best_effort --qos-depth 1)
+fi
+
 capture_topic_hz() {
   local timeout_s="\$1"
   local topic="\$2"
@@ -211,18 +249,43 @@ capture_topic_hz() {
   timeout -s INT "\$timeout_s" ros2 topic hz "\$topic" 2>&1 | tee "\$output" || true
 }
 
+capture_motor_echo_once() {
+  local topic="\$1"
+  local output="\$2"
+  ros2 topic echo "\${motor_telemetry_qos_args[@]}" --once --timeout 8 "\$topic" | tee "\$output"
+}
+
+wait_for_motor_topics() {
+  local topics
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    topics="\$(ros2 topic list 2>&1 || true)"
+    if grep -Fxq /motor/tp_joint_target <<<"\$topics" &&
+       grep -Fxq /motor/tp_joint_state <<<"\$topics" &&
+       grep -Fxq /motor/tp_motor_health <<<"\$topics" &&
+       grep -Fxq /com/tp_mcu_status <<<"\$topics"; then
+      printf '%s\n' "\$topics"
+      return 0
+    fi
+    sleep 0.5
+  done
+  printf '%s\n' "\$topics"
+  return 1
+}
+
 capture_com_status_rate() {
   local timeout_s="\$1"
   local duration_s="\$2"
   local output="\$3"
   local cmd_log="\$4"
+  local cmd_rate_hz="\${5:-200.0}"
+  local status_every_n="\${6:-40}"
   ros2 run exo_cmd exo_cmd_node \\
     --ros-args \\
-    -p cmd_rate_hz:=200.0 \\
+    -p cmd_rate_hz:="\$cmd_rate_hz" \\
     -p qos_depth:=1 \\
     -p qos_reliability:=best_effort \\
     -p tracking_mode:=sampled \\
-    -p status_every_n:=40 \\
+    -p status_every_n:="\$status_every_n" \\
     -p startup_grace_s:=0.5 \\
     -p summary_period_s:=0.0 \\
     -p link_health_period_s:=0.0 \\
@@ -250,25 +313,25 @@ agent_connected=ok
 reject_baseline_target_enabled=false
 clamp_target_ttl_us=$M2_MOTOR_CLAMP_TTL_US
 EVIDENCE_ENV
-ros2 topic list | tee "\$evidence_dir/topics.txt" | grep -E '^/(com|motor)/'
+wait_for_motor_topics | tee "\$evidence_dir/topics.txt" | grep -E '^/(com|motor)/'
 ros2 topic info -v /motor/tp_joint_target | tee "\$evidence_dir/info.motor_target.txt"
 ros2 topic info -v /motor/tp_joint_state | tee "\$evidence_dir/info.motor_state.txt"
 ros2 topic info -v /motor/tp_motor_health | tee "\$evidence_dir/info.motor_health.txt"
 ros2 topic info -v /com/tp_mcu_status | tee "\$evidence_dir/info.com_status.txt"
-ros2 topic echo --once /motor/tp_joint_state | tee "\$evidence_dir/state.before_seq42.yaml"
-ros2 topic pub --once /motor/tp_joint_target exo_motor_msgs/msg/JointTarget "{header: {frame_id: ''}, seq: 42, joint_id: 0, control_mode: 0, position_rad: 0.0, velocity_rad_s: 0.0, torque_nm: 0.0, kp_nm_per_rad: 0.0, kd_nm_s_per_rad: 0.0, max_torque_nm: 0.2, max_velocity_rad_s: 0.5, max_position_rad: 0.5, min_position_rad: -0.5, ttl_us: 100000, flags: 0}"
-ros2 topic echo --once /motor/tp_joint_state | tee "\$evidence_dir/state.after_seq42.yaml"
-ros2 topic echo --once /motor/tp_motor_health | tee "\$evidence_dir/health.before_reject.yaml"
+capture_motor_echo_once /motor/tp_joint_state "\$evidence_dir/state.before_seq42.yaml"
+timeout 8s ros2 topic pub --once /motor/tp_joint_target exo_motor_msgs/msg/JointTarget "{header: {frame_id: ''}, seq: 42, joint_id: 0, control_mode: 0, position_rad: 0.0, velocity_rad_s: 0.0, torque_nm: 0.0, kp_nm_per_rad: 0.0, kd_nm_s_per_rad: 0.0, max_torque_nm: 0.2, max_velocity_rad_s: 0.5, max_position_rad: 0.5, min_position_rad: -0.5, ttl_us: 100000, flags: 0}"
+capture_motor_echo_once /motor/tp_joint_state "\$evidence_dir/state.after_seq42.yaml"
+capture_motor_echo_once /motor/tp_motor_health "\$evidence_dir/health.before_reject.yaml"
 capture_topic_hz $M2_MOTOR_STATE_RATE_TIMEOUT_S /motor/tp_joint_state "\$evidence_dir/rate.motor_state.txt"
 capture_topic_hz $M2_MOTOR_HEALTH_RATE_TIMEOUT_S /motor/tp_motor_health "\$evidence_dir/rate.motor_health.txt"
 # Record last_target_seq plus targets_received/targets_applied before the negative frame_id test.
-ros2 topic pub --once /motor/tp_joint_target exo_motor_msgs/msg/JointTarget "{header: {frame_id: reject}, seq: 43, joint_id: 0, control_mode: 0, position_rad: 0.0, velocity_rad_s: 0.0, torque_nm: 0.0, kp_nm_per_rad: 0.0, kd_nm_s_per_rad: 0.0, max_torque_nm: 0.2, max_velocity_rad_s: 0.5, max_position_rad: 0.5, min_position_rad: -0.5, ttl_us: 100000, flags: 0}"
+timeout 8s ros2 topic pub --once /motor/tp_joint_target exo_motor_msgs/msg/JointTarget "{header: {frame_id: reject}, seq: 43, joint_id: 0, control_mode: 0, position_rad: 0.0, velocity_rad_s: 0.0, torque_nm: 0.0, kp_nm_per_rad: 0.0, kd_nm_s_per_rad: 0.0, max_torque_nm: 0.2, max_velocity_rad_s: 0.5, max_position_rad: 0.5, min_position_rad: -0.5, ttl_us: 100000, flags: 0}"
 # Negative-test pass condition: last_target_seq remains 42 and targets_received/targets_applied do not increase because of seq=43.
-ros2 topic echo --once /motor/tp_joint_state | tee "\$evidence_dir/state.after_reject_seq43.yaml"
-ros2 topic echo --once /motor/tp_motor_health | tee "\$evidence_dir/health.after_reject_seq43.yaml"
+capture_motor_echo_once /motor/tp_joint_state "\$evidence_dir/state.after_reject_seq43.yaml"
+capture_motor_echo_once /motor/tp_motor_health "\$evidence_dir/health.after_reject_seq43.yaml"
 # Follow with a legal target so the negative test also proves the executor is still alive.
-ros2 topic pub --once /motor/tp_joint_target exo_motor_msgs/msg/JointTarget "{header: {frame_id: ''}, seq: 44, joint_id: 0, control_mode: 0, position_rad: 0.0, velocity_rad_s: 0.0, torque_nm: 0.0, kp_nm_per_rad: 0.0, kd_nm_s_per_rad: 0.0, max_torque_nm: 0.2, max_velocity_rad_s: 0.5, max_position_rad: 0.5, min_position_rad: -0.5, ttl_us: 100000, flags: 0}"
-ros2 topic echo --once /motor/tp_joint_state | tee "\$evidence_dir/state.after_seq44.yaml"
+timeout 8s ros2 topic pub --once /motor/tp_joint_target exo_motor_msgs/msg/JointTarget "{header: {frame_id: ''}, seq: 44, joint_id: 0, control_mode: 0, position_rad: 0.0, velocity_rad_s: 0.0, torque_nm: 0.0, kp_nm_per_rad: 0.0, kd_nm_s_per_rad: 0.0, max_torque_nm: 0.2, max_velocity_rad_s: 0.5, max_position_rad: 0.5, min_position_rad: -0.5, ttl_us: 100000, flags: 0}"
+capture_motor_echo_once /motor/tp_joint_state "\$evidence_dir/state.after_seq44.yaml"
 # Clamp/fault path: POSITION target exceeds the allowed max position and should set fault bit 4.
 tools/pub-motor-m2-target-capture.py \\
   --seq 45 \\
@@ -283,14 +346,14 @@ tools/pub-motor-m2-target-capture.py \\
   --ttl-us $M2_MOTOR_CLAMP_TTL_US \\
   --require-fresh \\
   --state-out "\$evidence_dir/state.after_clamp_seq45.yaml"
-ros2 topic echo --once /motor/tp_motor_health | tee "\$evidence_dir/health.before_ttl.yaml"
+capture_motor_echo_once /motor/tp_motor_health "\$evidence_dir/health.before_ttl.yaml"
 sleep $M2_MOTOR_TTL_STALE_SLEEP_S
-ros2 topic echo --once /motor/tp_joint_state | tee "\$evidence_dir/state.after_ttl.yaml"
-ros2 topic echo --once /motor/tp_motor_health | tee "\$evidence_dir/health.after_ttl.yaml"
+capture_motor_echo_once /motor/tp_joint_state "\$evidence_dir/state.after_ttl.yaml"
+capture_motor_echo_once /motor/tp_motor_health "\$evidence_dir/health.after_ttl.yaml"
 capture_com_status_rate $M2_MOTOR_COM_STATUS_TIMEOUT_S 10 "\$evidence_dir/rate.com_status.txt" "\$evidence_dir/com_cmd.rate.log"
 sleep 1
-ros2 topic echo --once /motor/tp_motor_health | tee "\$evidence_dir/health.before_enabled_soak.yaml"
-capture_com_status_rate $M2_MOTOR_COM_STATUS_SOAK_TIMEOUT_S $M2_MOTOR_ENABLED_SOAK_DURATION_S "\$evidence_dir/rate.com_status.soak.txt" "\$evidence_dir/com_cmd.soak.log" &
+capture_motor_echo_once /motor/tp_motor_health "\$evidence_dir/health.before_enabled_soak.yaml"
+capture_com_status_rate $M2_MOTOR_COM_STATUS_SOAK_TIMEOUT_S $M2_MOTOR_ENABLED_SOAK_DURATION_S "\$evidence_dir/rate.com_status.soak.txt" "\$evidence_dir/com_cmd.soak.log" $M2_MOTOR_COM_STATUS_SOAK_CMD_HZ $M2_MOTOR_COM_STATUS_SOAK_EVERY_N &
 com_soak_hz_pid=\$!
 tools/pub-motor-m2-enabled-target-soak.py \\
   --hz $M2_MOTOR_ENABLED_SOAK_HZ \\
@@ -326,8 +389,12 @@ M2_MOTOR_SMOKE_STATE_PERIOD_MS=$M2_MOTOR_STATE_PERIOD_MS
 M2_MOTOR_SMOKE_HEALTH_PERIOD_MS=$M2_MOTOR_HEALTH_PERIOD_MS
 M2_MOTOR_SMOKE_REQUIRE_BUDGET_BAUDS=$M2_MOTOR_REQUIRE_BUDGET_BAUDS
 M2_MOTOR_SMOKE_ENABLED_SOAK_HZ=$M2_MOTOR_ENABLED_SOAK_HZ
+M2_MOTOR_SMOKE_CONTROL_LOOP_HZ=$M2_MOTOR_CONTROL_LOOP_HZ
+M2_MOTOR_SMOKE_TELEMETRY_QOS_BEST_EFFORT=$M2_MOTOR_TELEMETRY_QOS_BEST_EFFORT
 M2_MOTOR_SMOKE_ENABLED_SOAK_DURATION_S=$M2_MOTOR_ENABLED_SOAK_DURATION_S
 M2_MOTOR_SMOKE_ENABLED_SOAK_START_SEQ=$M2_MOTOR_ENABLED_SOAK_START_SEQ
+M2_MOTOR_SMOKE_COM_STATUS_SOAK_CMD_HZ=$M2_MOTOR_COM_STATUS_SOAK_CMD_HZ
+M2_MOTOR_SMOKE_COM_STATUS_SOAK_EVERY_N=$M2_MOTOR_COM_STATUS_SOAK_EVERY_N
 M2_MOTOR_SMOKE_EXECUTOR_SPIN_TIMEOUT_US=$M2_MOTOR_EXECUTOR_SPIN_TIMEOUT_US
 M2_MOTOR_SMOKE_STATE_RATE_TIMEOUT_S=$M2_MOTOR_STATE_RATE_TIMEOUT_S
 M2_MOTOR_SMOKE_HEALTH_RATE_TIMEOUT_S=$M2_MOTOR_HEALTH_RATE_TIMEOUT_S
@@ -373,7 +440,7 @@ cat <<EOF
 - motor state period: ${M2_MOTOR_STATE_PERIOD_MS}ms (${M2_MOTOR_STATE_HZ}Hz)
 - motor health period: ${M2_MOTOR_HEALTH_PERIOD_MS}ms (${M2_MOTOR_HEALTH_HZ}Hz)
 - ELF: $elf
-- profile: EXO_MOTOR_ROS_ENTITIES=ON, best_effort=$M2_MOTOR_QOS_BEST_EFFORT, loop=${M2_MOTOR_CONTROL_LOOP_HZ}Hz, status_every_n=$M2_MOTOR_STATUS_EVERY_N, executor_spin_timeout_us=$M2_MOTOR_EXECUTOR_SPIN_TIMEOUT_US, motor_state_period_ms=$M2_MOTOR_STATE_PERIOD_MS, motor_health_period_ms=$M2_MOTOR_HEALTH_PERIOD_MS
+- profile: EXO_MOTOR_ROS_ENTITIES=ON, best_effort=$M2_MOTOR_QOS_BEST_EFFORT, motor_telemetry_qos_best_effort=$M2_MOTOR_TELEMETRY_QOS_BEST_EFFORT, loop=${M2_MOTOR_CONTROL_LOOP_HZ}Hz, status_every_n=$M2_MOTOR_STATUS_EVERY_N, executor_spin_timeout_us=$M2_MOTOR_EXECUTOR_SPIN_TIMEOUT_US, motor_state_period_ms=$M2_MOTOR_STATE_PERIOD_MS, motor_health_period_ms=$M2_MOTOR_HEALTH_PERIOD_MS
 
 Gate: run \`STRICT=1 tools/diagnose-swd.sh\` first; only flash when \`SWD_STATUS=ok\`.
 
@@ -399,6 +466,7 @@ $(print_checklist)
 ## Evidence Boundaries
 
 - Passing \`/com\` 10kHz/200Hz validation is not a substitute for this \`/motor\` topic smoke.
+- The enabled-soak \`/com\` monitor intentionally uses a light \`$M2_MOTOR_COM_STATUS_SOAK_CMD_HZ\`Hz/\`status_every_n=$M2_MOTOR_COM_STATUS_SOAK_EVERY_N\` probe so the validation path does not add a second 200Hz command stream on top of the required 200Hz motor target stream.
 - The non-empty \`header.frame_id\` command is a negative test. Do not count it as passing just because \`/motor/tp_joint_state\` still publishes: \`last_target_seq\` must remain at the previous accepted seq, \`targets_received/targets_applied\` must not increase because of the rejected target, and a later legal target must still be accepted.
 - The seq42/seq43/seq44 targets intentionally use \`control_mode=0\` so \`targets_applied\` is not naturally incremented by the enabled control loop during the negative frame_id check.
 - The enabled soak uses \`control_mode=1\` (ZERO_TORQUE) with empty \`frame_id\` and monotonic seq. It is the evidence for 200Hz target receive plus 10kHz control tick applied growth; do not substitute the disabled negative-test counters for this gate.

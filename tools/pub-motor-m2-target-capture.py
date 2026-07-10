@@ -57,6 +57,12 @@ def parse_args(args=None):
     parser.add_argument("--state-out", required=True)
     parser.add_argument("--timeout-s", type=float, default=2.0)
     parser.add_argument("--discovery-wait-s", type=float, default=0.5)
+    parser.add_argument(
+        "--state-qos-reliability",
+        default="best_effort",
+        choices=("best_effort", "reliable"),
+    )
+    parser.add_argument("--state-qos-depth", type=int, default=1)
     parser.add_argument("--require-fresh", action="store_true")
     parsed = parser.parse_args(args)
     if parsed.seq < 0:
@@ -67,6 +73,8 @@ def parse_args(args=None):
         parser.error("--timeout-s must be > 0")
     if parsed.discovery_wait_s < 0.0:
         parser.error("--discovery-wait-s must be >= 0")
+    if parsed.state_qos_depth < 1:
+        parser.error("--state-qos-depth must be >= 1")
     return parsed
 
 
@@ -86,10 +94,15 @@ def main(args=None) -> int:
         depth=1,
         reliability=ReliabilityPolicy.BEST_EFFORT,
     )
+    state_reliability = (
+        ReliabilityPolicy.RELIABLE
+        if parsed.state_qos_reliability == "reliable"
+        else ReliabilityPolicy.BEST_EFFORT
+    )
     state_qos = QoSProfile(
         history=HistoryPolicy.KEEP_LAST,
-        depth=10,
-        reliability=ReliabilityPolicy.RELIABLE,
+        depth=parsed.state_qos_depth,
+        reliability=state_reliability,
     )
 
     def on_state(msg):

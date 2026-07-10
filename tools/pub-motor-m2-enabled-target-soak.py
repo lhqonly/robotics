@@ -72,6 +72,12 @@ def main() -> int:
         choices=("best_effort", "reliable"),
     )
     parser.add_argument("--qos-depth", type=int, default=1)
+    parser.add_argument(
+        "--telemetry-qos-reliability",
+        default="best_effort",
+        choices=("best_effort", "reliable"),
+    )
+    parser.add_argument("--telemetry-qos-depth", type=int, default=1)
     parser.add_argument("--discovery-wait-s", type=float, default=1.0)
     parser.add_argument("--post-spin-s", type=float, default=0.25)
     parser.add_argument("--state-mid-out")
@@ -90,6 +96,8 @@ def main() -> int:
         parser.error("--ttl-us must be > 0")
     if args.qos_depth < 1:
         parser.error("--qos-depth must be >= 1")
+    if args.telemetry_qos_depth < 1:
+        parser.error("--telemetry-qos-depth must be >= 1")
     if args.discovery_wait_s < 0.0:
         parser.error("--discovery-wait-s must be >= 0")
     if args.post_spin_s < 0.0:
@@ -120,10 +128,15 @@ def main() -> int:
         depth=args.qos_depth,
         reliability=reliability,
     )
-    reliable_qos = QoSProfile(
+    telemetry_reliability = (
+        ReliabilityPolicy.RELIABLE
+        if args.telemetry_qos_reliability == "reliable"
+        else ReliabilityPolicy.BEST_EFFORT
+    )
+    telemetry_qos = QoSProfile(
         history=HistoryPolicy.KEEP_LAST,
-        depth=10,
-        reliability=ReliabilityPolicy.RELIABLE,
+        depth=args.telemetry_qos_depth,
+        reliability=telemetry_reliability,
     )
 
     def on_state(msg):
@@ -137,8 +150,8 @@ def main() -> int:
         latest_health = msg
 
     pub = node.create_publisher(JointTarget, "/motor/tp_joint_target", target_qos)
-    node.create_subscription(JointState, "/motor/tp_joint_state", on_state, reliable_qos)
-    node.create_subscription(MotorHealth, "/motor/tp_motor_health", on_health, reliable_qos)
+    node.create_subscription(JointState, "/motor/tp_joint_state", on_state, telemetry_qos)
+    node.create_subscription(MotorHealth, "/motor/tp_motor_health", on_health, telemetry_qos)
 
     warmup_deadline = time.monotonic() + args.discovery_wait_s
     while rclpy.ok() and time.monotonic() < warmup_deadline:
@@ -206,6 +219,8 @@ def main() -> int:
     print(f"enabled_soak_duration_s={elapsed_s:.6f}")
     print(f"enabled_soak_qos_reliability={args.qos_reliability}")
     print(f"enabled_soak_qos_depth={args.qos_depth}")
+    print(f"enabled_soak_telemetry_qos_reliability={args.telemetry_qos_reliability}")
+    print(f"enabled_soak_telemetry_qos_depth={args.telemetry_qos_depth}")
     print(f"enabled_soak_discovery_wait_s={args.discovery_wait_s:.6f}")
     print(f"enabled_soak_post_spin_s={args.post_spin_s:.6f}")
     print(f"enabled_soak_targets_sent={count}")
