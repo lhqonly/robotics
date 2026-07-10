@@ -20,14 +20,15 @@
 - 已修复离线审查发现的两个 M2 安全边界：非空 `header.frame_id` 的反序列化前缓冲风险，以及高优先级 TIM2 下 telemetry snapshot 可能被打断的问题。
 - 已新增 M2 motor 通信预算工具：`tools/com-wire-budget.py --profile motor-m2`，并把 M2 预算纳入 `tools/recommend-communication-optimizations.py` 和 `tools/com-status-report.sh`。
 - 已新增 M2 telemetry period sweep：`tools/motor-m2-telemetry-sweep.py --min-margin-pct 1 --pass-only`，用于离线选择保守静态余量的 state/health 发布周期；它只给静态线速候选，不替代真机 smoke evidence。
+- 已完成 2Mbps M2 motor throughput smoke：`log/motor-m2-smoke/throughput_qos_lightprobe_20260710_112543` 通过 `tools/check-motor-m2-smoke-evidence.py`。profile 为 `EXO_MOTOR_ROS_ENTITIES=ON`、`EXO_QOS_BEST_EFFORT=ON`、`EXO_MOTOR_TELEMETRY_QOS_BEST_EFFORT=ON`、`EXO_CONTROL_LOOP_HZ=10000`、200Hz enabled target、20ms state、200ms health。实测 `enabled_soak_target_hz=199.996187`、`targets_received=3->980`、`targets_applied=1001->50700`、`last_target_seq=1999`、`/com` soak sampler `4.801Hz`、micro-ROS stack HWM free `268 words`。
+- 已跑 921600 low-telemetry post-2Mbps comparison（500ms state / 1000ms health）。静态预算为 29.91% baud utilization、仅 0.09% margin；多轮真机 strict smoke 未 PASS，不能推广为默认或 first-smoke profile。代表性 evidence：`motor_m2_921k_lowtelemetry_probe10_20260710_114826` 因 `targets_received_delta=880<900` 失败；`motor_m2_921k_lowtelemetry_probe5_20260710_115023` 的 `targets_received_delta=968` 达标，但最终 state 因 500ms telemetry 与 100ms TTL 相位变为 stale，失败在 `target_fresh/enabled/fault_bits` gate。
+- 已加固低遥测验证工具：clamp capture 可重复发布同一 seq 以避免 500ms state period 错过 100ms fresh 窗口；enabled soak 的 final-state post-spin 随 state period 延长；并发 `/com` liveness probe 默认降为 5Hz/`status_every_n=1`，避免验证工具本身叠加第二条重 200Hz command stream。
 
 当前尚未完成：
 
-- 尚未在真机上烧录 `EXO_MOTOR_ROS_ENTITIES=ON` 固件并连接 micro-ROS Agent 验证 ROS graph 能看到 `/motor` 三个 topic。
-- 尚未发布真实 `/motor/tp_joint_target` 验证 `JointState.last_target_seq`、TTL stale、clamp/fault 和 `/com/tp_mcu_status` 并存稳定性。
-- 尚未做 200Hz target + configurable motor state/health 并发下的 runtime 对比；静态预算显示默认 200Hz target + 20ms state + 200ms health（50Hz/5Hz）在 921600 baud 超过 30% 预算，2Mbps 通过。应先跑 2Mbps first smoke；921600 low telemetry 只有 thin margin，只能作为 2Mbps PASS 后的 post-2Mbps comparison only，不能替代运行期证据。
-- 尚未在 motor-enabled 固件上读取栈水位、MSP/heap 余量和 reconnect/soak 结果；`build-motor-opt` 只是候选，不能在无真机证据时改默认。
-- 非空 `header.frame_id` 已做静态防护，但仍需运行期注入验证它会被干净拒绝，且不会破坏 executor/reconnect。
+- 2Mbps 已完成首轮严格 smoke，但还缺更长 soak/reconnect 证据；不能仅凭一次 smoke 改默认 telemetry、stack、heap/MSP reserve。
+- 921600 low telemetry 目前是 strict smoke 未通过的 comparison-only 结果。若继续探索，必须保持 200Hz target + 10kHz loop 门槛，并单独设计不污染 `targets_received` 计数的 final-target fresh 观测方法；不能把低遥测静态 PASS_THIN 当作运行期 PASS。
+- 尚未接入真实 CyberGear CAN backend；本卡仍停在 mock/empty backend 的 ROS topic + local control skeleton 验收。
 
 ## 接口契约
 

@@ -19,8 +19,9 @@ M2_MOTOR_AGENT_VERBOSITY="${M2_MOTOR_AGENT_VERBOSITY:-1}"
 M2_MOTOR_ENABLED_SOAK_HZ="${M2_MOTOR_ENABLED_SOAK_HZ:-200}"
 M2_MOTOR_ENABLED_SOAK_DURATION_S="${M2_MOTOR_ENABLED_SOAK_DURATION_S:-5}"
 M2_MOTOR_ENABLED_SOAK_START_SEQ="${M2_MOTOR_ENABLED_SOAK_START_SEQ:-1000}"
-M2_MOTOR_COM_STATUS_SOAK_CMD_HZ="${M2_MOTOR_COM_STATUS_SOAK_CMD_HZ:-20}"
-M2_MOTOR_COM_STATUS_SOAK_EVERY_N="${M2_MOTOR_COM_STATUS_SOAK_EVERY_N:-4}"
+M2_MOTOR_COM_STATUS_SOAK_CMD_HZ="${M2_MOTOR_COM_STATUS_SOAK_CMD_HZ:-5}"
+M2_MOTOR_COM_STATUS_SOAK_EVERY_N="${M2_MOTOR_COM_STATUS_SOAK_EVERY_N:-1}"
+M2_MOTOR_CLAMP_CAPTURE_REPEAT_HZ="${M2_MOTOR_CLAMP_CAPTURE_REPEAT_HZ:-20}"
 M2_MOTOR_CLAMP_TTL_US="${M2_MOTOR_CLAMP_TTL_US:-100000}"
 M2_MOTOR_ENABLED_SOAK_TTL_US="${M2_MOTOR_ENABLED_SOAK_TTL_US:-100000}"
 M2_MOTOR_TAG="${M2_MOTOR_TAG:-motor_m2_smoke_$(date +%Y%m%d_%H%M)}"
@@ -161,6 +162,17 @@ rate_timeout_from_period_ms() {
   }'
 }
 
+post_spin_from_state_period_ms() {
+  local period_ms="$1"
+  awk -v ms="$period_ms" 'BEGIN {
+    seconds = (ms * 2.0) / 1000.0
+    if (seconds < 0.25) {
+      seconds = 0.25
+    }
+    printf "%.3f", seconds
+  }'
+}
+
 elf="$M2_MOTOR_BUILD_DIR/f103-microros.elf"
 bin="$M2_MOTOR_BUILD_DIR/f103-microros.bin"
 validate_positive_integer_list "M2_MOTOR_BAUD" "$M2_MOTOR_BAUD"
@@ -169,6 +181,7 @@ validate_positive_integer "M2_MOTOR_AGENT_VERBOSITY" "$M2_MOTOR_AGENT_VERBOSITY"
 validate_positive_integer "M2_MOTOR_EXECUTOR_SPIN_TIMEOUT_US" "$M2_MOTOR_EXECUTOR_SPIN_TIMEOUT_US"
 validate_positive_integer "M2_MOTOR_COM_STATUS_SOAK_CMD_HZ" "$M2_MOTOR_COM_STATUS_SOAK_CMD_HZ"
 validate_positive_integer "M2_MOTOR_COM_STATUS_SOAK_EVERY_N" "$M2_MOTOR_COM_STATUS_SOAK_EVERY_N"
+validate_positive_integer "M2_MOTOR_CLAMP_CAPTURE_REPEAT_HZ" "$M2_MOTOR_CLAMP_CAPTURE_REPEAT_HZ"
 validate_target_ttl_us "M2_MOTOR_CLAMP_TTL_US" "$M2_MOTOR_CLAMP_TTL_US"
 validate_target_ttl_us "M2_MOTOR_ENABLED_SOAK_TTL_US" "$M2_MOTOR_ENABLED_SOAK_TTL_US"
 validate_periods
@@ -181,6 +194,8 @@ M2_MOTOR_HEALTH_MIN_HZ="$(rate_min_from_hz "$M2_MOTOR_HEALTH_HZ")"
 M2_MOTOR_HEALTH_MAX_HZ="$(rate_max_from_hz "$M2_MOTOR_HEALTH_HZ")"
 M2_MOTOR_STATE_RATE_TIMEOUT_S="$(rate_timeout_from_period_ms "$M2_MOTOR_STATE_PERIOD_MS")"
 M2_MOTOR_HEALTH_RATE_TIMEOUT_S="$(rate_timeout_from_period_ms "$M2_MOTOR_HEALTH_PERIOD_MS")"
+M2_MOTOR_TARGET_CAPTURE_TIMEOUT_S="$M2_MOTOR_STATE_RATE_TIMEOUT_S"
+M2_MOTOR_ENABLED_SOAK_POST_SPIN_S="$(post_spin_from_state_period_ms "$M2_MOTOR_STATE_PERIOD_MS")"
 M2_MOTOR_ENABLED_SOAK_MID_SLEEP_S="$(
   awk -v seconds="$M2_MOTOR_ENABLED_SOAK_DURATION_S" 'BEGIN {
     printf "%.3f", seconds / 2.0
@@ -344,6 +359,8 @@ tools/pub-motor-m2-target-capture.py \\
   --max-position-rad 0.5 \\
   --min-position-rad -0.5 \\
   --ttl-us $M2_MOTOR_CLAMP_TTL_US \\
+  --repeat-hz $M2_MOTOR_CLAMP_CAPTURE_REPEAT_HZ \\
+  --timeout-s $M2_MOTOR_TARGET_CAPTURE_TIMEOUT_S \\
   --require-fresh \\
   --state-out "\$evidence_dir/state.after_clamp_seq45.yaml"
 capture_motor_echo_once /motor/tp_motor_health "\$evidence_dir/health.before_ttl.yaml"
@@ -365,6 +382,7 @@ tools/pub-motor-m2-enabled-target-soak.py \\
   --health-mid-out "\$evidence_dir/health.mid_enabled_soak.yaml" \\
   --state-after-out "\$evidence_dir/state.after_enabled_soak.yaml" \\
   --health-after-out "\$evidence_dir/health.after_enabled_soak.yaml" \\
+  --post-spin-s $M2_MOTOR_ENABLED_SOAK_POST_SPIN_S \\
   | tee "\$evidence_dir/enabled_soak.summary.txt"
 wait "\$com_soak_hz_pid" || true
 
@@ -393,8 +411,11 @@ M2_MOTOR_SMOKE_CONTROL_LOOP_HZ=$M2_MOTOR_CONTROL_LOOP_HZ
 M2_MOTOR_SMOKE_TELEMETRY_QOS_BEST_EFFORT=$M2_MOTOR_TELEMETRY_QOS_BEST_EFFORT
 M2_MOTOR_SMOKE_ENABLED_SOAK_DURATION_S=$M2_MOTOR_ENABLED_SOAK_DURATION_S
 M2_MOTOR_SMOKE_ENABLED_SOAK_START_SEQ=$M2_MOTOR_ENABLED_SOAK_START_SEQ
+M2_MOTOR_SMOKE_ENABLED_SOAK_POST_SPIN_S=$M2_MOTOR_ENABLED_SOAK_POST_SPIN_S
 M2_MOTOR_SMOKE_COM_STATUS_SOAK_CMD_HZ=$M2_MOTOR_COM_STATUS_SOAK_CMD_HZ
 M2_MOTOR_SMOKE_COM_STATUS_SOAK_EVERY_N=$M2_MOTOR_COM_STATUS_SOAK_EVERY_N
+M2_MOTOR_SMOKE_CLAMP_CAPTURE_REPEAT_HZ=$M2_MOTOR_CLAMP_CAPTURE_REPEAT_HZ
+M2_MOTOR_SMOKE_TARGET_CAPTURE_TIMEOUT_S=$M2_MOTOR_TARGET_CAPTURE_TIMEOUT_S
 M2_MOTOR_SMOKE_EXECUTOR_SPIN_TIMEOUT_US=$M2_MOTOR_EXECUTOR_SPIN_TIMEOUT_US
 M2_MOTOR_SMOKE_STATE_RATE_TIMEOUT_S=$M2_MOTOR_STATE_RATE_TIMEOUT_S
 M2_MOTOR_SMOKE_HEALTH_RATE_TIMEOUT_S=$M2_MOTOR_HEALTH_RATE_TIMEOUT_S

@@ -56,6 +56,13 @@ def parse_args(args=None):
     parser.add_argument("--frame-id", default="")
     parser.add_argument("--state-out", required=True)
     parser.add_argument("--timeout-s", type=float, default=2.0)
+    parser.add_argument(
+        "--repeat-hz",
+        type=float,
+        default=0.0,
+        help="Republish the same target until a matching state is captured; "
+             "0 publishes once.",
+    )
     parser.add_argument("--discovery-wait-s", type=float, default=0.5)
     parser.add_argument(
         "--state-qos-reliability",
@@ -71,6 +78,8 @@ def parse_args(args=None):
         parser.error("--ttl-us must be > 0")
     if parsed.timeout_s <= 0.0:
         parser.error("--timeout-s must be > 0")
+    if parsed.repeat_hz < 0.0:
+        parser.error("--repeat-hz must be >= 0")
     if parsed.discovery_wait_s < 0.0:
         parser.error("--discovery-wait-s must be >= 0")
     if parsed.state_qos_depth < 1:
@@ -132,11 +141,17 @@ def main(args=None) -> int:
     msg.min_position_rad = parsed.min_position_rad
     msg.ttl_us = parsed.ttl_us
     msg.flags = parsed.flags
-    pub.publish(msg)
-
     deadline = time.monotonic() + parsed.timeout_s
+    repeat_period_s = 1.0 / parsed.repeat_hz if parsed.repeat_hz > 0.0 else 0.0
+    next_publish_s = time.monotonic()
+    published = False
     matched = None
     while rclpy.ok() and time.monotonic() < deadline:
+        now_s = time.monotonic()
+        if not published or (repeat_period_s > 0.0 and now_s >= next_publish_s):
+            pub.publish(msg)
+            published = True
+            next_publish_s = now_s + repeat_period_s
         rclpy.spin_once(node, timeout_sec=0.005)
         if latest_state is None or latest_state.last_target_seq != parsed.seq:
             continue

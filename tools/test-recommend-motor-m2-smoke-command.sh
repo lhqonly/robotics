@@ -141,6 +141,10 @@ assert_contains "$out" "tools/pub-motor-m2-target-capture.py" \
   "fresh clamp capture helper"
 assert_contains "$out" "--require-fresh" \
   "fresh clamp sample requirement"
+assert_contains "$out" "--repeat-hz 20" \
+  "clamp capture repeats target to survive low telemetry phase"
+assert_contains "$out" "--timeout-s 11" \
+  "default clamp capture timeout follows state period"
 assert_contains "$out" "--ttl-us 100000" \
   "contract TTL target command"
 assert_contains "$out" "sleep 0.300" \
@@ -193,8 +197,10 @@ assert_contains "$out" "state.after_enabled_soak.yaml" \
   "enabled soak state after capture"
 assert_contains "$out" "rate.com_status.soak.txt" \
   "com status rate during enabled soak"
-assert_contains "$out" 'rate.com_status.soak.txt" "$evidence_dir/com_cmd.soak.log" 20 4 &' \
+assert_contains "$out" 'rate.com_status.soak.txt" "$evidence_dir/com_cmd.soak.log" 5 1 &' \
   "enabled soak uses light com status probe instead of a second 200Hz stream"
+assert_contains "$out" "--post-spin-s 0.250" \
+  "default enabled soak post-spin follows state period floor"
 assert_contains "$out" "enabled_soak.summary.txt" \
   "enabled soak publisher summary"
 assert_contains "$out" "--min-enabled-soak-target-hz 180.000000 --max-enabled-soak-target-hz 220.000000" \
@@ -251,6 +257,10 @@ assert_contains "$commands" "capture_topic_hz 13 /motor/tp_joint_state" \
   "custom motor state hz timeout"
 assert_contains "$commands" "capture_topic_hz 16 /motor/tp_motor_health" \
   "custom motor health hz timeout"
+assert_contains "$commands" "--timeout-s 13" \
+  "custom low telemetry clamp capture timeout follows state period"
+assert_contains "$commands" "--post-spin-s 1.000" \
+  "custom low telemetry enabled soak post-spin follows state period"
 assert_contains "$commands" "tools/run-bridge.sh '/dev/ttyACM0' '921600'" \
   "custom serial in commands format"
 assert_contains "$commands" '>"$evidence_dir/agent.log" 2>&1 &' \
@@ -292,10 +302,16 @@ assert_contains "$checklist" "M2_MOTOR_SMOKE_CONTROL_LOOP_HZ=10000" \
   "control loop hz in checklist"
 assert_contains "$checklist" "M2_MOTOR_SMOKE_TELEMETRY_QOS_BEST_EFFORT=ON" \
   "motor telemetry QoS in checklist"
-assert_contains "$checklist" "M2_MOTOR_SMOKE_COM_STATUS_SOAK_CMD_HZ=20" \
+assert_contains "$checklist" "M2_MOTOR_SMOKE_ENABLED_SOAK_POST_SPIN_S=0.250" \
+  "enabled soak post-spin in checklist"
+assert_contains "$checklist" "M2_MOTOR_SMOKE_COM_STATUS_SOAK_CMD_HZ=5" \
   "enabled soak com probe rate in checklist"
-assert_contains "$checklist" "M2_MOTOR_SMOKE_COM_STATUS_SOAK_EVERY_N=4" \
+assert_contains "$checklist" "M2_MOTOR_SMOKE_COM_STATUS_SOAK_EVERY_N=1" \
   "enabled soak com probe decimation in checklist"
+assert_contains "$checklist" "M2_MOTOR_SMOKE_CLAMP_CAPTURE_REPEAT_HZ=20" \
+  "clamp capture repeat rate in checklist"
+assert_contains "$checklist" "M2_MOTOR_SMOKE_TARGET_CAPTURE_TIMEOUT_S=11" \
+  "clamp capture timeout in checklist"
 assert_contains "$checklist" "CHECK enabled_200hz_target_soak_received_and_applied_grow" \
   "enabled soak growth checklist"
 assert_contains "$checklist" "CHECK com_status_hz_during_enabled_soak_stays_in_range" \
